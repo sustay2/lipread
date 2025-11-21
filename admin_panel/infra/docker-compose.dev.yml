@@ -1,0 +1,32 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    environment:
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
+      FIREBASE_CLIENT_EMAIL: ${FIREBASE_CLIENT_EMAIL}
+      FIREBASE_PRIVATE_KEY: ${FIREBASE_PRIVATE_KEY}
+      MEDIA_ROOT: /data
+      MEDIA_ORIGINAL_DIR: /data/original
+      MEDIA_THUMB_DIR: /data/thumbs
+      MEDIA_BASE_URL: http://api:8000/media
+    volumes:
+      - ../backend/app:/app/app
+      - "C:\\lipread_media:/data"
+    ports:
+      - "8000:8000"
+
+  admin:
+    build:
+      context: ..
+      dockerfile: admin/Dockerfile
+    environment:
+      API_BASE_URL: http://api:8000
+      PUBLIC_API_BASE: http://localhost:8000
+    volumes:
+      - ../admin:/app
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api

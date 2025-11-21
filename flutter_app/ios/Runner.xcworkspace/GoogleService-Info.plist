@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>231480962803-ossvfmad6lr2emu6vvsn3aiqbbou4pm0.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.231480962803-ossvfmad6lr2emu6vvsn3aiqbbou4pm0</string>
+	<key>API_KEY</key>
+	<string>AIzaSyCUgzNrNL4Ql0SplYr9capBmonV8D1kHOU</string>
+	<key>GCM_SENDER_ID</key>
+	<string>231480962803</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>my.edu.tarumt.flutterApp</string>
+	<key>PROJECT_ID</key>
+	<string>lipreadapp</string>
+	<key>STORAGE_BUCKET</key>
+	<string>lipreadapp.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:231480962803:ios:328560afc92304a0c9d186</string>
+</dict>
+</plist>
