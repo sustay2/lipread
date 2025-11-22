@@ -1,26 +1,32 @@
 import 'dart:async';
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:image/image.dart' as img;
 
 import '../../../common/theme/app_colors.dart';
+import '../../../services/lipread_socket.dart';
 
-/// Simple "record and auto-upload" card:
-/// - User taps Record to start camera & recording
-/// - Speaks as long as they want
-/// - Taps Stop → recording stops and the resulting file is
-///   automatically passed to [onSubmit(file)]
+/// Simple "record and stream" card:
+/// - User taps Record to start camera & live streaming over WebSocket
+/// - Encoded frames are sent until Stop is tapped
+/// - Partial transcripts are surfaced via [onTranscript]
 class RecordCard extends StatefulWidget {
   final bool enabled;
-  final Future<void> Function(File file) onSubmit;
+  final ValueChanged<String>? onTranscript;
+  final VoidCallback? onStartStreaming;
+  final VoidCallback? onStopStreaming;
+  final ValueChanged<Object>? onError;
   final String? hint;
 
   const RecordCard({
     super.key,
     required this.enabled,
-    required this.onSubmit,
+    this.onTranscript,
+    this.onStartStreaming,
+    this.onStopStreaming,
+    this.onError,
     this.hint,
   });
 
@@ -28,19 +34,20 @@ class RecordCard extends StatefulWidget {
   State<RecordCard> createState() => _RecordCardState();
 }
 
-class _RecordCardState extends State<RecordCard>
-    with WidgetsBindingObserver {
+class _RecordCardState extends State<RecordCard> with WidgetsBindingObserver {
   CameraController? _ctrl;
   bool _initializing = false;
   bool _recording = false;
-  bool _submitting = false;
-  File? _lastFile;
+  bool _connecting = false;
+  LipreadSocket? _socket;
+  StreamSubscription? _socketSub;
+  DateTime? _lastFrameSent;
+  bool _encoding = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // We only start camera when user taps Record.
   }
 
   @override
@@ -50,11 +57,18 @@ class _RecordCardState extends State<RecordCard>
     super.dispose();
   }
 
+  @override
+  void didUpdateWidget(covariant RecordCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.enabled && _recording) {
+      _stopStreaming();
+    }
+  }
+
   // ---------- App lifecycle ----------
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // If app goes inactive or to background, release camera.
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused) {
       _disposeController();
@@ -64,13 +78,15 @@ class _RecordCardState extends State<RecordCard>
   // ---------- Camera / controller helpers ----------
 
   Future<void> _disposeController() async {
+    await _stopStreaming(fromDispose: true);
+
     final c = _ctrl;
     _ctrl = null;
 
     if (c != null) {
       try {
-        if (c.value.isRecordingVideo) {
-          await c.stopVideoRecording();
+        if (c.value.isStreamingImages) {
+          await c.stopImageStream();
         }
       } catch (_) {
         // ignore
@@ -81,6 +97,7 @@ class _RecordCardState extends State<RecordCard>
     if (mounted) {
       setState(() {
         _recording = false;
+        _connecting = false;
       });
     }
   }
@@ -99,14 +116,14 @@ class _RecordCardState extends State<RecordCard>
         return;
       }
       final front = cams.firstWhere(
-            (c) => c.lensDirection == CameraLensDirection.front,
+        (c) => c.lensDirection == CameraLensDirection.front,
         orElse: () => cams.first,
       );
 
       final ctrl = CameraController(
         front,
         ResolutionPreset.low,
-        enableAudio: true,
+        enableAudio: false,
       );
       await ctrl.initialize();
 
@@ -129,10 +146,10 @@ class _RecordCardState extends State<RecordCard>
     }
   }
 
-  // ---------- Record / stop / auto-upload ----------
+  // ---------- Record / stop / streaming ----------
 
   Future<void> _toggleRecord() async {
-    if (!widget.enabled || _submitting) return;
+    if (!widget.enabled || _connecting || _initializing) return;
 
     // Ensure camera is ready
     if (_ctrl == null || !_ctrl!.value.isInitialized) {
@@ -140,55 +157,143 @@ class _RecordCardState extends State<RecordCard>
       if (_ctrl == null || !_ctrl!.value.isInitialized) return;
     }
 
-    final ctrl = _ctrl!;
     try {
-      if (ctrl.value.isRecordingVideo) {
-        // ---- STOP: save file & auto-upload ----
-        final rec = await ctrl.stopVideoRecording();
-
-        final tmpDir = await getTemporaryDirectory();
-        final file = File(
-          '${tmpDir.path}/transcribe_${DateTime.now().millisecondsSinceEpoch}.mp4',
-        );
-        await File(rec.path).copy(file.path);
-
-        if (!mounted) return;
-
-        setState(() {
-          _recording = false;
-          _lastFile = file;
-          _submitting = true;
-        });
-
-        try {
-          await widget.onSubmit(file);
-        } finally {
-          if (mounted) {
-            setState(() {
-              _submitting = false;
-            });
-          }
-        }
+      if (_recording) {
+        await _stopStreaming();
       } else {
-        // ---- START recording ----
-        await ctrl.prepareForVideoRecording();
-        await ctrl.startVideoRecording();
-        if (!mounted) return;
-        setState(() {
-          _recording = true;
-          _lastFile = null;
-        });
+        await _startStreaming();
       }
-    } catch (e) {
+    } catch (Object e) {
       if (mounted) {
         setState(() {
           _recording = false;
-          _submitting = false;
+          _connecting = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Recording error: $e')),
         );
       }
+      widget.onError?.call(e);
+    }
+  }
+
+  Future<void> _startStreaming() async {
+    final ctrl = _ctrl;
+    if (ctrl == null) return;
+
+    setState(() {
+      _connecting = true;
+    });
+
+    try {
+      final socket = LipreadSocket.connect();
+      _socketSub = socket.stream.listen(
+        (event) {
+          if (event is String) {
+            widget.onTranscript?.call(event);
+          }
+        },
+        onError: (Object e) {
+          widget.onError?.call(e);
+          _stopStreaming();
+        },
+      );
+
+      _socket = socket;
+      _lastFrameSent = null;
+
+      await ctrl.startImageStream(_handleImage);
+
+      if (!mounted) return;
+      setState(() {
+        _recording = true;
+        _connecting = false;
+      });
+      widget.onStartStreaming?.call();
+    } catch (Object e) {
+      if (mounted) {
+        setState(() {
+          _recording = false;
+          _connecting = false;
+        });
+      }
+      widget.onError?.call(e);
+      rethrow;
+    }
+  }
+
+  Future<void> _stopStreaming({bool fromDispose = false}) async {
+    try {
+      if (_ctrl?.value.isStreamingImages ?? false) {
+        await _ctrl?.stopImageStream();
+      }
+    } catch (_) {
+      // ignore
+    }
+
+    await _socketSub?.cancel();
+    _socketSub = null;
+
+    await _socket?.close();
+    _socket = null;
+
+    _lastFrameSent = null;
+
+    if (mounted && !fromDispose) {
+      setState(() {
+        _recording = false;
+        _connecting = false;
+      });
+    } else {
+      _recording = false;
+      _connecting = false;
+    }
+
+    if (!fromDispose) {
+      widget.onStopStreaming?.call();
+    }
+  }
+
+  Future<void> _handleImage(CameraImage image) async {
+    final socket = _socket;
+    if (socket == null || !mounted) return;
+
+    final now = DateTime.now();
+    if (_lastFrameSent != null &&
+        now.difference(_lastFrameSent!) < const Duration(milliseconds: 120)) {
+      return;
+    }
+    _lastFrameSent = now;
+
+    if (_encoding) return;
+    _encoding = true;
+
+    try {
+      final plane = image.planes.first;
+      final luminance = img.Image.fromBytes(
+        width: image.width,
+        height: image.height,
+        bytes: plane.bytes,
+        format: img.Format.luminance,
+        rowStride: plane.bytesPerRow,
+      );
+
+      final resized = img.copyResize(
+        luminance,
+        width: 96,
+        height: 96,
+        interpolation: img.Interpolation.average,
+      );
+
+      final jpgBytes = Uint8List.fromList(
+        img.encodeJpg(resized, quality: 75),
+      );
+
+      socket.sendFrame(jpgBytes);
+    } catch (Object e) {
+      widget.onError?.call(e);
+    } finally {
+      _encoding = false;
     }
   }
 
@@ -196,7 +301,7 @@ class _RecordCardState extends State<RecordCard>
 
   @override
   Widget build(BuildContext context) {
-    final isBusy = _initializing || _submitting;
+    final isBusy = _initializing || _connecting;
     final buttonEnabled = widget.enabled && !isBusy;
 
     return Column(
@@ -259,7 +364,7 @@ class _RecordCardState extends State<RecordCard>
                     ),
 
                   // --- Status chip (top-right) ---
-                  if (_submitting || (_lastFile != null && !_recording))
+                  if (_connecting || _recording)
                     Positioned(
                       top: 12,
                       right: 12,
@@ -273,9 +378,7 @@ class _RecordCardState extends State<RecordCard>
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
-                          _submitting
-                              ? 'Uploading & transcribing...'
-                              : 'Clip sent',
+                          _connecting ? 'Connecting…' : 'Streaming…',
                           style: const TextStyle(
                             fontSize: 11,
                             color: Colors.white,
@@ -292,34 +395,32 @@ class _RecordCardState extends State<RecordCard>
                     child: FilledButton.icon(
                       style: FilledButton.styleFrom(
                         backgroundColor:
-                        _recording ? AppColors.error : AppColors.primary,
+                            _recording ? AppColors.error : AppColors.primary,
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(999),
                         ),
                       ),
                       onPressed: buttonEnabled ? _toggleRecord : null,
-                      icon: _submitting
+                      icon: _connecting
                           ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Colors.white,
-                          ),
-                        ),
-                      )
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
+                              ),
+                            )
                           : Icon(
-                        _recording
-                            ? Icons.stop_rounded
-                            : Icons.fiber_manual_record_rounded,
-                        size: 18,
-                      ),
+                              _recording
+                                  ? Icons.stop_rounded
+                                  : Icons.fiber_manual_record_rounded,
+                              size: 18,
+                            ),
                       label: Text(
-                        _recording
-                            ? 'Stop & transcribe'
-                            : 'Record',
+                        _recording ? 'Stop streaming' : 'Record',
                         style: const TextStyle(
                           fontWeight: FontWeight.w600,
                         ),

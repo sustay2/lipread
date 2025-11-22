@@ -28,6 +28,9 @@ class _TranscribePageState extends State<TranscribePage>
   late TabController _tab;
   bool _recordTabActive = true;
   bool _routeActive = true;
+  String _liveTranscript = '';
+  bool _liveStreaming = false;
+  String? _liveStatus;
 
 
   @override
@@ -185,9 +188,50 @@ class _TranscribePageState extends State<TranscribePage>
     }
   }
 
+  // ---------- Live streaming (WebSocket) ----------
+
+  void _handleLiveStart() {
+    setState(() {
+      _liveStreaming = true;
+      _liveTranscript = '';
+      _liveStatus = 'Streaming…';
+      _status = null;
+      _result = null;
+      _progress = 0.0;
+    });
+  }
+
+  void _handleLiveStop() {
+    setState(() {
+      _liveStreaming = false;
+      _liveStatus = 'Stopped. Tap record to start again.';
+    });
+  }
+
+  void _handleLiveTranscript(String text) {
+    setState(() {
+      _liveTranscript = text;
+      _liveStatus = 'Listening…';
+    });
+  }
+
+  void _handleLiveError(Object error) {
+    if (!mounted) return;
+    setState(() {
+      _liveStreaming = false;
+      _liveStatus = 'Live error: $error';
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Live stream error: $error')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bottomBarNeeded = _busy || _status != null || _result != null;
+    final showLive = _recordTabActive &&
+        (_liveStreaming || _liveTranscript.isNotEmpty || _liveStatus != null);
+    final bottomBarNeeded =
+        _busy || _status != null || _result != null || showLive;
 
     return Scaffold(
       appBar: AppBar(
@@ -204,8 +248,11 @@ class _TranscribePageState extends State<TranscribePage>
         controller: _tab,
         children: [
           RecordCard(
-            enabled: !_busy,
-            onSubmit: _onVideoReady,
+            enabled: !_busy && _recordTabActive && _routeActive,
+            onTranscript: _handleLiveTranscript,
+            onStartStreaming: _handleLiveStart,
+            onStopStreaming: _handleLiveStop,
+            onError: _handleLiveError,
             hint: 'Face the camera and say a sentence. Tap stop when done.',
           ),
 
@@ -238,6 +285,66 @@ class _TranscribePageState extends State<TranscribePage>
                     _status!,
                     style: const TextStyle(fontSize: 12),
                   ),
+                ),
+              ),
+            if (showLive)
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Live transcript',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (_liveStreaming)
+                          const Row(
+                            children: [
+                              SizedBox(
+                                width: 12,
+                                height: 12,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                              SizedBox(width: 6),
+                              Text(
+                                'Streaming…',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ],
+                          )
+                        else if (_liveStatus != null)
+                          Text(
+                            _liveStatus!,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: Text(
+                        _liveTranscript.isNotEmpty
+                            ? _liveTranscript
+                            : 'Waiting for partial transcript…',
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             if (_result != null)
