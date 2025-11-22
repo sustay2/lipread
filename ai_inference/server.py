@@ -16,16 +16,21 @@ session = ort.InferenceSession(MODEL_PATH, providers=["CPUExecutionProvider"])
 CHAR_LIST = ["_", "'", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", " "]
 
 def decode_prediction(preds):
-    """Simple Greedy Decoder for CTC output"""
+    """Simple Greedy Decoder for CTC output, returning text per batch element."""
     # preds shape: (Time, Batch, Classes)
     arg_maxes = np.argmax(preds, axis=2)
-    decoded = []
-    for i, index in enumerate(arg_maxes):
-        if index != 0 and (i == 0 or index != arg_maxes[i-1]):
-            # 0 is usually the "blank" token in CTC
-            if index < len(CHAR_LIST):
+
+    decoded_batches = []
+    for sequence in arg_maxes.T:  # Iterate over batch dimension
+        decoded = []
+        prev_index = None
+        for index in sequence:
+            if index != 0 and index != prev_index and index < len(CHAR_LIST):
                 decoded.append(CHAR_LIST[index])
-    return "".join(decoded)
+            prev_index = index
+        decoded_batches.append("".join(decoded))
+
+    return decoded_batches
 
 @app.websocket("/ws/lipread")
 async def websocket_endpoint(websocket: WebSocket):
@@ -57,7 +62,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     
                     # Run Inference
                     outputs = session.run(["logits"], {"video_input": input_tensor})
-                    text = decode_prediction(outputs[0])
+                    text = decode_prediction(outputs[0])[0]
                     
                     # Send result back
                     if text.strip():
