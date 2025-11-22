@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import onnxruntime as ort
 from fastapi import FastAPI, WebSocket
@@ -6,8 +7,10 @@ import uvicorn
 
 app = FastAPI()
 
+MODEL_PATH = os.getenv("AUTOAVSR_MODEL_PATH", "models/vsr_autoavsr.onnx")
+
 # 1. Load the Optimized ONNX Model (Load once at startup)
-session = ort.InferenceSession("auto_avsr_vsr.onnx", providers=["CPUExecutionProvider"])
+session = ort.InferenceSession(MODEL_PATH, providers=["CPUExecutionProvider"])
 
 # Vocabulary mapping (You need the char list from the Auto-AVSR training config)
 CHAR_LIST = ["_", "'", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", " "]
@@ -53,7 +56,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     input_tensor = np.array(buffer)[np.newaxis, np.newaxis, ...].astype(np.float32)
                     
                     # Run Inference
-                    outputs = session.run(["text_output"], {"video_input": input_tensor})
+                    outputs = session.run(["logits"], {"video_input": input_tensor})
                     text = decode_prediction(outputs[0])
                     
                     # Send result back
