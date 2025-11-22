@@ -4,11 +4,13 @@ import 'package:go_router/go_router.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/lessons/lesson_list_screen.dart';
 import '../../features/transcribe/transcribe_page.dart';
+import '../../features/transcribe/transcribe_tab_state.dart';
 import '../../features/results/results_screen.dart';
 import '../../features/profile/profile_page.dart';
 
 class MainNavScaffold extends StatefulWidget {
   final StatefulNavigationShell? navigationShell;
+
   const MainNavScaffold({super.key, this.navigationShell});
 
   @override
@@ -23,23 +25,18 @@ class _MainNavScaffoldState extends State<MainNavScaffold> {
   static const int _profileIdx = 4;
 
   int _localIndex = _homeIdx;
-  int get _index => widget.navigationShell?.currentIndex ?? _localIndex;
 
-  final _persistentPages = const [
-    HomeScreen(),
-    LessonListScreen(),
-    TranscribePage(),
-    ResultsScreen(),
-    ProfilePage(),
-  ];
+  int get _index => widget.navigationShell?.currentIndex ?? _localIndex;
 
   void _onTap(int i) {
     if (widget.navigationShell != null) {
+      // Using go_router's StatefulNavigationShell
       widget.navigationShell!.goBranch(
         i,
         initialLocation: i == widget.navigationShell!.currentIndex,
       );
     } else {
+      // Simple local index for non-go_router usage
       setState(() => _localIndex = i);
     }
   }
@@ -47,10 +44,32 @@ class _MainNavScaffoldState extends State<MainNavScaffold> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final idx = _index;
+
+    // Let transcribe-specific widgets (like RecordCard) know
+    // whether the Transcribe tab is currently active.
+    TranscribeTabState.isActive.value = (idx == _transcribeIdx);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F8FD),
-      body: IndexedStack(index: _index, children: _persistentPages),
+      // IMPORTANT: do NOT keep TranscribePage alive when its tab is inactive.
+      body: IndexedStack(
+        index: idx,
+        children: [
+          const HomeScreen(),
+          const LessonListScreen(),
+
+          // Transcribe tab: only mount the page when active so that
+          // its dispose() runs (releasing the camera) when user leaves the tab.
+          if (idx == _transcribeIdx)
+            const TranscribePage()
+          else
+            const SizedBox.shrink(),
+
+          const ResultsScreen(),
+          const ProfilePage(),
+        ],
+      ),
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         child: ClipRRect(
@@ -73,7 +92,7 @@ class _MainNavScaffoldState extends State<MainNavScaffold> {
               elevation: 0,
               indicatorColor: const Color(0x334A90E2),
               labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-              selectedIndex: _index,
+              selectedIndex: idx,
               onDestinationSelected: _onTap,
               destinations: const [
                 NavigationDestination(

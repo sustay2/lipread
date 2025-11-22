@@ -2,10 +2,6 @@ admin_panel/venv/
 ai_inference/.venv/
 ai_inference/__pycache__
 __pycache__/
-ai_inference/benchmarks/
-ai_inference/models/
-ai_inference/chaplin_tmp/
-ai_inference/tmp_infer/
 admin_panel/lipreadapp-441dd04e8b92.json
 admin_panel/backend/__pycache__
 google-services.json

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_app/services/router.dart';
 
 import '../../models/transcript_result.dart';
 import '../../services/dio_client.dart';
@@ -19,13 +20,15 @@ class TranscribePage extends StatefulWidget {
 }
 
 class _TranscribePageState extends State<TranscribePage>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, RouteAware {
   TranscriptResult? _result;
   String? _status;
   bool _busy = false;
   double _progress = 0.0; // 0..1
   late TabController _tab;
   bool _recordTabActive = true;
+  bool _routeActive = true;
+
 
   @override
   void initState() {
@@ -41,9 +44,53 @@ class _TranscribePageState extends State<TranscribePage>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      // Subscribe this page to route changes
+      routeObserver.subscribe(this, route);
+    }
+  }
+
+  @override
   void dispose() {
+    // Unsubscribe from route observer
+    routeObserver.unsubscribe(this);
     _tab.dispose();
     super.dispose();
+  }
+
+  void _setRouteActive(bool active) {
+    if (_routeActive == active) return;
+    setState(() {
+      _routeActive = active;
+    });
+  }
+
+  // RouteAware hooks:
+  @override
+  void didPush() {
+    // Page was pushed on screen
+    _setRouteActive(true);
+  }
+
+  @override
+  void didPopNext() {
+    // A subsequent route was popped and this one is visible again
+    _setRouteActive(true);
+  }
+
+  @override
+  void didPushNext() {
+    // Another route pushed on top -> this page is now hidden
+    _setRouteActive(false);
+  }
+
+  @override
+  void didPop() {
+    // This route is being popped -> treat as inactive
+    _setRouteActive(false);
   }
 
   /// Persist a successful transcription under:
@@ -155,18 +202,13 @@ class _TranscribePageState extends State<TranscribePage>
       ),
       body: TabBarView(
         controller: _tab,
-        // Important: don't keep the RecordCard tree alive off-screen;
-        // rebuilding it on tab switch forces camera dispose/init cycles safely.
         children: [
-          _recordTabActive
-              ? RecordCard(
+          RecordCard(
             enabled: !_busy,
             onSubmit: _onVideoReady,
-            hint: 'Record a 3–5s clip facing the camera.',
-          )
-              : const Center(
-            child: Text('Switch to Real-time to start recording'),
+            hint: 'Face the camera and say a sentence. Tap stop when done.',
           ),
+
           UploadCard(
             enabled: !_busy,
             onSubmit: _onVideoReady,

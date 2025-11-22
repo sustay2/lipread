@@ -27,6 +27,8 @@ import '../features/activities/quiz_activity_page.dart';
 import 'package:flutter_app/features/activities/activity_screens.dart';
 import 'package:flutter_app/features/transcribe/transcription_history_page.dart';
 
+final RouteObserver<PageRoute<dynamic>> routeObserver = RouteObserver<PageRoute<dynamic>>();
+
 // Stubs for role homes (replace with real pages)
 class CreatorHomeScreen extends StatelessWidget { const CreatorHomeScreen({super.key}); @override Widget build(_) => const Scaffold(body: Center(child: Text('Creator Home'))); }
 class InstructorHomeScreen extends StatelessWidget { const InstructorHomeScreen({super.key}); @override Widget build(_) => const Scaffold(body: Center(child: Text('Instructor Home'))); }

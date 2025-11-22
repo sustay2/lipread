@@ -15,6 +15,7 @@ class ELRLApp extends StatelessWidget {
       themeMode: ThemeMode.light,
       onGenerateRoute: AppNavigator.onGenerateRoute,
       initialRoute: Routes.splash,
+      navigatorObservers: [routeObserver],
     );
   }
 }

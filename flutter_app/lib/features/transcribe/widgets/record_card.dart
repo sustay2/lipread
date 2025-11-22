@@ -7,6 +7,11 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../common/theme/app_colors.dart';
 
+/// Simple "record and auto-upload" card:
+/// - User taps Record to start camera & recording
+/// - Speaks as long as they want
+/// - Taps Stop → recording stops and the resulting file is
+///   automatically passed to [onSubmit(file)]
 class RecordCard extends StatefulWidget {
   final bool enabled;
   final Future<void> Function(File file) onSubmit;
@@ -26,61 +31,61 @@ class RecordCard extends StatefulWidget {
 class _RecordCardState extends State<RecordCard>
     with WidgetsBindingObserver {
   CameraController? _ctrl;
-  bool _recording = false;
   bool _initializing = false;
+  bool _recording = false;
+  bool _submitting = false;
   File? _lastFile;
-  Timer? _autoStopTimer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _init();
+    // We only start camera when user taps Record.
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    if (_ctrl?.value.isRecordingVideo == true) {
-      _ctrl?.stopVideoRecording();
-    }
-    _ctrl?.dispose();
-    _cancelAutoStop();
+    _disposeController();
     super.dispose();
   }
 
-  void _cancelAutoStop() {
-    _autoStopTimer?.cancel();
-    _autoStopTimer = null;
+  // ---------- App lifecycle ----------
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // If app goes inactive or to background, release camera.
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      _disposeController();
+    }
   }
+
+  // ---------- Camera / controller helpers ----------
 
   Future<void> _disposeController() async {
     final c = _ctrl;
     _ctrl = null;
+
     if (c != null) {
       try {
         if (c.value.isRecordingVideo) {
           await c.stopVideoRecording();
         }
-      } catch (_) {}
+      } catch (_) {
+        // ignore
+      }
       await c.dispose();
     }
-    if (mounted) setState(() {});
-  }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    final ctrl = _ctrl;
-
-    if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused) {
-      _disposeController();
-    } else if (state == AppLifecycleState.resumed) {
-      if (ctrl == null) _init();
+    if (mounted) {
+      setState(() {
+        _recording = false;
+      });
     }
   }
 
-  Future<void> _init() async {
+  Future<void> _initCameraIfNeeded() async {
     if (_initializing || _ctrl != null) return;
     _initializing = true;
     try {
@@ -88,9 +93,7 @@ class _RecordCardState extends State<RecordCard>
       if (cams.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('No camera available'),
-            ),
+            const SnackBar(content: Text('No camera available')),
           );
         }
         return;
@@ -111,6 +114,7 @@ class _RecordCardState extends State<RecordCard>
         await ctrl.dispose();
         return;
       }
+
       setState(() {
         _ctrl = ctrl;
       });
@@ -125,30 +129,48 @@ class _RecordCardState extends State<RecordCard>
     }
   }
 
-  Future<void> _toggleRecord() async {
-    if (!widget.enabled) return;
+  // ---------- Record / stop / auto-upload ----------
 
+  Future<void> _toggleRecord() async {
+    if (!widget.enabled || _submitting) return;
+
+    // Ensure camera is ready
     if (_ctrl == null || !_ctrl!.value.isInitialized) {
-      await _init();
-      if (_ctrl == null) return;
+      await _initCameraIfNeeded();
+      if (_ctrl == null || !_ctrl!.value.isInitialized) return;
     }
 
     final ctrl = _ctrl!;
     try {
       if (ctrl.value.isRecordingVideo) {
-        final x = await ctrl.stopVideoRecording();
-        _cancelAutoStop();
+        // ---- STOP: save file & auto-upload ----
+        final rec = await ctrl.stopVideoRecording();
+
         final tmpDir = await getTemporaryDirectory();
         final file = File(
           '${tmpDir.path}/transcribe_${DateTime.now().millisecondsSinceEpoch}.mp4',
         );
-        await File(x.path).copy(file.path);
+        await File(rec.path).copy(file.path);
+
         if (!mounted) return;
+
         setState(() {
           _recording = false;
           _lastFile = file;
+          _submitting = true;
         });
+
+        try {
+          await widget.onSubmit(file);
+        } finally {
+          if (mounted) {
+            setState(() {
+              _submitting = false;
+            });
+          }
+        }
       } else {
+        // ---- START recording ----
         await ctrl.prepareForVideoRecording();
         await ctrl.startVideoRecording();
         if (!mounted) return;
@@ -156,34 +178,13 @@ class _RecordCardState extends State<RecordCard>
           _recording = true;
           _lastFile = null;
         });
-
-        _cancelAutoStop();
-        _autoStopTimer =
-            Timer(const Duration(seconds: 5), () async {
-              if (!mounted) return;
-              if (_ctrl != null && _ctrl!.value.isRecordingVideo) {
-                try {
-                  final x = await _ctrl!.stopVideoRecording();
-                  final tmpDir = await getTemporaryDirectory();
-                  final file = File(
-                    '${tmpDir.path}/transcribe_${DateTime.now().millisecondsSinceEpoch}.mp4',
-                  );
-                  await File(x.path).copy(file.path);
-                  if (!mounted) return;
-                  setState(() {
-                    _recording = false;
-                    _lastFile = file;
-                  });
-                } catch (_) {
-                  // ignore
-                }
-              }
-            });
       }
     } catch (e) {
-      _cancelAutoStop();
       if (mounted) {
-        setState(() => _recording = false);
+        setState(() {
+          _recording = false;
+          _submitting = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Recording error: $e')),
         );
@@ -191,15 +192,12 @@ class _RecordCardState extends State<RecordCard>
     }
   }
 
+  // ---------- UI ----------
+
   @override
   Widget build(BuildContext context) {
-    if ((_ctrl == null || !_ctrl!.value.isInitialized) &&
-        !_initializing) {
-      _init();
-    }
-
-    final canSubmit =
-        widget.enabled && _lastFile != null && !_recording;
+    final isBusy = _initializing || _submitting;
+    final buttonEnabled = widget.enabled && !isBusy;
 
     return Column(
       children: [
@@ -235,58 +233,33 @@ class _RecordCardState extends State<RecordCard>
               borderRadius: BorderRadius.circular(20),
               child: Stack(
                 children: [
-                  if (_ctrl == null ||
-                      !_ctrl!.value.isInitialized)
+                  // --- Camera preview / placeholder (like live UI) ---
+                  if (_ctrl == null || !_ctrl!.value.isInitialized)
                     const Center(
-                      child: CircularProgressIndicator(),
+                      child: Text(
+                        'Tap Record to activate camera',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey,
+                        ),
+                      ),
                     )
                   else
                     Center(
-                      child: AspectRatio(
-                        aspectRatio: _ctrl!.value.aspectRatio,
-                        child: CameraPreview(_ctrl!),
-                      ),
-                    ),
-                  Positioned(
-                    left: 16,
-                    right: 16,
-                    bottom: 16,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: FilledButton.icon(
-                            style: FilledButton.styleFrom(
-                              backgroundColor: _recording
-                                  ? AppColors.error
-                                  : AppColors.primary,
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 12,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius:
-                                BorderRadius.circular(999),
-                              ),
-                            ),
-                            onPressed:
-                            widget.enabled ? _toggleRecord : null,
-                            icon: Icon(
-                              _recording
-                                  ? Icons.stop_rounded
-                                  : Icons.fiber_manual_record_rounded,
-                              size: 18,
-                            ),
-                            label: Text(
-                              _recording ? 'Stop recording' : 'Record',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                      child: ClipRect(
+                        child: FittedBox(
+                          fit: BoxFit.cover,
+                          child: SizedBox(
+                            width: _ctrl!.value.previewSize?.height ?? 1,
+                            height: _ctrl!.value.previewSize?.width ?? 1,
+                            child: CameraPreview(_ctrl!),
                           ),
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-                  if (_lastFile != null && !_recording)
+
+                  // --- Status chip (top-right) ---
+                  if (_submitting || (_lastFile != null && !_recording))
                     Positioned(
                       top: 12,
                       right: 12,
@@ -296,46 +269,66 @@ class _RecordCardState extends State<RecordCard>
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.45),
+                          color: Colors.black.withOpacity(0.5),
                           borderRadius: BorderRadius.circular(999),
                         ),
-                        child: const Text(
-                          'Clip ready',
-                          style: TextStyle(
+                        child: Text(
+                          _submitting
+                              ? 'Uploading & transcribing...'
+                              : 'Clip sent',
+                          style: const TextStyle(
                             fontSize: 11,
                             color: Colors.white,
                           ),
                         ),
                       ),
                     ),
+
+                  // --- Bottom Record / Stop button (similar to live UI) ---
+                  Positioned(
+                    left: 16,
+                    right: 16,
+                    bottom: 16,
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor:
+                        _recording ? AppColors.error : AppColors.primary,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                      onPressed: buttonEnabled ? _toggleRecord : null,
+                      icon: _submitting
+                          ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white,
+                          ),
+                        ),
+                      )
+                          : Icon(
+                        _recording
+                            ? Icons.stop_rounded
+                            : Icons.fiber_manual_record_rounded,
+                        size: 18,
+                      ),
+                      label: Text(
+                        _recording
+                            ? 'Stop & transcribe'
+                            : 'Record',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
-          ),
-        ),
-        Padding(
-          padding:
-          const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 12,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  onPressed: canSubmit
-                      ? () => widget.onSubmit(_lastFile!)
-                      : null,
-                  icon: const Icon(Icons.cloud_upload_outlined),
-                  label: const Text('Upload & transcribe'),
-                ),
-              ),
-            ],
           ),
         ),
       ],
