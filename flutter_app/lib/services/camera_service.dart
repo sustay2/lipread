@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
@@ -56,8 +56,13 @@ class CameraService {
 
     if (_streaming) return;
 
-    await ctrl.startImageStream(onImage);
-    _streaming = true;
+    try {
+      await ctrl.startImageStream(onImage);
+      _streaming = true;
+    } catch (e) {
+      _streaming = false;
+      rethrow;
+    }
   }
 
   Future<void> stopStream() async {
