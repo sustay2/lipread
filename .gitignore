@@ -7,8 +7,7 @@ __pycache__/
 *.pth
 
 admin_panel/backend/__pycache__/
-admin_panel/venv/
-ai_inference/.venv/
+.venv
 ai_inference/__pycache__/
 
 # Credentials and secrets
