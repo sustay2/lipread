@@ -6,8 +6,38 @@ from pathlib import Path
 # Adjust python path to import auto_avsr
 # -----------------------
 ROOT = Path(__file__).resolve().parent
-AUTO_AVSR_ROOT = ROOT / "auto_avsr"
-sys.path.insert(0, str(AUTO_AVSR_ROOT))
+
+# Prefer the downloaded Auto-AVSR sources under ai_inference/models, but fall back
+# to a local checkout (ai_inference/auto_avsr) for convenience. This mirrors the
+# layout described in the README where model artifacts are kept inside models/.
+auto_avsr_candidates = [
+    ROOT / "models" / "auto_avsr",
+    ROOT / "auto_avsr",
+]
+
+for candidate in auto_avsr_candidates:
+    if candidate.exists():
+        AUTO_AVSR_ROOT = candidate
+        # Ensure the `pipelines` package is importable even if it lives in a nested
+        # folder (some distributions wrap the source under an extra directory).
+        if (AUTO_AVSR_ROOT / "pipelines").exists():
+            sys.path.insert(0, str(AUTO_AVSR_ROOT))
+        else:
+            for pipelines_dir in AUTO_AVSR_ROOT.rglob("pipelines"):
+                sys.path.insert(0, str(pipelines_dir.parent))
+                break
+            else:
+                raise FileNotFoundError(
+                    "Auto-AVSR sources found, but no 'pipelines' package detected. "
+                    "Please ensure the downloaded Auto-AVSR code contains the "
+                    "'pipelines' directory."
+                )
+        break
+else:
+    raise FileNotFoundError(
+        "Auto-AVSR sources not found. Please place them under "
+        "ai_inference/models/auto_avsr or ai_inference/auto_avsr."
+    )
 
 from pipelines.model import AVSR
 
