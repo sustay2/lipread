@@ -81,8 +81,8 @@ class FrameProcessor:
         """Run FaceMesh and return pixel landmarks if available."""
 
         h, w = rgb_frame.shape[:2]
-        image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
-        result = self._face_mesh.process(image)
+        contiguous_frame = np.ascontiguousarray(rgb_frame)
+        result = self._face_mesh.process(contiguous_frame)
         if not result.multi_face_landmarks:
             return None
 
