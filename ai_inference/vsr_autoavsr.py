@@ -80,7 +80,7 @@ class AutoAVSRVSR:
 
         Args:
             video_frames: Array or tensor shaped either [T, H, W, C] or
-                [T, C, H, W]. The model expects RGB ordering.
+                [T, C, H, W]. The model expects RGB ordering and float data.
 
         Returns:
             Text decoded from the visual-only Auto-AVSR stack.
@@ -102,9 +102,15 @@ class AutoAVSRVSR:
         if video_tensor.shape[-1] in (1, 3):
             video_tensor = video_tensor.permute(0, 3, 1, 2)
 
+        # Normalize to float32 [0, 1] before the official transform.
+        if video_tensor.dtype != torch.float32:
+            video_tensor = video_tensor.float()
+        if video_tensor.max() > 1.5:
+            video_tensor = video_tensor / 255.0
+
         # Normalize + crop using the training-time pipeline.
-        processed = self.video_transform(video_tensor.float())
-        processed = processed.to(self.device)
+        processed = self.video_transform(video_tensor)
+        processed = processed.to(self.device, non_blocking=True)
 
         # Forward pass in video-only mode.
         feats = self.model.model.frontend(processed.unsqueeze(0))
