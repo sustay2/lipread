@@ -49,18 +49,15 @@ class VsrSocket {
     final base = kTranscribeBaseUri;
     final scheme = base.scheme == 'https' ? 'wss' : 'ws';
 
-    final basePath = base.path.endsWith('/') && base.path.length > 1
-        ? base.path.substring(0, base.path.length - 1)
-        : base.path;
-    final normalizedPath = basePath.isEmpty || basePath == '/'
-        ? '/ws/vsr'
-        : '$basePath/ws/vsr';
+    final base = kTranscribeBaseUri;
+    final scheme =
+        (base.scheme == 'https' || base.scheme == 'wss') ? 'wss' : 'ws';
 
     return Uri(
       scheme: scheme,
-      host: base.host,
-      port: base.hasPort ? base.port : null,
-      path: normalizedPath,
+      pathSegments: segments,
+      query: null,
+      fragment: null,
     );
   }
 
