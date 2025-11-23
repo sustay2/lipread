@@ -195,6 +195,7 @@ class _RecordCardState extends State<RecordCard> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final isBusy = _initializing || _connecting;
     final buttonEnabled = widget.enabled && !isBusy;
+    final ctrl = _cameraService.controller;
 
     return Column(
       children: [
@@ -231,7 +232,6 @@ class _RecordCardState extends State<RecordCard> with WidgetsBindingObserver {
               child: Stack(
                 children: [
                   // --- Camera preview / placeholder (like live UI) ---
-                  final ctrl = _cameraService.controller;
                   if (ctrl == null || !ctrl.value.isInitialized)
                     const Center(
                       child: Text(

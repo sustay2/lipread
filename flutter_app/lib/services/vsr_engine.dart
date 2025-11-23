@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 
 import 'camera_service.dart';
 import 'vsr_socket.dart';

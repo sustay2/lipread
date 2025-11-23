@@ -91,34 +91,32 @@ class CameraService {
     int quality = 80,
     int targetWidth = 224,
   }) async {
+    final frame = _YuvFrame(
+      image.width,
+      image.height,
+      image.planes.map((p) => Uint8List.fromList(p.bytes)).toList(),
+      image.planes.map((p) => p.bytesPerRow).toList(),
+      image.planes.map((p) => p.bytesPerPixel ?? 1).toList(),
+    );
+
     // Use compute to avoid blocking UI if heavy. Falls back to sync on web.
     if (!kIsWeb) {
       return compute<(_YuvFrame, int, int), Uint8List>(
-        _encodeFrame,
+        _encodeFrameCompute,
         (
-          _YuvFrame(
-            image.width,
-            image.height,
-            image.planes.map((p) => Uint8List.fromList(p.bytes)).toList(),
-            image.planes.map((p) => p.bytesPerRow).toList(),
-            image.planes.map((p) => p.bytesPerPixel ?? 1).toList(),
-          ),
+          frame,
           quality,
           targetWidth,
         ),
       );
     }
 
-    return _encodeFrame(
-      _YuvFrame(
-        image.width,
-        image.height,
-        image.planes.map((p) => p.bytes).toList(),
-        image.planes.map((p) => p.bytesPerRow).toList(),
-        image.planes.map((p) => p.bytesPerPixel ?? 1).toList(),
+    return _encodeFrameCompute(
+      (
+        frame,
+        quality,
+        targetWidth,
       ),
-      quality,
-      targetWidth,
     );
   }
 }
@@ -138,7 +136,10 @@ class _YuvFrame {
   );
 }
 
-Uint8List _encodeFrame(_YuvFrame frame, int quality, int targetWidth) {
+Uint8List _encodeFrameCompute((_YuvFrame, int, int) args) {
+  final frame = args.$1;
+  final quality = args.$2;
+  final targetWidth = args.$3;
   final width = frame.width;
   final height = frame.height;
   final yPlane = frame.planes[0];
