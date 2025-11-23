@@ -28,29 +28,20 @@ class VsrEngine {
 
     await _cameraService.initialize();
 
-    try {
-      final socket = await VsrSocket.connect();
-      _socket = socket;
-      _socketSub = socket.partialTranscripts.listen(
-        onTranscript,
-        onError: (Object e) async {
-          await stop();
-          onError?.call(e);
-        },
-      );
+    final socket = await VsrSocket.connect();
+    _socket = socket;
+    _socketSub = socket.partialTranscripts.listen(
+      onTranscript,
+      onError: (Object e) async {
+        await stop();
+        onError?.call(e);
+      },
+    );
 
-      await _cameraService.startStream((image) => _handleImage(image, onError));
+    await _cameraService.startStream((image) => _handleImage(image, onError));
 
-      _lastSent = null;
-      _running = true;
-      onStarted?.call();
-    } catch (e) {
-      await _socketSub?.cancel();
-      _socketSub = null;
-      await _socket?.close();
-      _socket = null;
-      rethrow;
-    }
+    _running = true;
+    onStarted?.call();
   }
 
   Future<void> stop() async {
