@@ -39,6 +39,14 @@ class ProfilePage extends StatelessWidget {
         .orderBy('earnedAt', descending: true)
         .snapshots();
 
+    final streaksStream = FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
+        .collection('streaks')
+        .orderBy('lastDayAt', descending: true)
+        .limit(1)
+        .snapshots();
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -247,10 +255,27 @@ class ProfilePage extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: _StatCard(
-                        icon: Icons.local_fire_department_rounded,
-                        label: 'Streak',
-                        value: streak == 1 ? '1 day' : '$streak days',
+                      child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                        stream: streaksStream,
+                        builder: (context, streakSnap) {
+                          int latestStreak = streak;
+
+                          if (streakSnap.hasData &&
+                              streakSnap.data!.docs.isNotEmpty) {
+                            final data = streakSnap.data!.docs.first.data();
+                            latestStreak =
+                                (data['count'] as num?)?.toInt() ?? latestStreak;
+                          }
+
+                          final label =
+                              latestStreak == 1 ? '1 day' : '$latestStreak days';
+
+                          return _StatCard(
+                            icon: Icons.local_fire_department_rounded,
+                            label: 'Streak',
+                            value: label,
+                          );
+                        },
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -370,9 +395,10 @@ class ProfilePage extends StatelessWidget {
                           ),
                           const SizedBox(height: 10),
                           SizedBox(
-                            height: 140,
+                            height: 160,
                             child: ListView.separated(
                               scrollDirection: Axis.horizontal,
+                              padding: const EdgeInsets.only(right: 4),
                               itemCount: toShow.length,
                               separatorBuilder: (_, __) =>
                               const SizedBox(width: 10),
