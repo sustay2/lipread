@@ -70,41 +70,39 @@ class AutoAVSRVSR:
 
         return module
 
+    # vsr_autoavsr.py (inside transcribe method)
+
     @torch.inference_mode()
     def transcribe(self, video_frames: Union[torch.Tensor, "numpy.ndarray"]) -> str:
-        """Run lip-reading inference on a chunk of frames.
-
-        Args:
-            video_frames: Array or tensor shaped either [T, H, W, C] or
-                [T, C, H, W]. The model expects RGB ordering and float data.
-
-        Returns:
-            Text decoded from the visual-only Auto-AVSR stack.
-        """
-
+        
+        # 1. Convert to Tensor
         video_tensor = (
             video_frames
             if isinstance(video_frames, torch.Tensor)
             else torch.as_tensor(video_frames)
         )
 
+        # 2. Validate Shape
         if video_tensor.ndim != 4:
-            raise ValueError(
-                "Expected video tensor with shape [T, H, W, C] or [T, C, H, W], "
-                f"got {video_tensor.shape}"
-            )
+             # Expect [T, H, W, C] from processor
+             raise ValueError(f"Invalid shape: {video_tensor.shape}")
 
-        # Convert THWC -> TCHW if necessary.
-        if video_tensor.shape[-1] in (1, 3):
+        # 3. Permute [T, H, W, C] -> [T, C, H, W] for the Transform
+        if video_tensor.shape[-1] == 3:
             video_tensor = video_tensor.permute(0, 3, 1, 2)
-
-        # Normalize to float32 [0, 1] before the official transform.
+        
+        # 4. Ensure Float32 [0, 1] range
         if video_tensor.dtype != torch.float32:
             video_tensor = video_tensor.float()
+        
+        # Safety check: If data somehow came in as 0-255, fix it.
+        # But since frame_processor now guarantees 0-1, this is just a guard rail.
         if video_tensor.max() > 1.5:
             video_tensor = video_tensor / 255.0
 
-        # Normalize + crop using the training-time pipeline.
+        # 5. Apply Model Transform (Normalization/Cropping/Grayscaling)
+        # This transform expects (T, C, H, W) or (C, T, H, W) depending on version.
+        # Usually VideoTransform("test") handles the [T, C, H, W] input standardly.
         processed = self.video_transform(video_tensor)
         processed = processed.to(self.device, non_blocking=True)
 

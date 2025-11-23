@@ -2,74 +2,78 @@ from __future__ import annotations
 import base64
 import logging
 from typing import List, Optional, Tuple
+
 import cv2
 import numpy as np
+import dlib
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# Auto-AVSR expects 112x112 grayscale mouth ROI
 TARGET_SIZE = 112
 
-# Load OpenCV DNN face detector
-MODEL_PROTO = "models/deploy.prototxt"
-MODEL_WEIGHTS = "models/res10_300x300_ssd_iter_140000_fp16.caffemodel"
+# Mouth landmark indices (Auto-AVSR compatible)
+MOUTH_IDXS = list(range(48, 68))  # 48–67
 
-detector = cv2.dnn.readNetFromCaffe(MODEL_PROTO, MODEL_WEIGHTS)
+PREDICTOR_PATH = (
+    Path(__file__).parent / "models" / "shape_predictor_68_face_landmarks.dat"
+)
 
 class FrameProcessor:
+    """Mouth-only ROI extractor using dlib landmarks."""
 
     def __init__(self):
-        self._last_box: Optional[Tuple[int, int, int, int]] = None
+        self.detector = dlib.get_frontal_face_detector()
+        if not PREDICTOR_PATH.exists():
+            raise FileNotFoundError("Missing shape_predictor_68_face_landmarks.dat!")
+        self.predictor = dlib.shape_predictor(str(PREDICTOR_PATH))
+        self._last_box = None  # (x0, y0, x1, y1)
 
-    #
-    # Decode helpers
-    #
+    # ------------------------------------------------------------
+    # Decoding helpers
+    # ------------------------------------------------------------
     @staticmethod
-    def decode_base64_frame(data: str):
+    def decode_base64_frame(data: str) -> Optional[np.ndarray]:
         try:
-            bytes_ = base64.b64decode(data)
-            return FrameProcessor.decode_bytes_frame(bytes_)
-        except:
+            frame_bytes = base64.b64decode(data)
+        except Exception:
             return None
+        return FrameProcessor.decode_bytes_frame(frame_bytes)
 
     @staticmethod
-    def decode_bytes_frame(data: bytes):
+    def decode_bytes_frame(data: bytes) -> Optional[np.ndarray]:
         arr = np.frombuffer(data, np.uint8)
         img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
         if img is None:
             return None
         return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    #
-    # Face detection
-    #
-    def _detect_face_box(self, frame: np.ndarray):
+    # ------------------------------------------------------------
+    # Mouth ROI via dlib 68-landmarks
+    # ------------------------------------------------------------
+    def _detect_mouth_box(self, rgb: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
+        h, w = rgb.shape[:2]
 
-        h, w = frame.shape[:2]
+        gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+        rects = self.detector(gray, 0)
 
-        # DNN expects BGR
-        bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-
-        blob = cv2.dnn.blobFromImage(
-            bgr, 1.0, (300, 300),
-            (104.0, 177.0, 123.0), swapRB=False
-        )
-        detector.setInput(blob)
-        detections = detector.forward()
-
-        # Only one face expected
-        conf = detections[0, 0, 0, 2]
-        if conf < 0.5:
+        if len(rects) == 0:
             return None
 
-        box = detections[0, 0, 0, 3:7] * np.array([w, h, w, h])
-        x0, y0, x1, y1 = box.astype(int)
+        shape = self.predictor(gray, rects[0])
+        pts = np.array([(shape.part(i).x, shape.part(i).y) for i in MOUTH_IDXS])
 
-        # Square crop expansion
-        bw = x1 - x0
-        bh = y1 - y0
-        side = max(bw, bh)
-        cx = (x0 + x1) // 2
-        cy = (y0 + y1) // 2
+        min_x, min_y = pts.min(axis=0)
+        max_x, max_y = pts.max(axis=0)
+
+        box_w = max_x - min_x
+        box_h = max_y - min_y
+        side = int(max(box_w, box_h) * 1.4)  # pad by ~40%
+
+        cx = (min_x + max_x) // 2
+        cy = (min_y + max_y) // 2
+
         half = side // 2
 
         x0 = max(0, cx - half)
@@ -79,20 +83,26 @@ class FrameProcessor:
 
         return (x0, y0, x1, y1)
 
-    #
-    # Main processor
-    #
-    def process_frames(self, frames: List[np.ndarray]) -> np.ndarray:
-        if not frames:
-            return np.zeros((0, TARGET_SIZE, TARGET_SIZE, 3), np.float32)
+    # ------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------
+    # frame_processor.py
 
-        ref = frames[len(frames)//2]
-        box = self._detect_face_box(ref)
+    def process_frames(self, frames: List[np.ndarray]) -> np.ndarray:
+        """
+        Returns:
+            (T, 112, 112, 3) float32 in range [0, 1].
+        """
+        if not frames:
+            # Return empty with 3 channels (RGB)
+            return np.empty((0, TARGET_SIZE, TARGET_SIZE, 3), dtype=np.float32)
+
+        ref = frames[len(frames) // 2]
+        box = self._detect_mouth_box(ref)
 
         if box is None:
             box = self._last_box
-            if box is None:
-                # fallback: center crop
+            if box is None:  # final fallback
                 h, w = ref.shape[:2]
                 side = min(h, w)
                 cx, cy = w // 2, h // 2
@@ -100,34 +110,25 @@ class FrameProcessor:
                 box = (cx-half, cy-half, cx+half, cy+half)
 
         self._last_box = box
+
         x0, y0, x1, y1 = box
+        processed = []
 
-        # Focus on mouth region inside the detected face box
-        face = ref[y0:y1, x0:x1]
-        fh, fw = face.shape[:2]
-
-        # Heuristic mouth ROI (works for neutral webcam angles)
-        mx0 = int(fw * 0.15)
-        mx1 = int(fw * 0.85)
-
-        my0 = int(fh * 0.55)   # lower half of the face
-        my1 = int(fh * 0.95)
-
-        # Convert back to full-frame coordinates
-        x0 += mx0
-        x1 = x0 + (mx1 - mx0)
-        y0 += my0
-        y1 = y0 + (my1 - my0)
-
-        crops = []
         for f in frames:
-            crop = f[y0:y1, x0:x1]
-            if crop.size == 0:
+            mouth = f[y0:y1, x0:x1]
+            if mouth.size == 0:
                 continue
-            crop = cv2.resize(crop, (TARGET_SIZE, TARGET_SIZE))
-            crops.append(crop.astype(np.float32) / 255.0)
 
-        if not crops:
-            return np.zeros((0, TARGET_SIZE, TARGET_SIZE, 3), np.float32)
+            # RESIZE ONLY. Do not convert to Gray. Do not Normalize to -1.
+            mouth = cv2.resize(mouth, (TARGET_SIZE, TARGET_SIZE), cv2.INTER_AREA)
+            
+            # Normalize to [0, 1] only. 
+            # Auto-AVSR VideoTransform expects [0,1] or [0,255]. 
+            mouth = mouth.astype(np.float32) / 255.0
 
-        return np.stack(crops)
+            processed.append(mouth)
+
+        if not processed:
+            return np.empty((0, TARGET_SIZE, TARGET_SIZE, 3), dtype=np.float32)
+
+        return np.stack(processed, axis=0)
