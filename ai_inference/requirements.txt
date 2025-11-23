@@ -1,0 +1,10 @@
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+numpy==2.2.6
+opencv-python-headless==4.10.0.84
+mediapipe==0.10.14
+pillow==11.3.0
+torch==2.8.0+cu126
+torchvision==0.23.0+cu126
+pytorch-lightning==2.5.5
+auto-avsr @ file:./auto_avsr

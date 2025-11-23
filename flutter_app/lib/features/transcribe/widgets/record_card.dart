@@ -1,12 +1,11 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:image/image.dart' as img;
 
 import '../../../common/theme/app_colors.dart';
-import '../../../services/lipread_socket.dart';
+import '../../../services/camera_service.dart';
+import '../../../services/vsr_engine.dart';
 
 /// Simple "record and stream" card:
 /// - User taps Record to start camera & live streaming over WebSocket
@@ -35,14 +34,11 @@ class RecordCard extends StatefulWidget {
 }
 
 class _RecordCardState extends State<RecordCard> with WidgetsBindingObserver {
-  CameraController? _ctrl;
+  final CameraService _cameraService = CameraService();
+  late final VsrEngine _engine = VsrEngine(_cameraService);
   bool _initializing = false;
   bool _recording = false;
   bool _connecting = false;
-  LipreadSocket? _socket;
-  StreamSubscription? _socketSub;
-  DateTime? _lastFrameSent;
-  bool _encoding = false;
 
   @override
   void initState() {
@@ -54,6 +50,7 @@ class _RecordCardState extends State<RecordCard> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _disposeController();
+    _engine.dispose();
     super.dispose();
   }
 
@@ -79,20 +76,7 @@ class _RecordCardState extends State<RecordCard> with WidgetsBindingObserver {
 
   Future<void> _disposeController() async {
     await _stopStreaming(fromDispose: true);
-
-    final c = _ctrl;
-    _ctrl = null;
-
-    if (c != null) {
-      try {
-        if (c.value.isStreamingImages) {
-          await c.stopImageStream();
-        }
-      } catch (_) {
-        // ignore
-      }
-      await c.dispose();
-    }
+    await _cameraService.dispose();
 
     if (mounted) {
       setState(() {
@@ -103,38 +87,13 @@ class _RecordCardState extends State<RecordCard> with WidgetsBindingObserver {
   }
 
   Future<void> _initCameraIfNeeded() async {
-    if (_initializing || _ctrl != null) return;
+    if (_initializing || _cameraService.controller != null) return;
     _initializing = true;
     try {
-      final cams = await availableCameras();
-      if (cams.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No camera available')),
-          );
-        }
-        return;
+      await _cameraService.initialize();
+      if (mounted) {
+        setState(() {});
       }
-      final front = cams.firstWhere(
-        (c) => c.lensDirection == CameraLensDirection.front,
-        orElse: () => cams.first,
-      );
-
-      final ctrl = CameraController(
-        front,
-        ResolutionPreset.low,
-        enableAudio: false,
-      );
-      await ctrl.initialize();
-
-      if (!mounted) {
-        await ctrl.dispose();
-        return;
-      }
-
-      setState(() {
-        _ctrl = ctrl;
-      });
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -152,9 +111,11 @@ class _RecordCardState extends State<RecordCard> with WidgetsBindingObserver {
     if (!widget.enabled || _connecting || _initializing) return;
 
     // Ensure camera is ready
-    if (_ctrl == null || !_ctrl!.value.isInitialized) {
+    if (_cameraService.controller == null ||
+        !_cameraService.controller!.value.isInitialized) {
       await _initCameraIfNeeded();
-      if (_ctrl == null || !_ctrl!.value.isInitialized) return;
+      if (_cameraService.controller == null ||
+          !_cameraService.controller!.value.isInitialized) return;
     }
 
     try {
@@ -178,38 +139,26 @@ class _RecordCardState extends State<RecordCard> with WidgetsBindingObserver {
   }
 
   Future<void> _startStreaming() async {
-    final ctrl = _ctrl;
-    if (ctrl == null) return;
-
     setState(() {
       _connecting = true;
     });
 
     try {
-      final socket = LipreadSocket.connect();
-      _socketSub = socket.stream.listen(
-        (event) {
-          if (event is String) {
-            widget.onTranscript?.call(event);
-          }
-        },
-        onError: (Object e) {
-          widget.onError?.call(e);
+      await _engine.start(
+        onTranscript: (text) => widget.onTranscript?.call(text),
+        onError: (error) {
+          widget.onError?.call(error);
           _stopStreaming();
         },
+        onStarted: () {
+          if (!mounted) return;
+          setState(() {
+            _recording = true;
+            _connecting = false;
+          });
+          widget.onStartStreaming?.call();
+        },
       );
-
-      _socket = socket;
-      _lastFrameSent = null;
-
-      await ctrl.startImageStream(_handleImage);
-
-      if (!mounted) return;
-      setState(() {
-        _recording = true;
-        _connecting = false;
-      });
-      widget.onStartStreaming?.call();
     } catch (Object e) {
       if (mounted) {
         setState(() {
@@ -223,21 +172,7 @@ class _RecordCardState extends State<RecordCard> with WidgetsBindingObserver {
   }
 
   Future<void> _stopStreaming({bool fromDispose = false}) async {
-    try {
-      if (_ctrl?.value.isStreamingImages ?? false) {
-        await _ctrl?.stopImageStream();
-      }
-    } catch (_) {
-      // ignore
-    }
-
-    await _socketSub?.cancel();
-    _socketSub = null;
-
-    await _socket?.close();
-    _socket = null;
-
-    _lastFrameSent = null;
+    await _engine.stop();
 
     if (mounted && !fromDispose) {
       setState(() {
@@ -254,55 +189,13 @@ class _RecordCardState extends State<RecordCard> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _handleImage(CameraImage image) async {
-    final socket = _socket;
-    if (socket == null || !mounted) return;
-
-    final now = DateTime.now();
-    if (_lastFrameSent != null &&
-        now.difference(_lastFrameSent!) < const Duration(milliseconds: 120)) {
-      return;
-    }
-    _lastFrameSent = now;
-
-    if (_encoding) return;
-    _encoding = true;
-
-    try {
-      final plane = image.planes.first;
-      final luminance = img.Image.fromBytes(
-        width: image.width,
-        height: image.height,
-        bytes: plane.bytes,
-        format: img.Format.luminance,
-        rowStride: plane.bytesPerRow,
-      );
-
-      final resized = img.copyResize(
-        luminance,
-        width: 96,
-        height: 96,
-        interpolation: img.Interpolation.average,
-      );
-
-      final jpgBytes = Uint8List.fromList(
-        img.encodeJpg(resized, quality: 75),
-      );
-
-      socket.sendFrame(jpgBytes);
-    } catch (Object e) {
-      widget.onError?.call(e);
-    } finally {
-      _encoding = false;
-    }
-  }
-
   // ---------- UI ----------
 
   @override
   Widget build(BuildContext context) {
     final isBusy = _initializing || _connecting;
     final buttonEnabled = widget.enabled && !isBusy;
+    final ctrl = _cameraService.controller;
 
     return Column(
       children: [
@@ -339,7 +232,7 @@ class _RecordCardState extends State<RecordCard> with WidgetsBindingObserver {
               child: Stack(
                 children: [
                   // --- Camera preview / placeholder (like live UI) ---
-                  if (_ctrl == null || !_ctrl!.value.isInitialized)
+                  if (ctrl == null || !ctrl.value.isInitialized)
                     const Center(
                       child: Text(
                         'Tap Record to activate camera',
@@ -355,9 +248,9 @@ class _RecordCardState extends State<RecordCard> with WidgetsBindingObserver {
                         child: FittedBox(
                           fit: BoxFit.cover,
                           child: SizedBox(
-                            width: _ctrl!.value.previewSize?.height ?? 1,
-                            height: _ctrl!.value.previewSize?.width ?? 1,
-                            child: CameraPreview(_ctrl!),
+                            width: ctrl.value.previewSize?.height ?? 1,
+                            height: ctrl.value.previewSize?.width ?? 1,
+                            child: CameraPreview(ctrl),
                           ),
                         ),
                       ),
