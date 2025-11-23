@@ -32,6 +32,7 @@ for candidate in auto_avsr_candidates:
                     "Please ensure the downloaded Auto-AVSR code contains the "
                     "'pipelines' directory."
                 )
+        sys.path.insert(0, str(AUTO_AVSR_ROOT))
         break
 else:
     raise FileNotFoundError(
