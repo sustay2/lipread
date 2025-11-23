@@ -3,25 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
-import cv2
-import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import uvicorn
 
-try:
-    import mediapipe as mp
-
-    _FACE_MESH = mp.solutions.face_mesh.FaceMesh(
-        static_image_mode=False, max_num_faces=1, refine_landmarks=True
-    )
-except Exception:  # pylint: disable=broad-except
-    _FACE_MESH = None
-
+from frame_processor import FrameProcessor
 from vsr_autoavsr import AutoAVSRVSR
 
 logger = logging.getLogger("vsr_server")
@@ -31,103 +20,12 @@ app = FastAPI()
 
 # Global model instance loaded at startup.
 vsr_model: Optional[AutoAVSRVSR] = None
+processor = FrameProcessor(crop_size=96)
 
 # Model + runtime config
 WINDOW_SIZE = 16  # number of frames per inference chunk
 STRIDE = 8  # overlap for smoother text
-MOUTH_CROP_SIZE = 112
 CKPT_PATH = Path(__file__).parent / "models" / "vsr_trlrs2lrs3vox2avsp_base.pth"
-
-_last_mouth_box: Optional[Tuple[int, int, int, int]] = None
-
-
-def _detect_mouth_bbox(frame: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
-    if _FACE_MESH is None:
-        return None
-
-    h, w = frame.shape[:2]
-    res = _FACE_MESH.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-    if not res.multi_face_landmarks:
-        return None
-
-    pts = np.array(
-        [(p.x * w, p.y * h) for p in res.multi_face_landmarks[0].landmark],
-        dtype=np.float32,
-    )
-    mouth_pts = pts[61:88]
-    x, y, ww, hh = cv2.boundingRect(mouth_pts.astype(np.int32))
-    size = int(max(ww, hh) * 2.0)
-    cx = x + ww * 0.5
-    cy = y + hh * 0.5
-    half = size * 0.5
-    x0 = max(int(cx - half), 0)
-    y0 = max(int(cy - half), 0)
-    x1 = min(int(cx + half), w)
-    y1 = min(int(cy + half), h)
-    if x1 <= x0 or y1 <= y0:
-        return None
-    return x0, y0, x1, y1
-
-
-def _center_square(h: int, w: int) -> Tuple[int, int, int, int]:
-    side = min(h, w)
-    x0 = (w - side) // 2
-    y0 = (h - side) // 2
-    return x0, y0, x0 + side, y0 + side
-
-
-def crop_mouth_frames(frames: List[np.ndarray]) -> np.ndarray:
-    """Detect mouth once per chunk for speed, then crop/rescale each frame."""
-
-    global _last_mouth_box
-    if not frames:
-        return np.empty((0, MOUTH_CROP_SIZE, MOUTH_CROP_SIZE, 3), dtype=np.uint8)
-
-    bbox = _detect_mouth_bbox(frames[len(frames) // 2]) if _FACE_MESH else None
-    if bbox is None:
-        bbox = _last_mouth_box
-    else:
-        _last_mouth_box = bbox
-
-    if bbox is None:
-        h, w = frames[0].shape[:2]
-        bbox = _center_square(h, w)
-
-    x0, y0, x1, y1 = bbox
-    crops = []
-    for f in frames:
-        crop = f[y0:y1, x0:x1]
-        if crop.size == 0:
-            crop = f
-        crops.append(
-            cv2.resize(
-                crop,
-                (MOUTH_CROP_SIZE, MOUTH_CROP_SIZE),
-                interpolation=cv2.INTER_AREA,
-            )
-        )
-    return np.stack(crops, axis=0)
-
-
-def _decode_frame(data: str) -> Optional[np.ndarray]:
-    """Decode a base64-encoded JPEG frame."""
-
-    try:
-        frame_bytes = base64.b64decode(data)
-        frame_array = np.frombuffer(frame_bytes, np.uint8)
-        frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
-        if frame is None:
-            return None
-        return frame
-    except Exception as exc:  # pylint: disable=broad-except
-        logger.warning("Failed to decode frame: %s", exc)
-        return None
-
-
-def _decode_binary_frame(data: bytes) -> Optional[np.ndarray]:
-    frame_array = np.frombuffer(data, np.uint8)
-    frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
-    return frame
 
 
 @app.on_event("startup")
@@ -138,30 +36,37 @@ async def _load_model():
     logger.info("Model ready on device %s", vsr_model.device)
 
 
+async def _handle_frame_message(message: dict) -> Optional["np.ndarray"]:
+    """Decode an incoming websocket message into an RGB frame."""
+
+    frame = None
+    if message.get("text") is not None:
+        frame = processor.decode_base64_frame(message["text"])
+    elif message.get("bytes") is not None:
+        frame = processor.decode_bytes_frame(message["bytes"])
+
+    return frame
+
+
 @app.websocket("/ws/vsr")
 async def vsr_endpoint(websocket: WebSocket):
     await websocket.accept()
-    frame_buffer: List[np.ndarray] = []
+    frame_buffer: List["np.ndarray"] = []
     loop = asyncio.get_running_loop()
 
     try:
         while True:
             if vsr_model is None:
                 logger.warning("VSR model not yet loaded; skipping frame")
-                await websocket.send_json({"partial_text": ""})
+                await websocket.send_json({"partial": "", "final": False})
                 await asyncio.sleep(0.01)
                 continue
 
             message = await websocket.receive()
-
-            frame: Optional[np.ndarray] = None
-            if message.get("text") is not None:
-                frame = _decode_frame(message["text"])
-            elif message.get("bytes") is not None:
-                frame = _decode_binary_frame(message["bytes"])
+            frame = await _handle_frame_message(message)
 
             if frame is None:
-                await websocket.send_json({"partial_text": ""})
+                await websocket.send_json({"partial": "", "final": False})
                 continue
 
             frame_buffer.append(frame)
@@ -171,7 +76,10 @@ async def vsr_endpoint(websocket: WebSocket):
                 chunk = frame_buffer[-WINDOW_SIZE:]
                 frame_buffer = frame_buffer[-STRIDE:]
 
-                video_frames = crop_mouth_frames(chunk)
+                video_frames = processor.process_frames(chunk)
+                if video_frames.shape[0] == 0:
+                    await websocket.send_json({"partial": "", "final": False})
+                    continue
 
                 # Avoid blocking the event loop during model inference.
                 try:
@@ -180,10 +88,10 @@ async def vsr_endpoint(websocket: WebSocket):
                     )
                 except Exception as exc:  # pylint: disable=broad-except
                     logger.exception("Inference failed: %s", exc)
-                    await websocket.send_json({"partial_text": ""})
+                    await websocket.send_json({"partial": "", "final": False})
                     continue
 
-                await websocket.send_json({"partial_text": text})
+                await websocket.send_json({"partial": text, "final": False})
 
     except WebSocketDisconnect:
         logger.info("Client disconnected")
