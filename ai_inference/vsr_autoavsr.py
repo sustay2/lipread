@@ -1,4 +1,9 @@
+"""Auto-AVSR model wrapper for video-only lip reading."""
+
+from __future__ import annotations
+
 from argparse import Namespace
+from typing import Union
 
 import torch
 
@@ -7,8 +12,17 @@ from auto_avsr.lightning import ModelModule, get_beam_search_decoder
 
 
 class AutoAVSRVSR:
+    """Thin convenience wrapper around the Auto-AVSR Lightning module.
+
+    The class normalizes device placement, preprocesses video frames using the
+    official evaluation transform, and decodes model outputs into text. It is
+    intentionally free of any FastAPI/WebSocket concerns to remain easily
+    reusable in other entrypoints (batch/offline, etc.).
+    """
+
     def __init__(self, ckpt_path: str, device: str = "cuda"):
-        # Fall back to CPU if the requested device is unavailable.
+        # Fall back to CPU if CUDA is unavailable rather than crashing the
+        # service. Users can still force CPU by passing device="cpu".
         self.device = torch.device(
             device if device != "cuda" or torch.cuda.is_available() else "cpu"
         )
@@ -38,7 +52,9 @@ class AutoAVSRVSR:
 
         module = ModelModule(args)
         state = torch.load(ckpt_path, map_location=self.device)
-        state_dict = state["state_dict"] if isinstance(state, dict) and "state_dict" in state else state
+        state_dict = (
+            state["state_dict"] if isinstance(state, dict) and "state_dict" in state else state
+        )
 
         # If keys include the lightning "model." prefix, load the full module.
         if any(k.startswith("model.") for k in state_dict):
@@ -49,10 +65,15 @@ class AutoAVSRVSR:
         return module
 
     @torch.inference_mode()
-    def transcribe(self, video_frames) -> str:
-        """
-        video_frames: numpy array or tensor of shape [T, H, W, 3] (uint8 or float)
-        returns: decoded sentence string
+    def transcribe(self, video_frames: Union[torch.Tensor, "numpy.ndarray"]) -> str:
+        """Run lip-reading inference on a chunk of frames.
+
+        Args:
+            video_frames: Array or tensor shaped either [T, H, W, C] or
+                [T, C, H, W]. The model expects RGB ordering.
+
+        Returns:
+            Text decoded from the visual-only Auto-AVSR stack.
         """
 
         video_tensor = (
@@ -63,7 +84,8 @@ class AutoAVSRVSR:
 
         if video_tensor.ndim != 4:
             raise ValueError(
-                f"Expected video tensor with shape [T, H, W, C] or [T, C, H, W], got {video_tensor.shape}"
+                "Expected video tensor with shape [T, H, W, C] or [T, C, H, W], "
+                f"got {video_tensor.shape}"
             )
 
         # Convert THWC -> TCHW if necessary.
