@@ -197,135 +197,161 @@ class _RecordCardState extends State<RecordCard> with WidgetsBindingObserver {
     final buttonEnabled = widget.enabled && !isBusy;
     final ctrl = _cameraService.controller;
 
-    return Column(
-      children: [
-        if (widget.hint != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                widget.hint!,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ),
-          ),
-        Expanded(
-          child: Container(
-            margin: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.softShadow,
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: Stack(
-                children: [
-                  // --- Camera preview / placeholder (like live UI) ---
-                  if (ctrl == null || !ctrl.value.isInitialized)
-                    const Center(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final hasHint = widget.hint != null;
+        const bottomSectionHeight = 110.0; // button + padding buffer
+        const minCardHeight = 280.0;
+
+        final availableHeight = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : (MediaQuery.of(context).size.height - 120);
+
+        final hintHeight = hasHint ? 36.0 : 0.0;
+        final cardHeight = (availableHeight - hintHeight - bottomSectionHeight)
+            .clamp(minCardHeight, availableHeight);
+
+        return SingleChildScrollView(
+          padding: EdgeInsets.zero,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: availableHeight),
+            child: Column(
+              children: [
+                if (hasHint)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
                       child: Text(
-                        'Tap Record to activate camera',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    )
-                  else
-                    Center(
-                      child: ClipRect(
-                        child: FittedBox(
-                          fit: BoxFit.cover,
-                          child: SizedBox(
-                            width: ctrl.value.previewSize?.height ?? 1,
-                            height: ctrl.value.previewSize?.width ?? 1,
-                            child: CameraPreview(ctrl),
-                          ),
-                        ),
-                      ),
-                    ),
-
-                  // --- Status chip (top-right) ---
-                  if (_connecting || _recording)
-                    Positioned(
-                      top: 12,
-                      right: 12,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.5),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          _connecting ? 'Connecting…' : 'Streaming…',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-
-                  // --- Bottom Record / Stop button (similar to live UI) ---
-                  Positioned(
-                    left: 16,
-                    right: 16,
-                    bottom: 16,
-                    child: FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        backgroundColor:
-                            _recording ? AppColors.error : AppColors.primary,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                      ),
-                      onPressed: buttonEnabled ? _toggleRecord : null,
-                      icon: _connecting
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  Colors.white,
-                                ),
-                              ),
-                            )
-                          : Icon(
-                              _recording
-                                  ? Icons.stop_rounded
-                                  : Icons.fiber_manual_record_rounded,
-                              size: 18,
-                            ),
-                      label: Text(
-                        _recording ? 'Stop streaming' : 'Record',
+                        widget.hint!,
                         style: const TextStyle(
-                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
                         ),
                       ),
                     ),
                   ),
-                ],
-              ),
+                SizedBox(
+                  height: cardHeight,
+                  child: Container(
+                    margin: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.softShadow,
+                          blurRadius: 18,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: Stack(
+                        children: [
+                          // --- Camera preview / placeholder (like live UI) ---
+                          if (ctrl == null || !ctrl.value.isInitialized)
+                            const Center(
+                              child: Text(
+                                'Tap Record to activate camera',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            )
+                          else
+                            Center(
+                              child: ClipRect(
+                                child: FittedBox(
+                                  fit: BoxFit.cover,
+                                  child: SizedBox(
+                                    width: ctrl.value.previewSize?.height ?? 1,
+                                    height: ctrl.value.previewSize?.width ?? 1,
+                                    child: CameraPreview(ctrl),
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                          // --- Status chip (top-right) ---
+                          if (_connecting || _recording)
+                            Positioned(
+                              top: 12,
+                              right: 12,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.5),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  _connecting ? 'Connecting…' : 'Streaming…',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                          // --- Bottom Record / Stop button (similar to live UI) ---
+                          Positioned(
+                            left: 16,
+                            right: 16,
+                            bottom: 16,
+                            child: FilledButton.icon(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: _recording
+                                    ? AppColors.error
+                                    : AppColors.primary,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                              ),
+                              onPressed: buttonEnabled ? _toggleRecord : null,
+                              icon: _connecting
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                          Colors.white,
+                                        ),
+                                      ),
+                                    )
+                                  : Icon(
+                                      _recording
+                                          ? Icons.stop_rounded
+                                          : Icons.fiber_manual_record_rounded,
+                                      size: 18,
+                                    ),
+                              label: Text(
+                                _recording ? 'Stop streaming' : 'Record',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-        ),
-      ],
+        );
+      },
     );
   }
 }
