@@ -124,7 +124,7 @@ class _RecordCardState extends State<RecordCard> with WidgetsBindingObserver {
       } else {
         await _startStreaming();
       }
-    } catch (Object e) {
+    } catch (e) {
       if (mounted) {
         setState(() {
           _recording = false;
