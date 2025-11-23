@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../env.dart';
@@ -32,25 +33,36 @@ class VsrSocket {
   }
 
   static Future<VsrSocket> connect() async {
-    final base = Uri.parse(kTranscribeBase);
-    final scheme = base.scheme == 'https' ? 'wss' : 'ws';
-
-    final basePath = base.path.endsWith('/') && base.path.length > 1
-        ? base.path.substring(0, base.path.length - 1)
-        : base.path;
-    final normalizedPath = basePath.isEmpty || basePath == '/'
-        ? '/ws/vsr'
-        : '$basePath/ws/vsr';
-
-    final uri = Uri(
-      scheme: scheme,
-      host: base.host,
-      port: base.hasPort ? base.port : null,
-      path: normalizedPath,
-    );
-
+    final uri = _buildWebSocketUri();
+    debugPrint('[VsrSocket] Connecting to $uri');
     final channel = WebSocketChannel.connect(uri);
     return VsrSocket._(channel);
+  }
+
+  static Uri _buildWebSocketUri() {
+    if (kTranscribeBase.isEmpty || kTranscribeBaseUri.host.isEmpty) {
+      throw StateError(
+        'TRANSCRIBE_BASE is not configured. Provide --dart-define=TRANSCRIBE_BASE=http://<ip>:8001',
+      );
+    }
+
+    final base = kTranscribeBaseUri;
+    final scheme =
+        (base.scheme == 'https' || base.scheme == 'wss') ? 'wss' : 'ws';
+
+    // Preserve any base path (e.g. /api) while appending ws/vsr.
+    final segments = <String>[
+      ...base.pathSegments.where((s) => s.isNotEmpty),
+      'ws',
+      'vsr',
+    ];
+
+    return base.replace(
+      scheme: scheme,
+      pathSegments: segments,
+      query: null,
+      fragment: null,
+    );
   }
 
   Stream<String> get partialTranscripts => _partialController.stream;
