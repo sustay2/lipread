@@ -12,8 +12,9 @@ db = admin_fs.client()
 COL = "question_banks"
 
 # ---------------- Media config ----------------
-MEDIA_ROOT = os.getenv("MEDIA_ROOT", "/data")
-MEDIA_BASE_URL = os.getenv("MEDIA_BASE_URL", "http://api:8000/media")
+DEFAULT_MEDIA_ROOT = "C:/lipread_media"
+MEDIA_ROOT = os.getenv("MEDIA_ROOT", DEFAULT_MEDIA_ROOT)
+MEDIA_BASE_URL = os.getenv("MEDIA_BASE_URL", "http://localhost:8000/media")
 
 QB_IMG_DIR = "qb/images"
 QB_VID_DIR = "qb/videos/original"
