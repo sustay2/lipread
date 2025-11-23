@@ -47,13 +47,16 @@ class VsrSocket {
     }
 
     final base = kTranscribeBaseUri;
-    final scheme = base.scheme == 'https' ? 'wss' : 'ws';
-
-    final base = kTranscribeBaseUri;
     final scheme =
         (base.scheme == 'https' || base.scheme == 'wss') ? 'wss' : 'ws';
 
-    return Uri(
+    final segments = <String>[
+      ...base.pathSegments.where((s) => s.isNotEmpty),
+      'ws',
+      'vsr',
+    ];
+
+    return base.replace(
       scheme: scheme,
       pathSegments: segments,
       query: null,
