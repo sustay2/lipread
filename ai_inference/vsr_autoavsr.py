@@ -1,0 +1,94 @@
+from argparse import Namespace
+
+import torch
+
+from auto_avsr.datamodule.transforms import VideoTransform
+from auto_avsr.lightning import ModelModule, get_beam_search_decoder
+
+
+class AutoAVSRVSR:
+    def __init__(self, ckpt_path: str, device: str = "cuda"):
+        # Fall back to CPU if the requested device is unavailable.
+        self.device = torch.device(
+            device if device != "cuda" or torch.cuda.is_available() else "cpu"
+        )
+
+        # Match the training-time preprocessing.
+        self.video_transform = VideoTransform("test")
+
+        # Minimal args needed by ModelModule to build the architecture.
+        args = Namespace(modality="video", ctc_weight=0.1, pretrained_model_path=None)
+        self.model = self._load_model(ckpt_path, args)
+        self.model.eval().to(self.device)
+
+        # Cache decoder utilities.
+        self.text_transform = self.model.text_transform
+        self.beam_search = get_beam_search_decoder(
+            self.model.model,
+            self.model.token_list,
+            ctc_weight=getattr(self.model.args, "ctc_weight", 0.1),
+        )
+
+    def _load_model(self, ckpt_path: str, args: Namespace) -> ModelModule:
+        # Lightning checkpoints end with .ckpt; averaged weights are saved as .pth.
+        if ckpt_path.endswith(".ckpt"):
+            return ModelModule.load_from_checkpoint(
+                ckpt_path, args=args, map_location=self.device
+            )
+
+        module = ModelModule(args)
+        state = torch.load(ckpt_path, map_location=self.device)
+        state_dict = state["state_dict"] if isinstance(state, dict) and "state_dict" in state else state
+
+        # If keys include the lightning "model." prefix, load the full module.
+        if any(k.startswith("model.") for k in state_dict):
+            module.load_state_dict(state_dict, strict=False)
+        else:
+            module.model.load_state_dict(state_dict, strict=False)
+
+        return module
+
+    @torch.inference_mode()
+    def transcribe(self, video_frames) -> str:
+        """
+        video_frames: numpy array or tensor of shape [T, H, W, 3] (uint8 or float)
+        returns: decoded sentence string
+        """
+
+        video_tensor = (
+            video_frames
+            if isinstance(video_frames, torch.Tensor)
+            else torch.as_tensor(video_frames)
+        )
+
+        if video_tensor.ndim != 4:
+            raise ValueError(
+                f"Expected video tensor with shape [T, H, W, C] or [T, C, H, W], got {video_tensor.shape}"
+            )
+
+        # Convert THWC -> TCHW if necessary.
+        if video_tensor.shape[-1] in (1, 3):
+            video_tensor = video_tensor.permute(0, 3, 1, 2)
+
+        # Normalize + crop using the training-time pipeline.
+        processed = self.video_transform(video_tensor.float())
+        processed = processed.to(self.device)
+
+        # Forward pass in video-only mode.
+        feats = self.model.model.frontend(processed.unsqueeze(0))
+        feats = self.model.model.proj_encoder(feats)
+        enc_feat, _ = self.model.model.encoder(feats, None)
+        enc_feat = enc_feat.squeeze(0)
+
+        nbest_hyps = self.beam_search(enc_feat)
+        if not nbest_hyps:
+            return ""
+
+        token_ids = torch.tensor(
+            list(map(int, nbest_hyps[0].asdict()["yseq"][1:])), device=self.device
+        )
+        prediction = (
+            self.text_transform.post_process(token_ids.cpu()).replace("<eos>", "")
+        )
+
+        return prediction
