@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI
 from starlette.staticfiles import StaticFiles
-from .routers import (
+from app.routers import (
     health,
     users,
     videos,

@@ -47,17 +47,13 @@ class VsrSocket {
     }
 
     final base = kTranscribeBaseUri;
+    final scheme = base.scheme == 'https' ? 'wss' : 'ws';
+
+    final base = kTranscribeBaseUri;
     final scheme =
         (base.scheme == 'https' || base.scheme == 'wss') ? 'wss' : 'ws';
 
-    // Preserve any base path (e.g. /api) while appending ws/vsr.
-    final segments = <String>[
-      ...base.pathSegments.where((s) => s.isNotEmpty),
-      'ws',
-      'vsr',
-    ];
-
-    return base.replace(
+    return Uri(
       scheme: scheme,
       pathSegments: segments,
       query: null,
