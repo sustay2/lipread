@@ -1,184 +1,133 @@
-"""Frame preprocessing utilities for Auto-AVSR streaming."""
-
 from __future__ import annotations
-
 import base64
 import logging
 from typing import List, Optional, Tuple
-
 import cv2
-import mediapipe as mp
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# Key landmark indices around the mouth for MediaPipe FaceMesh.
-MOUTH_LANDMARKS = [
-    61,
-    146,
-    91,
-    181,
-    84,
-    17,
-    314,
-    405,
-    321,
-    375,
-    291,
-    308,
-]
+TARGET_SIZE = 112
 
+# Load OpenCV DNN face detector
+MODEL_PROTO = "models/deploy.prototxt"
+MODEL_WEIGHTS = "models/res10_300x300_ssd_iter_140000_fp16.caffemodel"
+
+detector = cv2.dnn.readNetFromCaffe(MODEL_PROTO, MODEL_WEIGHTS)
 
 class FrameProcessor:
-    """Decode frames and extract square mouth crops for Auto-AVSR."""
 
-    def __init__(self, crop_size: int = 96, padding_ratio: float = 0.3) -> None:
-        self.crop_size = crop_size
-        self.padding_ratio = padding_ratio
+    def __init__(self):
+        self._last_box: Optional[Tuple[int, int, int, int]] = None
 
-        # MediaPipe expects RGB input. Use refine_landmarks for better mouth keypoints.
-        self._face_mesh = mp.solutions.face_mesh.FaceMesh(
-            static_image_mode=False, max_num_faces=1, refine_landmarks=True
-        )
-
-        self._last_roi: Optional[Tuple[int, int, int, int]] = None
-
-    # ------------------------------------------------------------------
-    # Decoding helpers
-    # ------------------------------------------------------------------
+    #
+    # Decode helpers
+    #
     @staticmethod
-    def decode_base64_frame(data: str) -> Optional[np.ndarray]:
-        """Decode a base64-encoded JPEG/PNG payload into an RGB array."""
-
+    def decode_base64_frame(data: str):
         try:
-            frame_bytes = base64.b64decode(data)
-        except Exception as exc:  # pylint: disable=broad-except
-            logger.warning("Failed to base64-decode frame: %s", exc)
+            bytes_ = base64.b64decode(data)
+            return FrameProcessor.decode_bytes_frame(bytes_)
+        except:
             return None
-        return FrameProcessor.decode_bytes_frame(frame_bytes)
 
     @staticmethod
-    def decode_bytes_frame(data: bytes) -> Optional[np.ndarray]:
-        frame_array = np.frombuffer(data, np.uint8)
-        if frame_array.size == 0:
+    def decode_bytes_frame(data: bytes):
+        arr = np.frombuffer(data, np.uint8)
+        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if img is None:
             return None
-        frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
-        if frame is None:
-            return None
-        if frame.ndim != 3 or frame.shape[2] != 3:
-            return None
-        # Convert BGR (OpenCV default) -> RGB for MediaPipe and the model.
-        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    # ------------------------------------------------------------------
-    # Landmark + ROI utilities
-    # ------------------------------------------------------------------
-    def _extract_landmarks(self, full_frame_rgb: np.ndarray) -> Optional[np.ndarray]:
-        """Run FaceMesh on the *original* frame and return pixel landmarks."""
+    #
+    # Face detection
+    #
+    def _detect_face_box(self, frame: np.ndarray):
 
-        if full_frame_rgb.ndim != 3 or full_frame_rgb.shape[2] != 3:
-            return None
+        h, w = frame.shape[:2]
 
-        height, width = full_frame_rgb.shape[:2]
-        contiguous_frame = np.ascontiguousarray(full_frame_rgb)
-        result = self._face_mesh.process(contiguous_frame)
-        if not result.multi_face_landmarks:
-            return None
+        # DNN expects BGR
+        bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
-        return np.array(
-            [(lm.x * width, lm.y * height) for lm in result.multi_face_landmarks[0].landmark],
-            dtype=np.float32,
+        blob = cv2.dnn.blobFromImage(
+            bgr, 1.0, (300, 300),
+            (104.0, 177.0, 123.0), swapRB=False
         )
+        detector.setInput(blob)
+        detections = detector.forward()
 
-    def _compute_mouth_roi(
-        self, landmarks: np.ndarray, frame_shape: Tuple[int, int, int]
-    ) -> Optional[Tuple[int, int, int, int]]:
-        """Compute a square, padded mouth ROI from FaceMesh landmarks."""
-
-        height, width = frame_shape[:2]
-        mouth_pts = landmarks[MOUTH_LANDMARKS]
-        min_xy = mouth_pts.min(axis=0)
-        max_xy = mouth_pts.max(axis=0)
-
-        mouth_width, mouth_height = max_xy - min_xy
-        size = float(max(mouth_width, mouth_height))
-        if size <= 0:
+        # Only one face expected
+        conf = detections[0, 0, 0, 2]
+        if conf < 0.5:
             return None
 
-        # Center at the middle of the lip landmarks.
-        center_x, center_y = mouth_pts.mean(axis=0)
+        box = detections[0, 0, 0, 3:7] * np.array([w, h, w, h])
+        x0, y0, x1, y1 = box.astype(int)
 
-        # Add padding (20–40% recommended) and ensure the ROI remains square.
-        side = size * (1.0 + self.padding_ratio)
-        side = min(side, float(min(width, height)))
-        half = side * 0.5
+        # Square crop expansion
+        bw = x1 - x0
+        bh = y1 - y0
+        side = max(bw, bh)
+        cx = (x0 + x1) // 2
+        cy = (y0 + y1) // 2
+        half = side // 2
 
-        center_x = float(np.clip(center_x, half, width - half))
-        center_y = float(np.clip(center_y, half, height - half))
+        x0 = max(0, cx - half)
+        y0 = max(0, cy - half)
+        x1 = min(w, cx + half)
+        y1 = min(h, cy + half)
 
-        x0 = int(round(center_x - half))
-        y0 = int(round(center_y - half))
-        x1 = int(round(center_x + half))
-        y1 = int(round(center_y + half))
+        return (x0, y0, x1, y1)
 
-        if x1 <= x0 or y1 <= y0:
-            return None
-
-        return x0, y0, x1, y1
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+    #
+    # Main processor
+    #
     def process_frames(self, frames: List[np.ndarray]) -> np.ndarray:
-        """Extract mouth crops from a list of RGB frames.
-
-        Returns:
-            float32 array shaped (T, crop_size, crop_size, 3) with values in [0, 1].
-        """
-
         if not frames:
-            return np.empty((0, self.crop_size, self.crop_size, 3), dtype=np.float32)
+            return np.zeros((0, TARGET_SIZE, TARGET_SIZE, 3), np.float32)
 
-        reference_frame = frames[len(frames) // 2]
-        roi: Optional[Tuple[int, int, int, int]] = None
+        ref = frames[len(frames)//2]
+        box = self._detect_face_box(ref)
 
-        landmarks = self._extract_landmarks(reference_frame)
-        if landmarks is not None:
-            roi = self._compute_mouth_roi(landmarks, reference_frame.shape)
-
-        if roi is None:
-            if self._last_roi is not None:
-                roi = self._last_roi
-            else:
-                # Fallback to a centered square crop covering the largest possible area.
-                h, w = reference_frame.shape[:2]
+        if box is None:
+            box = self._last_box
+            if box is None:
+                # fallback: center crop
+                h, w = ref.shape[:2]
                 side = min(h, w)
-                cx, cy = w * 0.5, h * 0.5
-                half = side * 0.5
-                roi = (
-                    int(round(cx - half)),
-                    int(round(cy - half)),
-                    int(round(cx + half)),
-                    int(round(cy + half)),
-                )
+                cx, cy = w // 2, h // 2
+                half = side // 2
+                box = (cx-half, cy-half, cx+half, cy+half)
 
-        self._last_roi = roi
+        self._last_box = box
+        x0, y0, x1, y1 = box
 
-        x0, y0, x1, y1 = roi
-        processed: List[np.ndarray] = []
-        for frame in frames:
-            if frame.ndim != 3 or frame.shape[2] != 3:
+        # Focus on mouth region inside the detected face box
+        face = ref[y0:y1, x0:x1]
+        fh, fw = face.shape[:2]
+
+        # Heuristic mouth ROI (works for neutral webcam angles)
+        mx0 = int(fw * 0.15)
+        mx1 = int(fw * 0.85)
+
+        my0 = int(fh * 0.55)   # lower half of the face
+        my1 = int(fh * 0.95)
+
+        # Convert back to full-frame coordinates
+        x0 += mx0
+        x1 = x0 + (mx1 - mx0)
+        y0 += my0
+        y1 = y0 + (my1 - my0)
+
+        crops = []
+        for f in frames:
+            crop = f[y0:y1, x0:x1]
+            if crop.size == 0:
                 continue
-            # Crop directly from the original, unrotated frame.
-            mouth = frame[y0:y1, x0:x1]
-            if mouth.size == 0:
-                continue
-            mouth = cv2.resize(
-                mouth, (self.crop_size, self.crop_size), interpolation=cv2.INTER_AREA
-            )
-            processed.append(mouth.astype(np.float32) / 255.0)
+            crop = cv2.resize(crop, (TARGET_SIZE, TARGET_SIZE))
+            crops.append(crop.astype(np.float32) / 255.0)
 
-        if not processed:
-            return np.empty((0, self.crop_size, self.crop_size, 3), dtype=np.float32)
+        if not crops:
+            return np.zeros((0, TARGET_SIZE, TARGET_SIZE, 3), np.float32)
 
-        return np.stack(processed, axis=0)
+        return np.stack(crops)

@@ -1,5 +1,3 @@
-"""Auto-AVSR model wrapper for video-only lip reading."""
-
 from __future__ import annotations
 
 import logging
@@ -15,14 +13,6 @@ logger = logging.getLogger(__name__)
 
 
 class AutoAVSRVSR:
-    """Thin convenience wrapper around the Auto-AVSR Lightning module.
-
-    The class normalizes device placement, preprocesses video frames using the
-    official evaluation transform, and decodes model outputs into text. It is
-    intentionally free of any FastAPI/WebSocket concerns to remain easily
-    reusable in other entrypoints (batch/offline, etc.).
-    """
-
     def __init__(self, ckpt_path: str, device: Union[str, torch.device, None] = None):
         # Prefer GPU when available unless the caller explicitly requests a
         # device. Fall back to CPU cleanly if CUDA is not present.
@@ -45,11 +35,17 @@ class AutoAVSRVSR:
         self.model.eval().to(self.device)
         logger.info("Auto-AVSR model loaded on device %s", self.device)
 
-        # Cache decoder utilities.
-        self.text_transform = self.model.text_transform
+        # Use the token list stored in the checkpoint (subword vocab, size 5049)
+        if hasattr(self.model, "token_list"):
+            self.token_list = self.model.token_list
+            logger.info("Loaded token list of size %d", len(self.token_list))
+        else:
+            raise RuntimeError("Checkpoint missing token_list.")
+
+        # Beam search decoder uses the same token list
         self.beam_search = get_beam_search_decoder(
             self.model.model,
-            self.model.token_list,
+            self.token_list,
             ctc_weight=getattr(self.model.args, "ctc_weight", 0.1),
         )
 
@@ -118,15 +114,38 @@ class AutoAVSRVSR:
         enc_feat, _ = self.model.model.encoder(feats, None)
         enc_feat = enc_feat.squeeze(0)
 
+        # Beam search over encoder features
         nbest_hyps = self.beam_search(enc_feat)
         if not nbest_hyps:
             return ""
 
-        token_ids = torch.tensor(
-            list(map(int, nbest_hyps[0].asdict()["yseq"][1:])), device=self.device
-        )
-        prediction = (
-            self.text_transform.post_process(token_ids.cpu()).replace("<eos>", "")
-        )
+        # Best hypothesis sequence of token IDs (includes <bos>/<eos>/blank)
+        yseq = nbest_hyps[0].asdict()["yseq"]
+
+        # Drop the first symbol (usually <bos>), keep the rest
+        token_ids = [int(i) for i in yseq[1:]]
+
+        print("[DEBUG] yseq:", yseq)
+        print("[DEBUG] token_ids:", token_ids)
+
+
+        # Map token IDs -> subwords using the checkpoint's token_list
+        subwords = []
+        for tid in token_ids:
+            # Skip invalid indices
+            if tid < 0 or tid >= len(self.token_list):
+                continue
+            tok = self.token_list[tid]
+            # Skip special tokens
+            if tok in ("<blank>", "<unk>"):
+                continue
+            subwords.append(tok)
+
+        if not subwords:
+            return ""
+
+        # Naive reconstruction: join subwords with spaces.
+        # (This is a simple baseline; you can refine heuristics later.)
+        prediction = " ".join(subwords).strip()
 
         return prediction

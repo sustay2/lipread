@@ -1,6 +1,12 @@
-"""FastAPI WebSocket server for real-time visual speech recognition."""
-
 from __future__ import annotations
+
+import os
+
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["MEDIAPIPE_DISABLE_GPU"] = "true"
+os.environ["TF_FORCE_CPU"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
 
 import asyncio
 import logging
@@ -21,11 +27,12 @@ app = FastAPI()
 
 # Global model instance loaded at startup.
 vsr_model: Optional[AutoAVSRVSR] = None
-processor = FrameProcessor(crop_size=96)
+
+processor = FrameProcessor()
 
 # Model + runtime config
-WINDOW_SIZE = 16  # number of frames per inference chunk
-STRIDE = 8  # overlap for smoother text
+WINDOW_SIZE = 32
+STRIDE = 8
 CKPT_PATH = Path(__file__).parent / "models" / "vsr_trlrs2lrs3vox2avsp_base.pth"
 
 
@@ -38,11 +45,7 @@ async def _load_model():
 
 
 async def _handle_frame_message(message: dict) -> Optional["np.ndarray"]:
-    """Decode an incoming websocket message into a full RGB frame.
-
-    The frame must remain un-cropped and un-rotated so that MediaPipe FaceMesh
-    can run on the original content inside :class:`FrameProcessor`.
-    """
+    """Decode an incoming websocket message into a full RGB frame."""
 
     frame = None
     if message.get("text") is not None:
@@ -62,7 +65,6 @@ async def vsr_endpoint(websocket: WebSocket):
     try:
         while True:
             if vsr_model is None:
-                logger.warning("VSR model not yet loaded; skipping frame")
                 await websocket.send_json({"partial": "", "final": False})
                 await asyncio.sleep(0.01)
                 continue
@@ -74,10 +76,8 @@ async def vsr_endpoint(websocket: WebSocket):
                 await websocket.send_json({"partial": "", "final": False})
                 continue
 
-            # Preserve the raw frame; cropping happens inside FrameProcessor.
             frame_buffer.append(frame)
 
-            # When enough frames collected, run inference on a sliding window.
             if len(frame_buffer) >= WINDOW_SIZE:
                 chunk = frame_buffer[-WINDOW_SIZE:]
                 frame_buffer = frame_buffer[-STRIDE:]
@@ -87,12 +87,13 @@ async def vsr_endpoint(websocket: WebSocket):
                     await websocket.send_json({"partial": "", "final": False})
                     continue
 
-                # Avoid blocking the event loop during model inference.
                 try:
                     text = await loop.run_in_executor(
                         None, lambda: vsr_model.transcribe(video_frames)
                     )
-                except Exception as exc:  # pylint: disable=broad-except
+
+                    logger.info("PREDICTED TEXT: %s", text)
+                except Exception as exc:
                     logger.exception("Inference failed: %s", exc)
                     await websocket.send_json({"partial": "", "final": False})
                     continue
@@ -101,7 +102,7 @@ async def vsr_endpoint(websocket: WebSocket):
 
     except WebSocketDisconnect:
         logger.info("Client disconnected")
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:
         logger.exception("WebSocket error: %s", exc)
         await websocket.close()
 
