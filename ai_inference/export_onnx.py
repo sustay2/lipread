@@ -18,6 +18,20 @@ auto_avsr_candidates = [
 for candidate in auto_avsr_candidates:
     if candidate.exists():
         AUTO_AVSR_ROOT = candidate
+        # Ensure the `pipelines` package is importable even if it lives in a nested
+        # folder (some distributions wrap the source under an extra directory).
+        if (AUTO_AVSR_ROOT / "pipelines").exists():
+            sys.path.insert(0, str(AUTO_AVSR_ROOT))
+        else:
+            for pipelines_dir in AUTO_AVSR_ROOT.rglob("pipelines"):
+                sys.path.insert(0, str(pipelines_dir.parent))
+                break
+            else:
+                raise FileNotFoundError(
+                    "Auto-AVSR sources found, but no 'pipelines' package detected. "
+                    "Please ensure the downloaded Auto-AVSR code contains the "
+                    "'pipelines' directory."
+                )
         sys.path.insert(0, str(AUTO_AVSR_ROOT))
         break
 else:
