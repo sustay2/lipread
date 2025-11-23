@@ -32,8 +32,13 @@ app.add_middleware(
 )
 
 # Serve local media read-only
-MEDIA_ROOT = os.getenv("MEDIA_ROOT", "/data")
-app.mount("/media", StaticFiles(directory=MEDIA_ROOT), name="media")
+DEFAULT_MEDIA_ROOT = "C:/lipread_media"
+MEDIA_ROOT = os.getenv("MEDIA_ROOT", DEFAULT_MEDIA_ROOT)
+app.mount("/media", StaticFiles(directory=MEDIA_ROOT, check_dir=False), name="media")
+
+# Legacy badge icon paths
+BADGE_ICON_ROOT = os.path.join(MEDIA_ROOT, "badge_icons")
+app.mount("/badge_icons", StaticFiles(directory=BADGE_ICON_ROOT, check_dir=False), name="badge_icons")
 
 
 # Public/health

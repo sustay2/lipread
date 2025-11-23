@@ -9,8 +9,9 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Q
 router = APIRouter()
 db = admin_fs.client()
 
-MEDIA_ROOT = os.getenv("MEDIA_ROOT", "/data")
-MEDIA_BASE_URL = os.getenv("MEDIA_BASE_URL", "http://api:8000/media")
+DEFAULT_MEDIA_ROOT = "C:/lipread_media"
+MEDIA_ROOT = os.getenv("MEDIA_ROOT", DEFAULT_MEDIA_ROOT)
+MEDIA_BASE_URL = os.getenv("MEDIA_BASE_URL", "http://localhost:8000/media")
 MEDIA_ORIGINAL_DIR = os.getenv("MEDIA_ORIGINAL_DIR", os.path.join(MEDIA_ROOT, "original"))
 MEDIA_THUMB_DIR    = os.getenv("MEDIA_THUMB_DIR",    os.path.join(MEDIA_ROOT, "thumbs"))
 MEDIA_PUBLIC_BASE_URL = os.getenv("MEDIA_PUBLIC_BASE_URL", None)
