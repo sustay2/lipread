@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from argparse import Namespace
 from typing import Union
 
@@ -9,6 +10,8 @@ import torch
 
 from auto_avsr.datamodule.transforms import VideoTransform
 from auto_avsr.lightning import ModelModule, get_beam_search_decoder
+
+logger = logging.getLogger(__name__)
 
 
 class AutoAVSRVSR:
@@ -20,12 +23,18 @@ class AutoAVSRVSR:
     reusable in other entrypoints (batch/offline, etc.).
     """
 
-    def __init__(self, ckpt_path: str, device: str = "cuda"):
-        # Fall back to CPU if CUDA is unavailable rather than crashing the
-        # service. Users can still force CPU by passing device="cpu".
-        self.device = torch.device(
-            device if device != "cuda" or torch.cuda.is_available() else "cpu"
-        )
+    def __init__(self, ckpt_path: str, device: Union[str, torch.device, None] = None):
+        # Prefer GPU when available unless the caller explicitly requests a
+        # device. Fall back to CPU cleanly if CUDA is not present.
+        if device is None:
+            resolved = "cuda" if torch.cuda.is_available() else "cpu"
+        elif isinstance(device, str) and device == "cuda" and not torch.cuda.is_available():
+            logger.warning("Requested CUDA but it is unavailable; falling back to CPU")
+            resolved = "cpu"
+        else:
+            resolved = device
+
+        self.device = torch.device(resolved)
 
         # Match the training-time preprocessing.
         self.video_transform = VideoTransform("test")
@@ -34,6 +43,7 @@ class AutoAVSRVSR:
         args = Namespace(modality="video", ctc_weight=0.1, pretrained_model_path=None)
         self.model = self._load_model(ckpt_path, args)
         self.model.eval().to(self.device)
+        logger.info("Auto-AVSR model loaded on device %s", self.device)
 
         # Cache decoder utilities.
         self.text_transform = self.model.text_transform

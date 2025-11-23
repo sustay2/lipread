@@ -29,6 +29,9 @@ logging.basicConfig(level=logging.INFO)
 
 app = FastAPI()
 
+# Global model instance loaded at startup.
+vsr_model: Optional[AutoAVSRVSR] = None
+
 # Model + runtime config
 WINDOW_SIZE = 16  # number of frames per inference chunk
 STRIDE = 8  # overlap for smoother text
@@ -107,6 +110,8 @@ def crop_mouth_frames(frames: List[np.ndarray]) -> np.ndarray:
 
 
 def _decode_frame(data: str) -> Optional[np.ndarray]:
+    """Decode a base64-encoded JPEG frame."""
+
     try:
         frame_bytes = base64.b64decode(data)
         frame_array = np.frombuffer(frame_bytes, np.uint8)
@@ -119,11 +124,17 @@ def _decode_frame(data: str) -> Optional[np.ndarray]:
         return None
 
 
+def _decode_binary_frame(data: bytes) -> Optional[np.ndarray]:
+    frame_array = np.frombuffer(data, np.uint8)
+    frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
+    return frame
+
+
 @app.on_event("startup")
 async def _load_model():
     global vsr_model
     logger.info("Loading Auto-AVSR checkpoint from %s", CKPT_PATH)
-    vsr_model = AutoAVSRVSR(str(CKPT_PATH), device="cuda")
+    vsr_model = AutoAVSRVSR(str(CKPT_PATH))
     logger.info("Model ready on device %s", vsr_model.device)
 
 
@@ -135,8 +146,20 @@ async def vsr_endpoint(websocket: WebSocket):
 
     try:
         while True:
-            data = await websocket.receive_text()
-            frame = _decode_frame(data)
+            if vsr_model is None:
+                logger.warning("VSR model not yet loaded; skipping frame")
+                await websocket.send_json({"partial_text": ""})
+                await asyncio.sleep(0.01)
+                continue
+
+            message = await websocket.receive()
+
+            frame: Optional[np.ndarray] = None
+            if message.get("text") is not None:
+                frame = _decode_frame(message["text"])
+            elif message.get("bytes") is not None:
+                frame = _decode_binary_frame(message["bytes"])
+
             if frame is None:
                 await websocket.send_json({"partial_text": ""})
                 continue
