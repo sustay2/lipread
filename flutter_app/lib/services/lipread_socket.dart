@@ -11,20 +11,20 @@ class LipreadSocket {
 
   factory LipreadSocket.connect() {
     final base = Uri.parse(kTranscribeBase);
-    final scheme = base.scheme == 'https' ? 'wss' : 'ws';
+    final scheme =
+        (base.scheme == 'https' || base.scheme == 'wss') ? 'wss' : 'ws';
 
-    final basePath = base.path.endsWith('/') && base.path.length > 1
-        ? base.path.substring(0, base.path.length - 1)
-        : base.path;
-    final normalizedPath = basePath.isEmpty || basePath == '/'
-        ? '/ws/lipread'
-        : '$basePath/ws/lipread';
+    final segments = <String>[
+      ...base.pathSegments.where((s) => s.isNotEmpty),
+      'ws',
+      'lipread',
+    ];
 
     final uri = Uri(
       scheme: scheme,
       host: base.host,
       port: base.hasPort ? base.port : null,
-      path: normalizedPath,
+      pathSegments: segments,
     );
 
     return LipreadSocket._(WebSocketChannel.connect(uri));
