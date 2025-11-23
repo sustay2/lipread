@@ -20,11 +20,11 @@ class LipreadSocket {
       'lipread',
     ];
 
-    final uri = Uri(
+    final uri = base.replace(
       scheme: scheme,
-      host: base.host,
-      port: base.hasPort ? base.port : null,
       pathSegments: segments,
+      query: null,
+      fragment: null,
     );
 
     return LipreadSocket._(WebSocketChannel.connect(uri));
