@@ -69,7 +69,7 @@ String _defaultBase() {
 ///     publicMediaUrl(null, path: doc['thumbnailPath'])
 ///
 /// This will:
-///   * Build a full URL when only a path is given (BASE + "/media/" + path)
+///   * Build a full URL when only a path is given (BASE + path)
 ///   * Normalize localhost/api/backend hosts so they work on emulator/real devices.
 String? publicMediaUrl(String? url, {String? path}) {
   // If we were given a full URL, just normalize and return.
@@ -85,14 +85,16 @@ String? publicMediaUrl(String? url, {String? path}) {
     return normalizeMediaUrl(path);
   }
 
-  // Treat as backend /media path, e.g. "qb/videos/original/foo.mp4"
-  String base = _defaultBase();
+  // Resolve the relative path against the configured backend base.
+  // We intentionally *do not* force a "/media" prefix because
+  // Firestore stores paths like "qb/images/foo.jpg" that are served from
+  // the backend root.
+  final base = _defaultBase();
+  final sanitizedPath = path.startsWith('/') ? path.substring(1) : path;
 
-  // Ensure no trailing slash
-  if (base.endsWith('/')) {
-    base = base.substring(0, base.length - 1);
-  }
+  final resolved = Uri.parse(base.endsWith('/') ? base : '$base/')
+      .resolve(sanitizedPath)
+      .toString();
 
-  final full = '$base/media/$path';
-  return normalizeMediaUrl(full);
+  return normalizeMediaUrl(resolved);
 }
