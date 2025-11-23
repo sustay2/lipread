@@ -45,9 +45,11 @@ def parse_env_file(path: pathlib.Path) -> dict[str, str]:
 
 ENV_FILE_VALUES = parse_env_file(ENV_FILE)
 
-
-def firebase_defaults_from_env_values(env_values: dict[str, str]) -> dict[str, str]:
-    return {key: value for key, value in env_values.items() if key in FIREBASE_KEYS and value}
+FIREBASE_DEFAULTS = {
+    key: value
+    for key, value in ENV_FILE_VALUES.items()
+    if key in FIREBASE_KEYS and value
+}
 
 
 def load_env_file(path: pathlib.Path, cached_values: dict[str, str] | None = None) -> None:
@@ -89,8 +91,8 @@ def apply_dockerfile_env(dockerfile: pathlib.Path) -> None:
             os.environ[key] = value
 
 
-def apply_firebase_defaults(defaults: dict[str, str]) -> None:
-    for key, value in defaults.items():
+def apply_firebase_defaults() -> None:
+    for key, value in FIREBASE_DEFAULTS.items():
         if not os.environ.get(key):
             os.environ[key] = value
 
@@ -144,13 +146,12 @@ def locate_app():
 def main() -> None:
     # Step 1: load .env
     load_env_file(ENV_FILE, ENV_FILE_VALUES)
-    firebase_defaults = firebase_defaults_from_env_values(ENV_FILE_VALUES)
 
     # Step 2: incorporate Dockerfile ENV defaults
     apply_dockerfile_env(DOCKERFILE_PATH)
 
     # Step 3: ensure firebase defaults
-    apply_firebase_defaults(firebase_defaults)
+    apply_firebase_defaults()
 
     # Step 4: detect docker
     in_docker = running_in_docker()
