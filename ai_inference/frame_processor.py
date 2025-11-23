@@ -80,18 +80,9 @@ class FrameProcessor:
     def _mesh_landmarks(self, rgb_frame: np.ndarray) -> Optional[np.ndarray]:
         """Run FaceMesh and return pixel landmarks if available."""
 
-        # FaceMesh solutions API expects a raw RGB np.ndarray (H, W, 3) uint8.
-        if rgb_frame.ndim != 3 or rgb_frame.shape[2] != 3:
-            return None
-
-        # Ensure correct dtype for MediaPipe. Make contiguous copy only if needed.
-        if rgb_frame.dtype != np.uint8:
-            rgb_frame = rgb_frame.astype(np.uint8)
-        elif not rgb_frame.flags["C_CONTIGUOUS"]:
-            rgb_frame = np.ascontiguousarray(rgb_frame)
-
         h, w = rgb_frame.shape[:2]
-        result = self._face_mesh.process(rgb_frame)
+        image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+        result = self._face_mesh.process(image)
         if not result.multi_face_landmarks:
             return None
 
@@ -196,12 +187,8 @@ class FrameProcessor:
         rot_mat, bbox = self._alignment(frames[len(frames) // 2])
         processed: List[np.ndarray] = []
         for frame in frames:
-            if not isinstance(frame, np.ndarray):
-                continue
             if frame.ndim != 3 or frame.shape[2] != 3:
                 continue
-            if frame.dtype != np.uint8:
-                frame = frame.astype(np.uint8)
             mouth = self._warp_and_crop(frame, rot_mat, bbox)
             processed.append(mouth.astype(np.float32) / 255.0)
 
