@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 from typing import List, Optional
 
+import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import uvicorn
 
@@ -37,7 +38,11 @@ async def _load_model():
 
 
 async def _handle_frame_message(message: dict) -> Optional["np.ndarray"]:
-    """Decode an incoming websocket message into an RGB frame."""
+    """Decode an incoming websocket message into a full RGB frame.
+
+    The frame must remain un-cropped and un-rotated so that MediaPipe FaceMesh
+    can run on the original content inside :class:`FrameProcessor`.
+    """
 
     frame = None
     if message.get("text") is not None:
@@ -69,6 +74,7 @@ async def vsr_endpoint(websocket: WebSocket):
                 await websocket.send_json({"partial": "", "final": False})
                 continue
 
+            # Preserve the raw frame; cropping happens inside FrameProcessor.
             frame_buffer.append(frame)
 
             # When enough frames collected, run inference on a sliding window.
