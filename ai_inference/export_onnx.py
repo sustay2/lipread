@@ -16,24 +16,34 @@ auto_avsr_candidates = [
 ]
 
 for candidate in auto_avsr_candidates:
-    if candidate.exists():
-        AUTO_AVSR_ROOT = candidate
-        # Ensure the `pipelines` package is importable even if it lives in a nested
-        # folder (some distributions wrap the source under an extra directory).
-        if (AUTO_AVSR_ROOT / "pipelines").exists():
-            sys.path.insert(0, str(AUTO_AVSR_ROOT))
-        else:
-            for pipelines_dir in AUTO_AVSR_ROOT.rglob("pipelines"):
-                sys.path.insert(0, str(pipelines_dir.parent))
+    if not candidate.exists():
+        continue
+
+    # Ensure the `pipelines` package is importable even if it lives in a nested
+    # folder (some distributions wrap the source under an extra directory).
+    pipelines_parent = None
+    if (candidate / "pipelines").exists():
+        pipelines_parent = candidate
+    else:
+        for maybe_dir in candidate.rglob("*"):
+            if maybe_dir.is_dir() and maybe_dir.name.lower() == "pipelines":
+                pipelines_parent = maybe_dir.parent
                 break
-            else:
-                raise FileNotFoundError(
-                    "Auto-AVSR sources found, but no 'pipelines' package detected. "
-                    "Please ensure the downloaded Auto-AVSR code contains the "
-                    "'pipelines' directory."
-                )
-        sys.path.insert(0, str(AUTO_AVSR_ROOT))
-        break
+
+    if pipelines_parent is None:
+        contents = [p.name for p in candidate.iterdir()]
+        available = ", ".join(sorted(contents)) if contents else "(empty)"
+        raise FileNotFoundError(
+            "Auto-AVSR sources found, but no 'pipelines' package detected inside "
+            f"{candidate}. Contents found: {available}. Please ensure the downloaded "
+            "Auto-AVSR code includes the 'pipelines' directory (for example, clone "
+            "the repository or extract the release archive)."
+        )
+
+    AUTO_AVSR_ROOT = candidate
+    sys.path.insert(0, str(pipelines_parent))
+    sys.path.insert(0, str(AUTO_AVSR_ROOT))
+    break
 else:
     raise FileNotFoundError(
         "Auto-AVSR sources not found. Please place them under "
