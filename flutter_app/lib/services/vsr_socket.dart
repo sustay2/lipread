@@ -46,22 +46,22 @@ class VsrSocket {
       );
     }
 
-    final base = kTranscribeBaseUri;
-    final scheme =
-        (base.scheme == 'https' || base.scheme == 'wss') ? 'wss' : 'ws';
+    final baseUri = kTranscribeBaseUri;
+    final socketScheme =
+        (baseUri.scheme == 'https' || baseUri.scheme == 'wss') ? 'wss' : 'ws';
 
     // Preserve any base path (e.g. /api) while appending ws/vsr.
-    final segments = <String>[
-      ...base.pathSegments.where((s) => s.isNotEmpty),
+    final socketPathSegments = <String>[
+      ...baseUri.pathSegments.where((s) => s.isNotEmpty),
       'ws',
       'vsr',
     ];
 
     return Uri(
-      scheme: scheme,
-      host: base.host,
-      port: base.hasPort ? base.port : null,
-      pathSegments: segments,
+      scheme: socketScheme,
+      host: baseUri.host,
+      port: baseUri.hasPort ? baseUri.port : null,
+      pathSegments: socketPathSegments,
     );
   }
 
