@@ -2,14 +2,20 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+
 import '../env.dart';
 import '../models/transcript_result.dart';
 
 class ApiClient {
-  final String base = kApiBase;
+  final String base = kTranscribeBase;
 
-  Future<TranscriptResult> transcribeVideo(File file, {String? lessonId}) async {
+  Future<TranscriptResult> transcribeVideo(
+    File file, {
+    String? lessonId,
+    void Function(int sent, int total)? onProgress,
+  }) async {
     final uri = Uri.parse('$base/transcribe');
+
     final req = http.MultipartRequest('POST', uri)
       ..files.add(await http.MultipartFile.fromPath('video', file.path))
       ..fields.addAll({
@@ -17,6 +23,14 @@ class ApiClient {
       });
 
     final streamed = await req.send().timeout(const Duration(seconds: 25));
+
+    if (onProgress != null) {
+      streamed.stream.listen(
+        (chunk) {},
+        onDone: () {},
+      );
+    }
+
     final res = await http.Response.fromStream(streamed);
 
     if (res.statusCode >= 200 && res.statusCode < 300) {

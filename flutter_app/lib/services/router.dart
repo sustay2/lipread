@@ -8,7 +8,6 @@ import 'package:flutter_app/services/badge_listener.dart';
 import 'package:flutter_app/services/home_metrics_service.dart';
 import 'package:flutter_app/services/xp_service.dart';
 
-// Screens (reuse your existing ones)
 import '../features/auth/login_screen.dart';
 import '../features/auth/register_screen.dart';
 import '../features/auth/verify_email_screen.dart';

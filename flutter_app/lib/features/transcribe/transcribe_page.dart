@@ -3,10 +3,9 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_app/services/router.dart';
 
 import '../../models/transcript_result.dart';
-import '../../services/dio_client.dart';
+import '../../services/api_client.dart';
 import 'widgets/record_card.dart';
 import 'widgets/upload_card.dart';
 import 'widgets/transcript_view.dart';
@@ -20,18 +19,13 @@ class TranscribePage extends StatefulWidget {
 }
 
 class _TranscribePageState extends State<TranscribePage>
-    with TickerProviderStateMixin, RouteAware {
+    with TickerProviderStateMixin {
   TranscriptResult? _result;
   String? _status;
   bool _busy = false;
   double _progress = 0.0; // 0..1
   late TabController _tab;
   bool _recordTabActive = true;
-  bool _routeActive = true;
-  String _liveTranscript = '';
-  bool _liveStreaming = false;
-  String? _liveStatus;
-
 
   @override
   void initState() {
@@ -47,57 +41,11 @@ class _TranscribePageState extends State<TranscribePage>
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final route = ModalRoute.of(context);
-    if (route is PageRoute) {
-      // Subscribe this page to route changes
-      routeObserver.subscribe(this, route);
-    }
-  }
-
-  @override
   void dispose() {
-    // Unsubscribe from route observer
-    routeObserver.unsubscribe(this);
     _tab.dispose();
     super.dispose();
   }
 
-  void _setRouteActive(bool active) {
-    if (_routeActive == active) return;
-    setState(() {
-      _routeActive = active;
-    });
-  }
-
-  // RouteAware hooks:
-  @override
-  void didPush() {
-    // Page was pushed on screen
-    _setRouteActive(true);
-  }
-
-  @override
-  void didPopNext() {
-    // A subsequent route was popped and this one is visible again
-    _setRouteActive(true);
-  }
-
-  @override
-  void didPushNext() {
-    // Another route pushed on top -> this page is now hidden
-    _setRouteActive(false);
-  }
-
-  @override
-  void didPop() {
-    // This route is being popped -> treat as inactive
-    _setRouteActive(false);
-  }
-
-  /// Persist a successful transcription under:
-  ///   /users/{uid}/transcriptions/{autoId}
   Future<void> _saveTranscription(TranscriptResult r) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -112,18 +60,18 @@ class _TranscribePageState extends State<TranscribePage>
       'confidence': r.confidence,
       'words': r.words
           .map((w) => {
-        'text': w.text,
-        'start': w.start,
-        'end': w.end,
-        'conf': w.conf,
-      })
+                'text': w.text,
+                'start': w.start,
+                'end': w.end,
+                'conf': w.conf,
+              })
           .toList(),
       'visemes': r.visemes
           .map((v) => {
-        'label': v.label,
-        'start': v.start,
-        'end': v.end,
-      })
+                'label': v.label,
+                'start': v.start,
+                'end': v.end,
+              })
           .toList(),
       'lessonId': widget.lessonId,
       'mode': _recordTabActive ? 'record' : 'upload',
@@ -140,7 +88,7 @@ class _TranscribePageState extends State<TranscribePage>
     });
 
     try {
-      final api = DioClient();
+      final api = ApiClient();
       final r = await api.transcribeVideo(
         file,
         lessonId: widget.lessonId,
@@ -154,7 +102,6 @@ class _TranscribePageState extends State<TranscribePage>
         },
       );
 
-      // Save to Firestore history for this user
       await _saveTranscription(r);
 
       setState(() {
@@ -188,50 +135,9 @@ class _TranscribePageState extends State<TranscribePage>
     }
   }
 
-  // ---------- Live streaming (WebSocket) ----------
-
-  void _handleLiveStart() {
-    setState(() {
-      _liveStreaming = true;
-      _liveTranscript = '';
-      _liveStatus = 'Streaming…';
-      _status = null;
-      _result = null;
-      _progress = 0.0;
-    });
-  }
-
-  void _handleLiveStop() {
-    setState(() {
-      _liveStreaming = false;
-      _liveStatus = 'Stopped. Tap record to start again.';
-    });
-  }
-
-  void _handleLiveTranscript(String text) {
-    setState(() {
-      _liveTranscript = text;
-      _liveStatus = 'Listening…';
-    });
-  }
-
-  void _handleLiveError(Object error) {
-    if (!mounted) return;
-    setState(() {
-      _liveStreaming = false;
-      _liveStatus = 'Live error: $error';
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Live stream error: $error')),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final showLive = _recordTabActive &&
-        (_liveStreaming || _liveTranscript.isNotEmpty || _liveStatus != null);
-    final bottomBarNeeded =
-        _busy || _status != null || _result != null || showLive;
+    final bottomBarNeeded = _busy || _status != null || _result != null;
 
     return Scaffold(
       appBar: AppBar(
@@ -239,7 +145,7 @@ class _TranscribePageState extends State<TranscribePage>
         bottom: TabBar(
           controller: _tab,
           tabs: const [
-            Tab(text: 'Real-time'),
+            Tab(text: 'Record'),
             Tab(text: 'Upload'),
           ],
         ),
@@ -247,15 +153,16 @@ class _TranscribePageState extends State<TranscribePage>
       body: TabBarView(
         controller: _tab,
         children: [
-          RecordCard(
-            enabled: !_busy && _recordTabActive && _routeActive,
-            onTranscript: _handleLiveTranscript,
-            onStartStreaming: _handleLiveStart,
-            onStopStreaming: _handleLiveStop,
-            onError: _handleLiveError,
-            hint: 'Face the camera and say a sentence. Tap stop when done.',
-          ),
-
+          _recordTabActive
+              ? RecordCard(
+                  enabled: !_busy,
+                  onSubmit: _onVideoReady,
+                  hint: 'Record a 3–5s clip facing the camera.',
+                )
+              : const Center(
+                  child:
+                      Text('Switch to Record to start recording'),
+                ),
           UploadCard(
             enabled: !_busy,
             onSubmit: _onVideoReady,
@@ -265,98 +172,36 @@ class _TranscribePageState extends State<TranscribePage>
       ),
       bottomNavigationBar: bottomBarNeeded
           ? SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_busy)
-              LinearProgressIndicator(
-                value: _progress == 0 ? null : _progress,
-                minHeight: 2,
-              ),
-            if (_status != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    _status!,
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ),
-              ),
-            if (showLive)
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Live transcript',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_busy)
+                    LinearProgressIndicator(
+                      value: _progress == 0 ? null : _progress,
+                      minHeight: 2,
+                    ),
+                  if (_status != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          _status!,
+                          style: const TextStyle(fontSize: 12),
                         ),
-                        if (_liveStreaming)
-                          const Row(
-                            children: [
-                              SizedBox(
-                                width: 12,
-                                height: 12,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              ),
-                              SizedBox(width: 6),
-                              Text(
-                                'Streaming…',
-                                style: TextStyle(fontSize: 12),
-                              ),
-                            ],
-                          )
-                        else if (_liveStatus != null)
-                          Text(
-                            _liveStatus!,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: Text(
-                        _liveTranscript.isNotEmpty
-                            ? _liveTranscript
-                            : (_liveStreaming
-                                ? ''
-                                : 'Waiting for partial transcript…'),
-                        style: const TextStyle(fontSize: 14),
                       ),
                     ),
-                  ],
-                ),
+                  if (_result != null)
+                    Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: TranscriptView(result: _result!),
+                    ),
+                ],
               ),
-            if (_result != null)
-              Padding(
-                padding: const EdgeInsets.all(8),
-                child: TranscriptView(result: _result!),
-              ),
-          ],
-        ),
-      )
+            )
           : null,
     );
   }
