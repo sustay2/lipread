@@ -11,11 +11,13 @@ class RecordCard extends StatefulWidget {
   final bool enabled;
   final Future<void> Function(File file) onSubmit;
   final String? hint;
+  final bool active;
 
   const RecordCard({
     super.key,
     required this.enabled,
     required this.onSubmit,
+    required this.active,
     this.hint,
   });
 
@@ -38,6 +40,14 @@ class _RecordCardState extends State<RecordCard>
   }
 
   @override
+  void didUpdateWidget(covariant RecordCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.active && !widget.active) {
+      _stopAndDisposeCamera();
+    }
+  }
+
+  @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _stopAndDisposeCamera();
@@ -49,7 +59,7 @@ class _RecordCardState extends State<RecordCard>
   // ------------------------------------------------------------
 
   Future<void> _startCamera() async {
-    if (_initializing) return;
+    if (_initializing || !widget.active) return;
 
     // ALWAYS dispose old camera if exists
     if (_ctrl != null) {
@@ -114,6 +124,8 @@ class _RecordCardState extends State<RecordCard>
         _recording = false;
       });
     }
+
+    _initializing = false;
   }
 
   // Release camera when app goes background.
@@ -130,7 +142,7 @@ class _RecordCardState extends State<RecordCard>
   // ------------------------------------------------------------
 
   Future<void> _onRecordPressed() async {
-    if (!widget.enabled) return;
+    if (!widget.enabled || !widget.active) return;
 
     if (_ctrl == null) {
       await _startCamera();
@@ -211,7 +223,11 @@ class _RecordCardState extends State<RecordCard>
   @override
   Widget build(BuildContext context) {
     final canSubmit =
-        widget.enabled && !_recording && _lastFile != null;
+        widget.enabled && widget.active && !_recording && _lastFile != null;
+    final ctrl = _ctrl;
+    final showPreview =
+        ctrl != null && ctrl.value.isInitialized && widget.active;
+    final aspectRatio = showPreview ? ctrl!.value.aspectRatio : 3 / 4;
 
     return Column(
       children: [
@@ -222,10 +238,10 @@ class _RecordCardState extends State<RecordCard>
               alignment: Alignment.centerLeft,
               child: Text(
                 widget.hint!,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textSecondary,
-                ),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppColors.textSecondary,
+                      height: 1.4,
+                    ),
               ),
             ),
           ),
@@ -249,21 +265,35 @@ class _RecordCardState extends State<RecordCard>
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(20),
-              child: _recording && _ctrl != null && _ctrl!.value.isInitialized
-                  ? Center(
-                      // ⭐ Perfect aspect ratio — prevents stretching ⭐
-                      child: AspectRatio(
-                        aspectRatio: _ctrl!.value.aspectRatio,
-                        child: CameraPreview(_ctrl!),
-                      ),
-                    )
-                  : Center(
-                      child: Icon(
-                        Icons.videocam_outlined,
-                        size: 40,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
+              child: Center(
+                // ⭐ Perfect aspect ratio — prevents stretching ⭐
+                child: AspectRatio(
+                  aspectRatio: aspectRatio,
+                  child: showPreview
+                      ? CameraPreview(ctrl!)
+                      : Container(
+                          color: AppColors.background,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: const [
+                              Icon(
+                                Icons.videocam_outlined,
+                                size: 40,
+                                color: AppColors.textSecondary,
+                              ),
+                              SizedBox(height: 8),
+                              Text(
+                                'Front camera ready (video only)',
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                ),
+              ),
             ),
           ),
         ),
@@ -282,7 +312,7 @@ class _RecordCardState extends State<RecordCard>
                     borderRadius: BorderRadius.circular(14),
                   ),
                 ),
-                onPressed: widget.enabled ? _onRecordPressed : null,
+                onPressed: widget.enabled && widget.active ? _onRecordPressed : null,
                 icon: Icon(
                   _recording
                       ? Icons.stop_rounded

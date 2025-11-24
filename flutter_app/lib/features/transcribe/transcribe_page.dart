@@ -156,8 +156,10 @@ class _TranscribePageState extends State<TranscribePage>
           _recordTabActive
               ? RecordCard(
                   enabled: !_busy,
+                  active: _recordTabActive,
                   onSubmit: _onVideoReady,
-                  hint: 'Record a 3–5s clip facing the camera.',
+                  hint:
+                      'Record a 3–5s clip facing the camera. Audio is not needed.',
                 )
               : const Center(
                   child:
@@ -172,34 +174,45 @@ class _TranscribePageState extends State<TranscribePage>
       ),
       bottomNavigationBar: bottomBarNeeded
           ? SafeArea(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (_busy)
-                    LinearProgressIndicator(
-                      value: _progress == 0 ? null : _progress,
-                      minHeight: 2,
-                    ),
-                  if (_status != null)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_busy)
+                      LinearProgressIndicator(
+                        value: _progress == 0 ? null : _progress,
+                        minHeight: 2,
                       ),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
+                    if (_status != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
                         child: Text(
                           _status!,
-                          style: const TextStyle(fontSize: 12),
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ),
-                    ),
-                  if (_result != null)
-                    Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: TranscriptView(result: _result!),
-                    ),
-                ],
+                    if (_result != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight: MediaQuery.of(context).size.height * 0.42,
+                          ),
+                          child: SingleChildScrollView(
+                            child: TranscriptView(result: _result!),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             )
           : null,
