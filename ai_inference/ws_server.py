@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import os
-
-import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["MEDIAPIPE_DISABLE_GPU"] = "true"
 os.environ["TF_FORCE_CPU"] = "1"
@@ -31,7 +29,7 @@ vsr_model: Optional[AutoAVSRVSR] = None
 processor = FrameProcessor()
 
 # Model + runtime config
-WINDOW_SIZE = 32
+WINDOW_SIZE = 16
 STRIDE = 8
 CKPT_PATH = Path(__file__).parent / "models" / "vsr_trlrs2lrs3vox2avsp_base.pth"
 
@@ -86,6 +84,13 @@ async def vsr_endpoint(websocket: WebSocket):
                 if video_frames.shape[0] == 0:
                     await websocket.send_json({"partial": "", "final": False})
                     continue
+
+                print("[DEBUG] input shape:", video_frames.shape)
+                print(
+                    "[DEBUG] first-frame max/min:",
+                    video_frames[0].max(),
+                    video_frames[0].min(),
+                )
 
                 try:
                     text = await loop.run_in_executor(

@@ -14,8 +14,6 @@ logger = logging.getLogger(__name__)
 
 class AutoAVSRVSR:
     def __init__(self, ckpt_path: str, device: Union[str, torch.device, None] = None):
-        # Prefer GPU when available unless the caller explicitly requests a
-        # device. Fall back to CPU cleanly if CUDA is not present.
         if device is None:
             resolved = "cuda" if torch.cuda.is_available() else "cpu"
         elif isinstance(device, str) and device == "cuda" and not torch.cuda.is_available():
@@ -25,24 +23,19 @@ class AutoAVSRVSR:
             resolved = device
 
         self.device = torch.device(resolved)
-
-        # Match the training-time preprocessing.
         self.video_transform = VideoTransform("test")
 
-        # Minimal args needed by ModelModule to build the architecture.
         args = Namespace(modality="video", ctc_weight=0.1, pretrained_model_path=None)
         self.model = self._load_model(ckpt_path, args)
         self.model.eval().to(self.device)
         logger.info("Auto-AVSR model loaded on device %s", self.device)
 
-        # Use the token list stored in the checkpoint (subword vocab, size 5049)
         if hasattr(self.model, "token_list"):
             self.token_list = self.model.token_list
             logger.info("Loaded token list of size %d", len(self.token_list))
         else:
             raise RuntimeError("Checkpoint missing token_list.")
 
-        # Beam search decoder uses the same token list
         self.beam_search = get_beam_search_decoder(
             self.model.model,
             self.token_list,
@@ -50,7 +43,6 @@ class AutoAVSRVSR:
         )
 
     def _load_model(self, ckpt_path: str, args: Namespace) -> ModelModule:
-        # Lightning checkpoints end with .ckpt; averaged weights are saved as .pth.
         if ckpt_path.endswith(".ckpt"):
             return ModelModule.load_from_checkpoint(
                 ckpt_path, args=args, map_location=self.device
@@ -62,7 +54,6 @@ class AutoAVSRVSR:
             state["state_dict"] if isinstance(state, dict) and "state_dict" in state else state
         )
 
-        # If keys include the lightning "model." prefix, load the full module.
         if any(k.startswith("model.") for k in state_dict):
             module.load_state_dict(state_dict, strict=False)
         else:
@@ -72,7 +63,7 @@ class AutoAVSRVSR:
 
     @torch.inference_mode()
     def transcribe(self, video_frames: Union[torch.Tensor, "numpy.ndarray"]) -> str:
-        """Run Auto-AVSR on a batch of mouth crops.
+        """Run Auto-AVSR on a batch of lip crops.
 
         Args:
             video_frames: Numpy or torch tensor shaped [T, 112, 112, 1] in [0,1].
@@ -80,43 +71,30 @@ class AutoAVSRVSR:
             Cleaned English string without SentencePiece markers or special tokens.
         """
 
-        # 1) Convert to tensor and validate shape
         video_tensor = (
             video_frames if isinstance(video_frames, torch.Tensor) else torch.as_tensor(video_frames)
         )
 
-        if video_tensor.ndim != 4:
-            raise ValueError(f"Invalid shape: {video_tensor.shape}")
-        if video_tensor.shape[-1] != 1:
-            raise ValueError(
-                f"Expected final channel dim == 1 (grayscale), got {video_tensor.shape}"
-            )
+        if video_tensor.ndim != 4 or video_tensor.shape[-1] != 1:
+            raise ValueError(f"Invalid shape for grayscale input: {video_tensor.shape}")
 
-        # 2) THWC -> CTHW (C=1)
         video_tensor = video_tensor.float()
-        video_tensor = video_tensor.permute(3, 0, 1, 2).contiguous()
+        video_tensor = video_tensor.permute(0, 3, 1, 2).contiguous()
 
-        # Guard against unexpected ranges
-        if video_tensor.max() > 1.5:
-            video_tensor = video_tensor / 255.0
-
-        # 3) Apply preprocessing transform
         processed = self.video_transform(video_tensor)
         processed = processed.to(self.device, non_blocking=True)
 
-        # 4) Forward pass
         feats = self.model.model.frontend(processed.unsqueeze(0))
         feats = self.model.model.proj_encoder(feats)
         enc_feat, _ = self.model.model.encoder(feats, None)
         enc_feat = enc_feat.squeeze(0)
 
-        # 5) Decode
         nbest_hyps = self.beam_search(enc_feat)
         if not nbest_hyps:
             return ""
 
         yseq = nbest_hyps[0].asdict()["yseq"]
-        token_ids = [int(i) for i in yseq[1:]]  # drop <bos>
+        token_ids = [int(i) for i in yseq[1:]]
 
         subwords: list[str] = []
         for tid in token_ids:
@@ -125,7 +103,6 @@ class AutoAVSRVSR:
 
             tok = self.token_list[tid]
 
-            # Skip any special/blank tokens or EOS markers
             if tok.startswith("<") and tok.endswith(">"):
                 continue
             if tok in {"<blank>", "<unk>", "<eos>", "<sos>"}:
@@ -136,12 +113,7 @@ class AutoAVSRVSR:
         return self._merge_subwords(subwords)
 
     def _merge_subwords(self, subwords: list[str]) -> str:
-        """Merge SentencePiece-style subwords into clean English text.
-
-        - Removes the leading "▁" (underline) that marks word starts.
-        - Concatenates subsequent pieces to form full words (BPE-style merge).
-        - Discards empty segments and trims whitespace.
-        """
+        """Merge SentencePiece-style subwords into clean English text."""
 
         words: list[str] = []
         current = ""
