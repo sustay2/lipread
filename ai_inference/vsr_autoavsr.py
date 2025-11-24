@@ -70,80 +70,94 @@ class AutoAVSRVSR:
 
         return module
 
-    # vsr_autoavsr.py (inside transcribe method)
-
     @torch.inference_mode()
     def transcribe(self, video_frames: Union[torch.Tensor, "numpy.ndarray"]) -> str:
-        
-        # 1. Convert to Tensor
+        """Run Auto-AVSR on a batch of mouth crops.
+
+        Args:
+            video_frames: Numpy or torch tensor shaped [T, 112, 112, 1] in [0,1].
+        Returns:
+            Cleaned English string without SentencePiece markers or special tokens.
+        """
+
+        # 1) Convert to tensor and validate shape
         video_tensor = (
-            video_frames
-            if isinstance(video_frames, torch.Tensor)
-            else torch.as_tensor(video_frames)
+            video_frames if isinstance(video_frames, torch.Tensor) else torch.as_tensor(video_frames)
         )
 
-        # 2. Validate Shape
         if video_tensor.ndim != 4:
-             # Expect [T, H, W, C] from processor
-             raise ValueError(f"Invalid shape: {video_tensor.shape}")
+            raise ValueError(f"Invalid shape: {video_tensor.shape}")
+        if video_tensor.shape[-1] != 1:
+            raise ValueError(
+                f"Expected final channel dim == 1 (grayscale), got {video_tensor.shape}"
+            )
 
-        # 3. Permute [T, H, W, C] -> [T, C, H, W] for the Transform
-        if video_tensor.shape[-1] == 3:
-            video_tensor = video_tensor.permute(0, 3, 1, 2)
-        
-        # 4. Ensure Float32 [0, 1] range
-        if video_tensor.dtype != torch.float32:
-            video_tensor = video_tensor.float()
-        
-        # Safety check: If data somehow came in as 0-255, fix it.
-        # But since frame_processor now guarantees 0-1, this is just a guard rail.
+        # 2) THWC -> CTHW (C=1)
+        video_tensor = video_tensor.float()
+        video_tensor = video_tensor.permute(3, 0, 1, 2).contiguous()
+
+        # Guard against unexpected ranges
         if video_tensor.max() > 1.5:
             video_tensor = video_tensor / 255.0
 
-        # 5. Apply Model Transform (Normalization/Cropping/Grayscaling)
-        # This transform expects (T, C, H, W) or (C, T, H, W) depending on version.
-        # Usually VideoTransform("test") handles the [T, C, H, W] input standardly.
+        # 3) Apply preprocessing transform
         processed = self.video_transform(video_tensor)
         processed = processed.to(self.device, non_blocking=True)
 
-        # Forward pass in video-only mode.
+        # 4) Forward pass
         feats = self.model.model.frontend(processed.unsqueeze(0))
         feats = self.model.model.proj_encoder(feats)
         enc_feat, _ = self.model.model.encoder(feats, None)
         enc_feat = enc_feat.squeeze(0)
 
-        # Beam search over encoder features
+        # 5) Decode
         nbest_hyps = self.beam_search(enc_feat)
         if not nbest_hyps:
             return ""
 
-        # Best hypothesis sequence of token IDs (includes <bos>/<eos>/blank)
         yseq = nbest_hyps[0].asdict()["yseq"]
+        token_ids = [int(i) for i in yseq[1:]]  # drop <bos>
 
-        # Drop the first symbol (usually <bos>), keep the rest
-        token_ids = [int(i) for i in yseq[1:]]
-
-        print("[DEBUG] yseq:", yseq)
-        print("[DEBUG] token_ids:", token_ids)
-
-
-        # Map token IDs -> subwords using the checkpoint's token_list
-        subwords = []
+        subwords: list[str] = []
         for tid in token_ids:
-            # Skip invalid indices
             if tid < 0 or tid >= len(self.token_list):
                 continue
+
             tok = self.token_list[tid]
-            # Skip special tokens
-            if tok in ("<blank>", "<unk>"):
+
+            # Skip any special/blank tokens or EOS markers
+            if tok.startswith("<") and tok.endswith(">"):
                 continue
+            if tok in {"<blank>", "<unk>", "<eos>", "<sos>"}:
+                continue
+
             subwords.append(tok)
 
-        if not subwords:
-            return ""
+        return self._merge_subwords(subwords)
 
-        # Naive reconstruction: join subwords with spaces.
-        # (This is a simple baseline; you can refine heuristics later.)
-        prediction = " ".join(subwords).strip()
+    def _merge_subwords(self, subwords: list[str]) -> str:
+        """Merge SentencePiece-style subwords into clean English text.
 
-        return prediction
+        - Removes the leading "▁" (underline) that marks word starts.
+        - Concatenates subsequent pieces to form full words (BPE-style merge).
+        - Discards empty segments and trims whitespace.
+        """
+
+        words: list[str] = []
+        current = ""
+
+        for piece in subwords:
+            if not piece:
+                continue
+
+            if piece.startswith("▁"):
+                if current:
+                    words.append(current)
+                current = piece.lstrip("▁")
+            else:
+                current += piece
+
+        if current:
+            words.append(current)
+
+        return " ".join(words).strip()

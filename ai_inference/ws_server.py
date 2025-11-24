@@ -92,7 +92,7 @@ async def vsr_endpoint(websocket: WebSocket):
                         None, lambda: vsr_model.transcribe(video_frames)
                     )
 
-                    logger.info("PREDICTED TEXT: %s", text)
+                    logger.info("PREDICTED TEXT (clean): %s", text)
                 except Exception as exc:
                     logger.exception("Inference failed: %s", exc)
                     await websocket.send_json({"partial": "", "final": False})

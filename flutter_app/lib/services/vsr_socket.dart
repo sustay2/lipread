@@ -16,10 +16,11 @@ class VsrSocket {
     _channel.stream.listen(
       (event) {
         if (event is String) {
+          debugPrint('[VsrSocket] raw: $event');
           try {
             final decoded = jsonDecode(event);
-            if (decoded is Map && decoded['partial_text'] is String) {
-              _partialController.add(decoded['partial_text'] as String);
+            if (decoded is Map && decoded['partial'] is String) {
+              _partialController.add(decoded['partial'] as String);
             }
           } catch (_) {
             // Ignore malformed payloads.

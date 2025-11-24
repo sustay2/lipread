@@ -340,7 +340,9 @@ class _TranscribePageState extends State<TranscribePage>
                       child: Text(
                         _liveTranscript.isNotEmpty
                             ? _liveTranscript
-                            : 'Waiting for partial transcript…',
+                            : (_liveStreaming
+                                ? ''
+                                : 'Waiting for partial transcript…'),
                         style: const TextStyle(fontSize: 14),
                       ),
                     ),
