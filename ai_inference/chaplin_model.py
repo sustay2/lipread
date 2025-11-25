@@ -8,6 +8,16 @@ from uuid import uuid4
 from typing import Optional
 
 import torch
+import builtins
+
+_orig_open = builtins.open
+
+def utf8_open(file, mode="r", *args, **kwargs):
+    if "b" not in mode and "encoding" not in kwargs:
+        kwargs["encoding"] = "utf-8"
+    return _orig_open(file, mode, *args, **kwargs)
+
+builtins.open = utf8_open
 
 MEDIA_ROOT = Path("C:/lipread_media")
 TMP_DIR = MEDIA_ROOT / "tmp"
@@ -67,14 +77,21 @@ def _load_pipeline():
     if str(CHAPLIN_DIR) not in sys.path:
         sys.path.insert(0, str(CHAPLIN_DIR))
 
-    from chaplin.pipelines.pipeline import InferencePipeline
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(str(CHAPLIN_DIR))
 
-    _pipeline = InferencePipeline(
-        config_filename=str(CONFIG_PATH),
-        device=DEVICE,
-        face_track=True,
-        detector="mediapipe",
-    )
+        from pipelines.pipeline import InferencePipeline
+
+        _pipeline = InferencePipeline(
+            config_filename=str(CONFIG_PATH),
+            device=DEVICE,
+            face_track=True,
+            detector="mediapipe",
+        )
+    finally:
+        os.chdir(old_cwd)
+
     return _pipeline
 
 def transcribe_video(video_path: str | Path, lesson_id: str | None = None) -> dict:

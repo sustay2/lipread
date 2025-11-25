@@ -5,7 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/transcript_result.dart';
-import '../../services/api_client.dart';
+import '../../services/dio_client.dart';
 import 'widgets/record_card.dart';
 import 'widgets/upload_card.dart';
 import 'widgets/transcript_view.dart';
@@ -60,18 +60,18 @@ class _TranscribePageState extends State<TranscribePage>
       'confidence': r.confidence,
       'words': r.words
           .map((w) => {
-                'text': w.text,
-                'start': w.start,
-                'end': w.end,
-                'conf': w.conf,
-              })
+        'text': w.text,
+        'start': w.start,
+        'end': w.end,
+        'conf': w.conf,
+      })
           .toList(),
       'visemes': r.visemes
           .map((v) => {
-                'label': v.label,
-                'start': v.start,
-                'end': v.end,
-              })
+        'label': v.label,
+        'start': v.start,
+        'end': v.end,
+      })
           .toList(),
       'lessonId': widget.lessonId,
       'mode': _recordTabActive ? 'record' : 'upload',
@@ -88,7 +88,7 @@ class _TranscribePageState extends State<TranscribePage>
     });
 
     try {
-      final api = ApiClient();
+      final api = DioClient();
       final r = await api.transcribeVideo(
         file,
         lessonId: widget.lessonId,
@@ -97,7 +97,8 @@ class _TranscribePageState extends State<TranscribePage>
           final p = total > 0 ? sent / total : 0.0;
           setState(() {
             _progress = p.clamp(0.0, 1.0);
-            _status = 'Uploading… ${(_progress * 100).toStringAsFixed(0)}%';
+            _status =
+            'Uploading… ${(_progress * 100).toStringAsFixed(0)}%';
           });
         },
       );
@@ -110,10 +111,28 @@ class _TranscribePageState extends State<TranscribePage>
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Transcription saved to history.'),
-            duration: Duration(seconds: 2),
+        final messenger = ScaffoldMessenger.of(context);
+        // Clear previous banners before showing a new one
+        messenger.clearMaterialBanners();
+        messenger.showMaterialBanner(
+          MaterialBanner(
+            elevation: 2,
+            backgroundColor:
+            Theme.of(context).colorScheme.surfaceVariant,
+            leading: const Icon(
+              Icons.check_circle_rounded,
+              color: Colors.green,
+            ),
+            content: const Text(
+              'Transcription saved to history.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () =>
+                    messenger.hideCurrentMaterialBanner(),
+                child: const Text('Dismiss'),
+              ),
+            ],
           ),
         );
       }
@@ -155,14 +174,14 @@ class _TranscribePageState extends State<TranscribePage>
         children: [
           _recordTabActive
               ? RecordCard(
-                  enabled: !_busy,
-                  onSubmit: _onVideoReady,
-                  hint: 'Record a 3–5s clip facing the camera.',
-                )
+            enabled: !_busy,
+            onSubmit: _onVideoReady,
+            hint: 'Record a 3–5s clip facing the camera.',
+          )
               : const Center(
-                  child:
-                      Text('Switch to Record to start recording'),
-                ),
+            child:
+            Text('Switch to Record to start recording'),
+          ),
           UploadCard(
             enabled: !_busy,
             onSubmit: _onVideoReady,
@@ -172,36 +191,36 @@ class _TranscribePageState extends State<TranscribePage>
       ),
       bottomNavigationBar: bottomBarNeeded
           ? SafeArea(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (_busy)
-                    LinearProgressIndicator(
-                      value: _progress == 0 ? null : _progress,
-                      minHeight: 2,
-                    ),
-                  if (_status != null)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          _status!,
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                      ),
-                    ),
-                  if (_result != null)
-                    Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: TranscriptView(result: _result!),
-                    ),
-                ],
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_busy)
+              LinearProgressIndicator(
+                value: _progress == 0 ? null : _progress,
+                minHeight: 2,
               ),
-            )
+            if (_status != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _status!,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ),
+            if (_result != null)
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: TranscriptView(result: _result!),
+              ),
+          ],
+        ),
+      )
           : null,
     );
   }

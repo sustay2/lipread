@@ -9,7 +9,6 @@ class DioClient {
   late Dio _dio;
 
   DioClient() {
-    // Use the dedicated transcription base
     final base = kTranscribeBase;
     debugPrint('[DioClient] using transcribe base: $base');
 
