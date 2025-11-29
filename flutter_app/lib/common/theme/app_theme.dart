@@ -8,7 +8,6 @@ class AppTheme {
     final colorScheme = const ColorScheme.light(
       primary: AppColors.primary,
       secondary: AppColors.primaryVariant,
-      background: AppColors.background,
       surface: AppColors.surface,
       error: AppColors.error,
     );
@@ -118,15 +117,15 @@ class AppTheme {
           borderRadius: BorderRadius.circular(14),
         ),
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        iconTheme: MaterialStateProperty.resolveWith((states) {
-          final selected = states.contains(MaterialState.selected);
+        iconTheme: WidgetStateProperty.resolveWith((states) {
+          final selected = states.contains(WidgetState.selected);
           return IconThemeData(
             size: 24,
             color: selected ? AppColors.primary : AppColors.textPrimary,
           );
         }),
-        labelTextStyle: MaterialStateProperty.resolveWith((states) {
-          final selected = states.contains(MaterialState.selected);
+        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+          final selected = states.contains(WidgetState.selected);
           return TextStyle(
             fontFamily: 'Poppins',
             fontSize: 12,
@@ -170,7 +169,6 @@ class AppTheme {
     final colorScheme = const ColorScheme.dark(
       primary: AppColors.primary,
       secondary: AppColors.primaryVariant,
-      background: bg,
       surface: surface,
       error: AppColors.error,
     );
@@ -229,15 +227,15 @@ class AppTheme {
         indicatorShape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
         ),
-        iconTheme: MaterialStateProperty.resolveWith((states) {
-          final selected = states.contains(MaterialState.selected);
+        iconTheme: WidgetStateProperty.resolveWith((states) {
+          final selected = states.contains(WidgetState.selected);
           return IconThemeData(
             size: 24,
             color: selected ? AppColors.primary : Colors.white70,
           );
         }),
-        labelTextStyle: MaterialStateProperty.resolveWith((states) {
-          final selected = states.contains(MaterialState.selected);
+        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+          final selected = states.contains(WidgetState.selected);
           return TextStyle(
             fontFamily: 'Poppins',
             fontSize: 12,

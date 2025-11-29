@@ -1,8 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_app/services/router.dart';
 import 'package:flutter_app/services/auth_services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:android_intent_plus/android_intent.dart';
+import 'package:android_intent_plus/flag.dart';
 
 class ForgotPasswordSentScreen extends StatefulWidget {
   const ForgotPasswordSentScreen({super.key});
@@ -12,7 +16,7 @@ class ForgotPasswordSentScreen extends StatefulWidget {
 }
 
 class _ForgotPasswordSentScreenState extends State<ForgotPasswordSentScreen> {
-  static const int _initialCooldown = 30; // seconds
+  static const int _initialCooldown = 30;
   int _cooldown = 0;
   Timer? _timer;
   String? _email;
@@ -51,6 +55,14 @@ class _ForgotPasswordSentScreenState extends State<ForgotPasswordSentScreen> {
     });
   }
 
+  String _getFriendlyErrorMessage(Object e) {
+    if (e is FirebaseAuthException) {
+      if (e.code == 'network-request-failed') return 'No internet connection.';
+      if (e.code == 'too-many-requests') return 'Too many requests. Please wait.';
+    }
+    return 'Could not resend email.';
+  }
+
   Future<void> _resend() async {
     if (_cooldown > 0 || _email == null) return;
     setState(() => _sending = true);
@@ -61,36 +73,53 @@ class _ForgotPasswordSentScreenState extends State<ForgotPasswordSentScreen> {
         const SnackBar(content: Text('Reset link sent.')),
       );
       _startCooldown();
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not resend. Please try again.')),
+        SnackBar(
+          content: Text(_getFriendlyErrorMessage(e)),
+          backgroundColor: Colors.red,
+        ),
       );
     } finally {
       if (mounted) setState(() => _sending = false);
     }
   }
 
-  Future<void> _openMail() async {
-    // Try mail apps first, then common webmail
-    const schemes = ['message://', 'mailto:'];
-    for (final s in schemes) {
-      final uri = Uri.parse(s);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
-        return;
+  // --- UPDATED: Triggers System "Open With" Picker ---
+  Future<void> _openMailApp() async {
+    if (Platform.isAndroid) {
+      // Android: Fire an Intent to "List all Email Apps"
+      // This triggers the native "Just Once / Always" system picker
+      const intent = AndroidIntent(
+        action: 'android.intent.action.MAIN',
+        category: 'android.intent.category.APP_EMAIL',
+        flags: [Flag.FLAG_ACTIVITY_NEW_TASK],
+      );
+      try {
+        await intent.launch();
+      } catch (e) {
+        // Fallback if no specific email app is found
+        _launchFallback();
       }
+    } else if (Platform.isIOS) {
+      // iOS: Try opening the "message://" scheme (Apple Mail)
+      // If that fails, open "mailto:" which will ask the user to restore default
+      final Uri mailUri = Uri.parse('message://');
+      if (await canLaunchUrl(mailUri)) {
+        await launchUrl(mailUri);
+      } else {
+        _launchFallback();
+      }
+    } else {
+      _launchFallback();
     }
-    final providers = [
-      Uri.parse('https://mail.google.com/'),
-      Uri.parse('https://outlook.live.com/mail/0/inbox'),
-      Uri.parse('https://mail.yahoo.com/'),
-    ];
-    for (final p in providers) {
-      if (await canLaunchUrl(p)) {
-        await launchUrl(p, mode: LaunchMode.externalApplication);
-        return;
-      }
+  }
+
+  Future<void> _launchFallback() async {
+    final Uri uri = Uri.parse('mailto:');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
@@ -171,7 +200,6 @@ class _ForgotPasswordSentScreenState extends State<ForgotPasswordSentScreen> {
 
                   const SizedBox(height: 10),
 
-                  // Cooldown chip
                   if (_cooldown > 0)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -213,7 +241,7 @@ class _ForgotPasswordSentScreenState extends State<ForgotPasswordSentScreen> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: OutlinedButton.icon(
-                          onPressed: _openMail,
+                          onPressed: _openMailApp, // Calls system picker now
                           icon: const Icon(Icons.mail_outline_rounded),
                           label: const Text('Open mail'),
                           style: OutlinedButton.styleFrom(
@@ -251,7 +279,6 @@ class _ForgotPasswordSentScreenState extends State<ForgotPasswordSentScreen> {
 
                   const SizedBox(height: 8),
 
-                  // Tip box
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(

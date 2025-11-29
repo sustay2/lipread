@@ -118,7 +118,7 @@ class _TranscribePageState extends State<TranscribePage>
           MaterialBanner(
             elevation: 2,
             backgroundColor:
-            Theme.of(context).colorScheme.surfaceVariant,
+            Theme.of(context).colorScheme.surfaceContainerHighest,
             leading: const Icon(
               Icons.check_circle_rounded,
               color: Colors.green,

@@ -417,55 +417,6 @@ class ProfilePage extends StatelessWidget {
 
                 const SizedBox(height: 24),
 
-                // PREFERENCES
-                Text(
-                  'Preferences',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: _cardDecor(),
-                  child: Column(
-                    children: [
-                      _PrefRow(
-                        icon: Icons.language_rounded,
-                        label: 'App language',
-                        value: locale.toUpperCase(),
-                      ),
-                      const SizedBox(height: 8),
-                      _PrefRow(
-                        icon: Icons.dark_mode_outlined,
-                        label: 'Theme',
-                        value: themePref == 'dark'
-                            ? 'Dark'
-                            : themePref == 'light'
-                            ? 'Light'
-                            : 'System',
-                      ),
-                      const SizedBox(height: 8),
-                      _PrefRow(
-                        icon: Icons.closed_caption_outlined,
-                        label: 'Subtitles',
-                        value:
-                        (settings['subtitles'] == true) ? 'On' : 'Off',
-                      ),
-                      const SizedBox(height: 8),
-                      _PrefRow(
-                        icon: Icons.play_circle_outline_rounded,
-                        label: 'Autoplay',
-                        value:
-                        (settings['autoplay'] == true) ? 'On' : 'Off',
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
                 // ACTIONS
                 Text(
                   'Actions',

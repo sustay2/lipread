@@ -1183,8 +1183,7 @@ class _CourseVideoThumbState extends State<_CourseVideoThumb> {
     final v = c.value;
 
     // If ended, restart
-    if (v.duration != null &&
-        v.position >=
+    if (v.position >=
             (v.duration ?? Duration.zero) -
                 const Duration(milliseconds: 50)) {
       await c.seekTo(Duration.zero);

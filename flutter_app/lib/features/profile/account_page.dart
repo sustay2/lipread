@@ -3,6 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../common/theme/app_colors.dart';
+import '../../common/theme/app_spacing.dart';
+import '../../services/biometric_service.dart';
+import '../../services/secure_storage_service.dart';
 
 class AccountPage extends StatefulWidget {
   const AccountPage({super.key});
@@ -14,354 +17,583 @@ class AccountPage extends StatefulWidget {
 class _AccountPageState extends State<AccountPage> {
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
-  final _localeCtrl = ValueNotifier<String>('en');
-  bool _subtitles = true;
-  bool _autoplay = false;
-  String _theme = 'system'; // system / light / dark
 
   bool _loading = true;
+  bool _saving = false;
   String? _error;
 
-  late final String _uid;
+  bool _usernameAvailable = true;
+  bool _checkingName = false;
+
+  // Biometrics
+  bool _biometricsAvailable = false;
+  bool _hasFingerprint = false;
+  bool _hasFace = false;
+
+  bool _fingerprintEnabled = false;
+  bool _faceEnabled = false;
+
+  late User _user;
+  late String _uid;
 
   @override
   void initState() {
     super.initState();
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      _error = 'You are not signed in.';
+
+    final u = FirebaseAuth.instance.currentUser;
+    if (u == null) {
+      _error = "You are not signed in.";
       _loading = false;
       return;
     }
-    _uid = user.uid;
-    _load();
-  }
 
-  Future<void> _load() async {
-    try {
-      final snap = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(_uid)
-          .get();
+    _user = u;
+    _uid = u.uid;
 
-      final data = snap.data() ?? {};
-      final stats =
-          (data['stats'] as Map<String, dynamic>?) ?? const {};
-      final settings =
-          (data['settings'] as Map<String, dynamic>?) ?? const {};
-
-      _nameCtrl.text =
-          (data['displayName'] as String?) ??
-              (FirebaseAuth.instance.currentUser?.displayName ?? '');
-      _localeCtrl.value =
-          (data['locale'] as String?) ?? 'en';
-      _subtitles = (settings['subtitles'] as bool?) ?? true;
-      _autoplay = (settings['autoplay'] as bool?) ?? false;
-      _theme =
-          (settings['theme'] as String?) ?? 'system';
-
-      setState(() {
-        _loading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _error = 'Failed to load account: $e';
-        _loading = false;
-      });
-    }
-  }
-
-  Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() {
-      _error = null;
-      _loading = true;
-    });
-
-    try {
-      final userRef =
-      FirebaseFirestore.instance.collection('users').doc(_uid);
-
-      await userRef.set({
-        'displayName': _nameCtrl.text.trim(),
-        'locale': _localeCtrl.value,
-        'settings': {
-          'subtitles': _subtitles,
-          'autoplay': _autoplay,
-          'theme': _theme,
-        },
-      }, SetOptions(merge: true));
-
-      // Also update FirebaseAuth profile displayName for consistency
-      await FirebaseAuth.instance.currentUser
-          ?.updateDisplayName(_nameCtrl.text.trim());
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Account settings saved.'),
-        ),
-      );
-      Navigator.of(context).pop();
-    } catch (e) {
-      setState(() {
-        _error = 'Failed to save. Please try again.';
-        _loading = false;
-      });
-    }
+    _loadProfile();
+    _initBiometrics();
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
-    _localeCtrl.dispose();
     super.dispose();
   }
 
+  // ---------------------------------------------------------------------------
+  // LOAD PROFILE
+  // ---------------------------------------------------------------------------
+  Future<void> _loadProfile() async {
+    try {
+      final snap =
+          await FirebaseFirestore.instance.collection('users').doc(_uid).get();
+      final data = snap.data() ?? {};
+
+      _nameCtrl.text = data['displayName'] ?? _user.displayName ?? '';
+
+      setState(() => _loading = false);
+    } catch (e) {
+      setState(() {
+        _error = "Failed to load: $e";
+        _loading = false;
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // BIOMETRICS INITIALIZATION
+  // ---------------------------------------------------------------------------
+  Future<void> _initBiometrics() async {
+    final available = await BiometricService.canUseBiometrics();
+    final (hasFp, hasFace) = await BiometricService.getBiometricTypes();
+    final hasCredsForUser =
+        await SecureStorageService.hasBiometricCredentialsForUser(_uid);
+
+    if (!mounted) return;
+
+    setState(() {
+      _biometricsAvailable = available;
+      _hasFingerprint = hasFp;
+      _hasFace = hasFace;
+
+      // If this user owns the stored biometric creds,
+      // we treat their available modalities as "enabled" by default.
+      if (hasCredsForUser) {
+        _fingerprintEnabled = hasFp;
+        _faceEnabled = hasFace;
+      } else {
+        _fingerprintEnabled = false;
+        _faceEnabled = false;
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // USERNAME CHECK
+  // ---------------------------------------------------------------------------
+  Future<void> _checkUsername(String value) async {
+    if (value.trim().isEmpty) return;
+
+    setState(() => _checkingName = true);
+
+    final query = await FirebaseFirestore.instance
+        .collection("users")
+        .where("displayName", isEqualTo: value.trim())
+        .get();
+
+    final taken = query.docs.any((doc) => doc.id != _uid);
+
+    setState(() {
+      _usernameAvailable = !taken;
+      _checkingName = false;
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // SAVE PROFILE
+  // ---------------------------------------------------------------------------
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _saving = true);
+
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(_uid).set(
+        {
+          'displayName': _nameCtrl.text.trim(),
+        },
+        SetOptions(merge: true),
+      );
+
+      await _user.updateDisplayName(_nameCtrl.text.trim());
+
+      _show("Profile updated.");
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      _show("Failed to save: $e");
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // BIOMETRIC TOGGLES
+  // ---------------------------------------------------------------------------
+
+  Future<String?> _requestPassword() async {
+    final ctrl = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Enter password"),
+        content: TextField(
+          controller: ctrl,
+          obscureText: true,
+          decoration: const InputDecoration(labelText: "Password"),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text("Confirm"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _toggleFingerprint(bool enable) async {
+    if (enable) {
+      final password = await _requestPassword();
+      if (password == null || password.isEmpty) return;
+
+      await Future.delayed(const Duration(milliseconds: 120));
+
+      final ok = await BiometricService.authenticateWithFingerprint(
+        reason: "Confirm fingerprint to enable login",
+      );
+
+      if (!ok) {
+        _show("Fingerprint authentication failed.");
+        return;
+      }
+
+      await SecureStorageService.saveBiometricCredentials(
+        uid: _uid,
+        email: _user.email!,
+        password: password,
+      );
+
+      setState(() {
+        _fingerprintEnabled = true;
+        // keep faceEnabled as-is; user controls it separately
+      });
+
+      _show("Fingerprint login enabled.");
+    } else {
+      setState(() => _fingerprintEnabled = false);
+
+      // If neither modality is enabled anymore, clear creds for this user.
+      if (!_faceEnabled) {
+        await SecureStorageService.clearBiometricCredentialsForUser(_uid);
+      }
+
+      _show("Fingerprint login disabled.");
+    }
+  }
+
+  Future<void> _toggleFace(bool enable) async {
+    if (enable) {
+      final password = await _requestPassword();
+      if (password == null || password.isEmpty) return;
+
+      await Future.delayed(const Duration(milliseconds: 120));
+
+      final ok = await BiometricService.authenticateWithFace(
+        reason: "Confirm face recognition to enable login",
+      );
+
+      if (!ok) {
+        _show("Face authentication failed.");
+        return;
+      }
+
+      await SecureStorageService.saveBiometricCredentials(
+        uid: _uid,
+        email: _user.email!,
+        password: password,
+      );
+
+      setState(() {
+        _faceEnabled = true;
+      });
+
+      _show("Face login enabled.");
+    } else {
+      setState(() => _faceEnabled = false);
+
+      if (!_fingerprintEnabled) {
+        await SecureStorageService.clearBiometricCredentialsForUser(_uid);
+      }
+
+      _show("Face recognition login disabled.");
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // CHANGE PASSWORD
+  // ---------------------------------------------------------------------------
+  Future<void> _changePassword() async {
+    final current = TextEditingController();
+    final newPass = TextEditingController();
+    final confirm = TextEditingController();
+
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(ctx).viewInsets.bottom,
+          left: 16,
+          right: 16,
+          top: 20,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              "Change Password",
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+
+            TextField(
+              controller: current,
+              obscureText: true,
+              decoration:
+                  const InputDecoration(labelText: "Current password"),
+            ),
+            const SizedBox(height: 12),
+
+            TextField(
+              controller: newPass,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: "New password"),
+            ),
+            const SizedBox(height: 12),
+
+            TextField(
+              controller: confirm,
+              obscureText: true,
+              decoration:
+                  const InputDecoration(labelText: "Confirm new password"),
+            ),
+            const SizedBox(height: 20),
+
+            FilledButton(
+              onPressed: () {
+                if (newPass.text != confirm.text) {
+                  _show("Passwords do not match.");
+                } else {
+                  Navigator.pop(ctx, true);
+                }
+              },
+              child: const Text("Update password"),
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final cred = EmailAuthProvider.credential(
+        email: _user.email!,
+        password: current.text.trim(),
+      );
+
+      await _user.reauthenticateWithCredential(cred);
+      await _user.updatePassword(newPass.text.trim());
+
+      _show("Password updated.");
+    } catch (e) {
+      _show("Failed: $e");
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // DELETE ACCOUNT
+  // ---------------------------------------------------------------------------
+  Future<void> _deleteAccount() async {
+    final passCtrl = TextEditingController();
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Delete Account"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              "This cannot be undone.\nEnter password to continue.",
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: passCtrl,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: "Password"),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text("Cancel"),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text("Delete"),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    try {
+      final cred = EmailAuthProvider.credential(
+        email: _user.email!,
+        password: passCtrl.text.trim(),
+      );
+
+      await _user.reauthenticateWithCredential(cred);
+
+      await FirebaseFirestore.instance.collection('users').doc(_uid).delete();
+      await _user.delete();
+
+      if (mounted) {
+        await SecureStorageService.clearBiometricCredentialsForUser(_uid);
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/login',
+          (_) => false,
+        );
+      }
+    } catch (e) {
+      _show("Failed: $e");
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // UI
+  // ---------------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
-    if (_loading && _error == null) {
+    if (_loading) {
       return const Scaffold(
-        backgroundColor: AppColors.background,
         body: Center(child: CircularProgressIndicator()),
       );
     }
 
-    if (_error != null &&
-        FirebaseAuth.instance.currentUser == null) {
-      return Scaffold(
-        backgroundColor: AppColors.background,
-        appBar: AppBar(
-          backgroundColor: AppColors.background,
-          elevation: 0,
-          title: const Text('Account'),
-        ),
-        body: Center(
-          child: Text(
-            _error!,
-            style: const TextStyle(color: AppColors.error),
-          ),
-        ),
-      );
-    }
-
     return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.background,
-        elevation: 0,
-        title: const Text('Account settings'),
-      ),
+      appBar: AppBar(title: const Text("Account settings")),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Form(
           key: _formKey,
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Basic info card
+              // PROFILE CARD
               Container(
-                padding: const EdgeInsets.all(16),
                 decoration: _cardDecor(),
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Profile',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
+                      "Profile",
+                      style:
+                          TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 16),
+
                     TextFormField(
                       controller: _nameCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Display name',
+                      decoration: InputDecoration(
+                        labelText: "Display name",
+                        suffixIcon: _checkingName
+                            ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : _nameCtrl.text.isEmpty
+                                ? null
+                                : Icon(
+                                    _usernameAvailable
+                                        ? Icons.check_circle
+                                        : Icons.error,
+                                    color: _usernameAvailable
+                                        ? Colors.green
+                                        : Colors.red,
+                                  ),
                       ),
+                      onChanged: _checkUsername,
                       validator: (v) {
-                        if (v == null || v.trim().isEmpty) {
-                          return 'Please enter a name';
-                        }
-                        if (v.trim().length < 2) {
-                          return 'Name is too short';
-                        }
+                        if (v == null || v.trim().isEmpty) return "Required";
+                        if (!_usernameAvailable) return "Name already taken";
                         return null;
                       },
                     ),
-                    const SizedBox(height: 12),
-                    ValueListenableBuilder<String>(
-                      valueListenable: _localeCtrl,
-                      builder: (context, value, _) {
-                        return DropdownButtonFormField<String>(
-                          value: value,
-                          decoration: const InputDecoration(
-                            labelText: 'App language',
-                          ),
-                          items: const [
-                            DropdownMenuItem(
-                              value: 'en',
-                              child: Text('English'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'ms',
-                              child: Text('Malay'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'zh',
-                              child: Text('Chinese'),
-                            ),
-                          ],
-                          onChanged: (v) {
-                            if (v != null) _localeCtrl.value = v;
-                          },
-                        );
-                      },
-                    ),
                   ],
                 ),
               ),
-
-              const SizedBox(height: 16),
-
-              // Preferences card
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: _cardDecor(),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Playback & accessibility',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    SwitchListTile.adaptive(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text(
-                        'Show subtitles by default',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      subtitle: const Text(
-                        'Recommended for lip reading support.',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                      value: _subtitles,
-                      activeColor: AppColors.primary,
-                      onChanged: (v) =>
-                          setState(() => _subtitles = v),
-                    ),
-                    const SizedBox(height: 4),
-                    SwitchListTile.adaptive(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text(
-                        'Autoplay next exercise',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      subtitle: const Text(
-                        'Automatically move to the next step.',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                      value: _autoplay,
-                      activeColor: AppColors.primary,
-                      onChanged: (v) =>
-                          setState(() => _autoplay = v),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // Theme card
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: _cardDecor(),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Theme',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    _ThemeRadio(
-                      value: 'system',
-                      group: _theme,
-                      label: 'Use device setting',
-                      onChanged: (v) =>
-                          setState(() => _theme = v),
-                    ),
-                    _ThemeRadio(
-                      value: 'light',
-                      group: _theme,
-                      label: 'Light',
-                      onChanged: (v) =>
-                          setState(() => _theme = v),
-                    ),
-                    _ThemeRadio(
-                      value: 'dark',
-                      group: _theme,
-                      label: 'Dark',
-                      onChanged: (v) =>
-                          setState(() => _theme = v),
-                    ),
-                  ],
-                ),
-              ),
-
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(
-                  _error!,
-                  style: const TextStyle(
-                    color: AppColors.error,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
 
               const SizedBox(height: 20),
 
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: _loading ? null : _save,
-                  child: _loading
-                      ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor:
-                      AlwaysStoppedAnimation<Color>(
-                        Colors.white,
+              // PASSWORD BLOCK
+              Container(
+                decoration: _cardDecor(),
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Password",
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
                       ),
                     ),
-                  )
-                      : const Text('Save changes'),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: _changePassword,
+                        child: const Text("Change password"),
+                      ),
+                    ),
+                  ],
                 ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // BIOMETRICS CARD
+              if (_biometricsAvailable)
+                Container(
+                  decoration: _cardDecor(),
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Biometric login",
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      if (_hasFingerprint)
+                        SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text("Fingerprint login"),
+                          subtitle: const Text(
+                              "Use your fingerprint to log in quickly."),
+                          value: _fingerprintEnabled,
+                          onChanged: (v) => _toggleFingerprint(v),
+                        ),
+
+                      if (_hasFace)
+                        SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text("Face recognition login"),
+                          subtitle: const Text(
+                              "Use face unlock to log in instantly."),
+                          value: _faceEnabled,
+                          onChanged: (v) => _toggleFace(v),
+                        ),
+                    ],
+                  ),
+                ),
+
+              const SizedBox(height: 20),
+
+              // DANGER ZONE
+              Container(
+                decoration: _cardDecor(),
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Danger zone",
+                      style: TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.red,
+                        ),
+                        onPressed: _deleteAccount,
+                        child: const Text("Delete account"),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 28),
+
+              // SAVE BUTTON
+              FilledButton(
+                onPressed: _saving ? null : _save,
+                child: _saving
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text("Save changes"),
               ),
             ],
           ),
@@ -369,63 +601,15 @@ class _AccountPageState extends State<AccountPage> {
       ),
     );
   }
+
+  void _show(String msg) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 }
 
-class _ThemeRadio extends StatelessWidget {
-  final String value;
-  final String group;
-  final String label;
-  final ValueChanged<String> onChanged;
-
-  const _ThemeRadio({
-    required this.value,
-    required this.group,
-    required this.label,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final selected = value == group;
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: () => onChanged(value),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          children: [
-            Radio<String>(
-              value: value,
-              groupValue: group,
-              activeColor: AppColors.primary,
-              onChanged: (v) {
-                if (v != null) onChanged(v);
-              },
-            ),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                color: selected
-                    ? AppColors.textPrimary
-                    : AppColors.textSecondary,
-                fontWeight: selected
-                    ? FontWeight.w600
-                    : FontWeight.w400,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-BoxDecoration _cardDecor({double radius = 16}) {
+BoxDecoration _cardDecor() {
   return BoxDecoration(
     color: AppColors.surface,
-    borderRadius: BorderRadius.circular(radius),
+    borderRadius: BorderRadius.circular(16),
     boxShadow: [
       BoxShadow(
         color: AppColors.softShadow,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // Added for exception handling
 import 'package:flutter_app/services/router.dart';
 import 'package:flutter_app/services/auth_services.dart';
 
@@ -15,9 +16,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
 
-  bool _obscure1 = true, _obscure2 = true;
+  bool _obscure1 = true,
+      _obscure2 = true;
   bool _loading = false;
-  bool _acceptTos = true; // set true if you don’t want a blocking checkbox
+  bool _acceptTos = true;
   String? _error;
 
   @override
@@ -27,6 +29,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
     super.dispose();
+  }
+
+  // --- HELPER: Translate Errors ---
+  String _getFriendlyErrorMessage(Object e) {
+    if (e is FirebaseAuthException) {
+      switch (e.code) {
+        case 'email-already-in-use':
+          return 'The email address is already in use by another account.';
+        case 'invalid-email':
+          return 'The email address is invalid.';
+        case 'weak-password':
+          return 'The password is too weak.';
+        case 'operation-not-allowed':
+          return 'Email/password accounts are not enabled.';
+        case 'network-request-failed':
+          return 'Network error. Check your internet connection.';
+        case 'too-many-requests':
+          return 'Too many attempts. Please try again later.';
+        default:
+          return e.message ?? 'Registration failed.';
+      }
+    }
+    return 'Something went wrong. Please try again.';
   }
 
   int _calcStrength(String v) {
@@ -74,7 +99,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       await AuthService.instance.registerWithEmail(
         email: _emailCtrl.text.trim(),
@@ -88,9 +116,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
             (r) => false,
       );
     } catch (e) {
-      setState(() => _error = e is Exception ? e.toString() : 'Registration failed.');
+      setState(() => _error = _getFriendlyErrorMessage(e));
     } finally {
-      if (mounted) setState(() { _loading = false; });
+      if (mounted) {
+        setState(() {
+        _loading = false;
+      });
+      }
     }
   }
 
@@ -158,22 +190,34 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       textInputAction: TextInputAction.next,
                       decoration: InputDecoration(
                         labelText: 'Full name',
-                        prefixIcon: const Icon(Icons.person_outline, color: Color(0xFF4A90E2)),
+                        prefixIcon: const Icon(
+                            Icons.person_outline, color: Color(0xFF4A90E2)),
                         filled: true,
                         fillColor: Colors.white,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(color: Color(0xFFDCE3F0)),
+                          borderSide: const BorderSide(
+                              color: Color(0xFFDCE3F0)),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(color: Color(0xFF4A90E2), width: 1.5),
+                          borderSide: const BorderSide(
+                              color: Color(0xFF4A90E2), width: 1.5),
                         ),
-                        contentPadding: const EdgeInsets.symmetric(vertical: 16),
+                        contentPadding: const EdgeInsets.symmetric(
+                            vertical: 16),
                       ),
                       validator: (v) {
-                        if (v == null || v.trim().isEmpty) return 'Name is required';
-                        if (v.trim().length < 2) return 'Enter a valid name';
+                        if (v == null || v
+                            .trim()
+                            .isEmpty) {
+                          return 'Name is required';
+                        }
+                        if (v
+                            .trim()
+                            .length < 2) {
+                          return 'Enter a valid name';
+                        }
                         return null;
                       },
                     ),
@@ -187,22 +231,31 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       autofillHints: const [AutofillHints.email],
                       decoration: InputDecoration(
                         labelText: 'Email',
-                        prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFF4A90E2)),
+                        prefixIcon: const Icon(
+                            Icons.email_outlined, color: Color(0xFF4A90E2)),
                         filled: true,
                         fillColor: Colors.white,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(color: Color(0xFFDCE3F0)),
+                          borderSide: const BorderSide(
+                              color: Color(0xFFDCE3F0)),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(color: Color(0xFF4A90E2), width: 1.5),
+                          borderSide: const BorderSide(
+                              color: Color(0xFF4A90E2), width: 1.5),
                         ),
-                        contentPadding: const EdgeInsets.symmetric(vertical: 16),
+                        contentPadding: const EdgeInsets.symmetric(
+                            vertical: 16),
                       ),
                       validator: (v) {
-                        if (v == null || v.trim().isEmpty) return 'Email is required';
-                        if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(v.trim())) {
+                        if (v == null || v
+                            .trim()
+                            .isEmpty) {
+                          return 'Email is required';
+                        }
+                        if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(v
+                            .trim())) {
                           return 'Enter a valid email';
                         }
                         return null;
@@ -222,30 +275,40 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               textInputAction: TextInputAction.next,
                               decoration: InputDecoration(
                                 labelText: 'Password',
-                                prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFF4A90E2)),
+                                prefixIcon: const Icon(Icons.lock_outline,
+                                    color: Color(0xFF4A90E2)),
                                 suffixIcon: IconButton(
                                   icon: Icon(
-                                    _obscure1 ? Icons.visibility_off : Icons.visibility,
+                                    _obscure1 ? Icons.visibility_off : Icons
+                                        .visibility,
                                     color: const Color(0xFF6E7A8A),
                                   ),
-                                  onPressed: () => setState(() => _obscure1 = !_obscure1),
+                                  onPressed: () =>
+                                      setState(() => _obscure1 = !_obscure1),
                                 ),
                                 filled: true,
                                 fillColor: Colors.white,
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(14),
-                                  borderSide: const BorderSide(color: Color(0xFFDCE3F0)),
+                                  borderSide: const BorderSide(
+                                      color: Color(0xFFDCE3F0)),
                                 ),
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(14),
-                                  borderSide: const BorderSide(color: Color(0xFF4A90E2), width: 1.5),
+                                  borderSide: const BorderSide(
+                                      color: Color(0xFF4A90E2), width: 1.5),
                                 ),
-                                contentPadding: const EdgeInsets.symmetric(vertical: 16),
+                                contentPadding: const EdgeInsets.symmetric(
+                                    vertical: 16),
                               ),
                               onChanged: (_) => setSB(() {}),
                               validator: (v) {
-                                if (v == null || v.isEmpty) return 'Password is required';
-                                if (v.length < 6) return 'Use at least 6 characters';
+                                if (v == null || v.isEmpty) {
+                                  return 'Password is required';
+                                }
+                                if (v.length < 6) {
+                                  return 'Use at least 6 characters';
+                                }
                                 return null;
                               },
                             ),
@@ -259,7 +322,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                       minHeight: 6,
                                       value: strength / 5.0,
                                       backgroundColor: const Color(0xFFDCE3F0),
-                                      valueColor: AlwaysStoppedAnimation(_strengthColor(strength)),
+                                      valueColor: AlwaysStoppedAnimation(
+                                          _strengthColor(strength)),
                                     ),
                                   ),
                                 ),
@@ -283,42 +347,65 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       textInputAction: TextInputAction.done,
                       decoration: InputDecoration(
                         labelText: 'Confirm password',
-                        prefixIcon: const Icon(Icons.lock_reset_outlined, color: Color(0xFF4A90E2)),
+                        prefixIcon: const Icon(
+                            Icons.lock_reset_outlined, color: Color(
+                            0xFF4A90E2)),
                         suffixIcon: IconButton(
                           icon: Icon(
                             _obscure2 ? Icons.visibility_off : Icons.visibility,
                             color: const Color(0xFF6E7A8A),
                           ),
-                          onPressed: () => setState(() => _obscure2 = !_obscure2),
+                          onPressed: () =>
+                              setState(() => _obscure2 = !_obscure2),
                         ),
                         filled: true,
                         fillColor: Colors.white,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(color: Color(0xFFDCE3F0)),
+                          borderSide: const BorderSide(
+                              color: Color(0xFFDCE3F0)),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(color: Color(0xFF4A90E2), width: 1.5),
+                          borderSide: const BorderSide(
+                              color: Color(0xFF4A90E2), width: 1.5),
                         ),
-                        contentPadding: const EdgeInsets.symmetric(vertical: 16),
+                        contentPadding: const EdgeInsets.symmetric(
+                            vertical: 16),
                       ),
                       validator: (v) {
-                        if (v != _passwordCtrl.text) return 'Passwords do not match';
+                        if (v != _passwordCtrl.text) {
+                          return 'Passwords do not match';
+                        }
                         return null;
                       },
                     ),
 
                     const SizedBox(height: 12),
 
-                    // Error
+                    // Clean Error Box
                     if (_error != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8.0),
-                        child: Text(
-                          _error!,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(color: Color(0xFFE57373)),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.red.shade100),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.error_outline, color: Colors.red,
+                                size: 20),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _error!,
+                                style: const TextStyle(
+                                    color: Colors.red, fontSize: 13),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
 
@@ -327,8 +414,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       children: [
                         Checkbox(
                           value: _acceptTos,
-                          onChanged: (v) => setState(() => _acceptTos = v ?? false),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                          onChanged: (v) =>
+                              setState(() => _acceptTos = v ?? false),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4)),
                           side: const BorderSide(color: Color(0xFFDCE3F0)),
                         ),
                         Expanded(
@@ -369,19 +458,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       child: _loading
                           ? const SizedBox(
                         height: 20, width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
                       )
-                          : const Text('Create account', style: TextStyle(fontSize: 16)),
+                          : const Text(
+                          'Create account', style: TextStyle(fontSize: 16)),
                     ),
 
                     const SizedBox(height: 12),
 
                     // Back to sign in
                     TextButton(
-                      onPressed: () => Navigator.pushNamed(context, Routes.login),
+                      onPressed: () =>
+                          Navigator.pushNamed(context, Routes.login),
                       child: const Text.rich(
                         TextSpan(
                           text: 'Already have an account? ',
+                          style: TextStyle(color: Colors.grey),
                           children: [
                             TextSpan(
                               text: 'Sign in',

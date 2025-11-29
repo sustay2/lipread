@@ -22,7 +22,7 @@ class HomeMetricsService {
       DateTime? lastDay;
 
       if (snap.exists && snap.data() != null) {
-        final data = snap.data()! as Map<String, dynamic>;
+        final data = snap.data()!;
         if (data['streakCurrent'] is int) {
           streak = data['streakCurrent'] as int;
         }
@@ -108,7 +108,7 @@ class HomeMetricsService {
         );
       }
 
-      final data = (snap.data() ?? {}) as Map<String, dynamic>;
+      final data = (snap.data() ?? {});
       final stats = (data['stats'] as Map<String, dynamic>?) ?? {};
 
       int xp = (stats['xp'] is num) ? (stats['xp'] as num).toInt() : 0;
@@ -183,7 +183,7 @@ class HomeMetricsService {
 
       Map<String, dynamic> existing = {};
       if (snap.exists && snap.data() != null) {
-        existing = snap.data()! as Map<String, dynamic>;
+        existing = snap.data()!;
       }
 
       final startedAt = existing['startedAt'] ?? now;
@@ -252,7 +252,7 @@ class HomeMetricsService {
       DateTime? lastGen;
 
       if (snap.exists && snap.data() != null) {
-        final data = snap.data()! as Map<String, dynamic>;
+        final data = snap.data()!;
         if (data['tasksLastGenerated'] is Timestamp) {
           final ts = data['tasksLastGenerated'] as Timestamp;
           final d = ts.toDate().toUtc();
@@ -335,7 +335,7 @@ class HomeMetricsService {
       final snap = await tx.get(ref);
       if (!snap.exists || snap.data() == null) return;
 
-      final data = snap.data()! as Map<String, dynamic>;
+      final data = snap.data()!;
       final completed = data['completed'] as bool? ?? false;
       if (completed) return;
 

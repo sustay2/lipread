@@ -16,7 +16,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
   Timer? _poll;
   Timer? _cooldownTimer;
   bool _sending = false;
-  int _cooldown = 0; // seconds
+  int _cooldown = 0;
   String? _email;
 
   @override
@@ -79,6 +79,15 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
     super.dispose();
   }
 
+  // --- HELPER ---
+  String _getFriendlyErrorMessage(Object e) {
+    if (e is FirebaseAuthException) {
+      if (e.code == 'network-request-failed') return 'No internet connection.';
+      if (e.code == 'too-many-requests') return 'Too many requests. Please wait.';
+    }
+    return 'Could not resend email.';
+  }
+
   Future<void> _resend() async {
     if (_cooldown > 0) return;
     setState(() => _sending = true);
@@ -90,6 +99,15 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
         );
       }
       _startCooldown(30);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_getFriendlyErrorMessage(e)),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _sending = false);
     }

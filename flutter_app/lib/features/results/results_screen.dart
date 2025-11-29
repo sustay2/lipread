@@ -193,7 +193,7 @@ class _AttemptsTab extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  ...attempts.map((d) => _AttemptTile(doc: d)).toList(),
+                  ...attempts.map((d) => _AttemptTile(doc: d)),
                   const SizedBox(height: 16),
                 ],
               );

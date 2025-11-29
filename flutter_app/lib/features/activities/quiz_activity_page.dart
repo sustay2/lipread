@@ -80,7 +80,7 @@ class _QuizActivityPageState extends State<QuizActivityPage> {
       final config =
           (actData['config'] as Map<String, dynamic>?) ?? <String, dynamic>{};
 
-      String? _extractIdFromRef(dynamic v) {
+      String? extractIdFromRef(dynamic v) {
         if (v is String && v.isNotEmpty) {
           final parts = v.split('/');
           return parts.isNotEmpty ? parts.last : null;
@@ -98,9 +98,9 @@ class _QuizActivityPageState extends State<QuizActivityPage> {
       } else if (actData['bankId'] is String) {
         bankId = actData['bankId'] as String;
       }
-      bankId ??= _extractIdFromRef(config['questionBankRef']);
-      bankId ??= _extractIdFromRef(actData['questionBankRef']);
-      bankId ??= _extractIdFromRef(config['bankRef']);
+      bankId ??= extractIdFromRef(config['questionBankRef']);
+      bankId ??= extractIdFromRef(actData['questionBankRef']);
+      bankId ??= extractIdFromRef(config['bankRef']);
 
       if (bankId == null || bankId.isEmpty) {
         setState(() {

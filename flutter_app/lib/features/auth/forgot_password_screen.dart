@@ -157,6 +157,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       child: const Text.rich(
                         TextSpan(
                           text: 'Remembered it? ',
+                          style: TextStyle(color: Colors.grey),
                           children: [
                             TextSpan(
                               text: 'Back to sign in',

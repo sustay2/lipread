@@ -297,7 +297,7 @@ class LessonDetailScreen extends StatelessWidget {
                                             // Mark as watched / started
                                             await HomeMetricsService
                                                 .onLessonWatched(
-                                              uid!,
+                                              uid,
                                             );
                                             await HomeMetricsService
                                                 .updateEnrollmentProgress(
@@ -354,7 +354,7 @@ class LessonDetailScreen extends StatelessWidget {
                                             await HomeMetricsService
                                                 .updateEnrollmentProgress(
                                               uid:
-                                              uid!,
+                                              uid,
                                               courseId:
                                               courseId,
                                               lastLessonId:

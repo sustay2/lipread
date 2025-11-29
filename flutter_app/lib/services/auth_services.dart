@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter_app/services/secure_storage_service.dart';
 
 class AuthService {
   AuthService._();
@@ -62,117 +63,57 @@ class AuthService {
 
   // --- Google Sign-In ---
   Future<UserCredential> signInWithGoogle() async {
-    final google = GoogleSignIn.instance;
-    await google.initialize();
-
-    // Optional fast path; nullable on some platforms
-    final Future<void>? light = google.attemptLightweightAuthentication();
-    if (light != null) {
-      try { await light.timeout(const Duration(seconds: 3)); } catch (_) {}
-    }
-
-    if (!google.supportsAuthenticate()) {
-      // If you support web, route to the web button flow instead.
-      throw FirebaseAuthException(
-        code: 'platform-unsupported',
-        message: 'Google authenticate() not supported on this platform.',
+    try {
+      final GoogleSignIn googleSignIn = GoogleSignIn(
+        scopes: ['email', 'profile'],
       );
-    }
 
-    // Start auth UI (this may throw if user cancels immediately)
-    try {
-      await google.authenticate();
-    } on Object catch (e) {
-      throw FirebaseAuthException(code: 'auth-ui-failed', message: e.toString());
-    }
-
-    // Listen for ANY result: success, cancel, or error
-    final completer = Completer<dynamic>();
-    late final StreamSubscription sub;
-    Timer? timer;
-
-    void finishOnce([Object? error, StackTrace? st]) {
-      if (!completer.isCompleted) {
-        if (error != null) {
-          completer.completeError(error, st);
-        } else {
-          completer.complete(null); // success will come via event path below
-        }
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+      if (googleUser == null) {
+        throw FirebaseAuthException(
+          code: 'canceled',
+          message: 'You cancelled the sign-in.',
+        );
       }
-      timer?.cancel();
-      sub.cancel();
-    }
 
-    sub = google.authenticationEvents.listen(
-          (event) async {
-        final text = event.toString();
-        // Success
-        if (text.contains('SignIn')) {
-          try {
-            // event.user.authentication may be Future OR object
-            final dynamic authMaybeFuture = (event as dynamic).user.authentication;
-            final dynamic authObj = authMaybeFuture is Future ? await authMaybeFuture : authMaybeFuture;
+      final GoogleSignInAuthentication googleAuth =
+      await googleUser.authentication;
 
-            final String? idToken = (authObj as dynamic).idToken as String?;
-            if (idToken == null || idToken.isEmpty) {
-              finishOnce(FirebaseAuthException(
-                code: 'missing-id-token',
-                message: 'Google did not return an ID token.',
-              ));
-              return;
-            }
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
 
-            final credential = GoogleAuthProvider.credential(idToken: idToken);
-            final cred = await _auth.signInWithCredential(credential);
-            await _ensureUserDoc(cred.user!);
-            if (!completer.isCompleted) completer.complete(cred);
-            timer?.cancel();
-            sub.cancel();
-          } catch (e, st) {
-            finishOnce(FirebaseAuthException(code: 'google-sign-in-failed', message: e.toString()), st);
-          }
-        }
-        // Explicit cancel / sign-out events
-        else if (text.contains('Cancel') || text.contains('SignOut') || text.contains('Canceled') || text.contains('Cancelled')) {
-          finishOnce(FirebaseAuthException(code: 'canceled', message: 'Sign-in was canceled.'));
-        }
-        // Any event that looks like an exception
-        else if (text.contains('Exception')) {
-          finishOnce(FirebaseAuthException(code: 'google-sign-in-failed', message: text));
-        }
-      },
-      onError: (e, st) {
-        finishOnce(FirebaseAuthException(code: 'google-sign-in-failed', message: e.toString()), st);
-      },
-      cancelOnError: false,
-    );
+      final userCred =
+      await FirebaseAuth.instance.signInWithCredential(credential);
 
-    // Hard timeout so the call always returns
-    timer = Timer(const Duration(seconds: 45), () {
-      finishOnce(FirebaseAuthException(
-        code: 'timeout',
-        message: 'Google sign-in timed out. Check Play Services/account.',
-      ));
-    });
+      await _ensureUserDoc(userCred.user!);
+      return userCred;
 
-    try {
-      final result = await completer.future; // either a UserCredential or null (already completed above)
-      if (result is UserCredential) return result;
-
-      // If we got here without a credential, treat as failure
-      throw FirebaseAuthException(code: 'google-sign-in-failed', message: 'Unknown sign-in result.');
-    } finally {
-      timer?.cancel();
-      await sub.cancel();
+    } on FirebaseAuthException catch (e) {
+      throw FirebaseAuthException(code: e.code, message: e.message);
+    } catch (e) {
+      throw FirebaseAuthException(
+        code: 'unknown',
+        message: 'Google Sign-In failed: $e',
+      );
     }
   }
 
   Future<void> signOut() async {
+    // Sign out from Google if applicable
+    final google = GoogleSignIn();
     try {
-      await GoogleSignIn.instance.disconnect();
-    } catch (_) {
+      await google.signOut();
+    } catch (_) {}
 
+    // Clear biometric credentials only for the current user
+    final user = _auth.currentUser;
+    if (user != null) {
+      await SecureStorageService.clearBiometricCredentialsForUser(user.uid);
     }
+
+    // Firebase sign out
     await _auth.signOut();
   }
 

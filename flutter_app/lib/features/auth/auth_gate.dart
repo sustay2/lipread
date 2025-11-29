@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:go_router/go_router.dart';
 import 'package:flutter_app/services/auth_services.dart';
+import 'package:flutter_app/services/router.dart';
 
 class AuthGate extends StatefulWidget {
   final Widget child;
@@ -12,42 +12,41 @@ class AuthGate extends StatefulWidget {
 }
 
 class _AuthGateState extends State<AuthGate> {
-  String? _redirected; // prevent multiple redirects
+  bool _handled = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _maybeRedirectByRole();
+    _checkRedirect();
   }
 
-  Future<void> _maybeRedirectByRole() async {
-    if (_redirected != null) return; // already handled
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return; // not signed in => router redirect handles
+  Future<void> _checkRedirect() async {
+    if (_handled) return;
+    _handled = true;
 
-    final location = GoRouterState.of(context).matchedLocation;
-    // Only reroute when landing on learner shell root; let deep links alone
-    final onLearnerRoot = location == '/' || location.isEmpty;
-    if (!onLearnerRoot) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
 
     final role = await AuthService.instance.getEffectiveRole(user.uid);
+
     switch (role) {
+      case 'admin':
+        _redirect(Routes.admin);
+        break;
       case 'creator':
-        _redirected = '/creator';
-        if (mounted) context.go('/creator');
+        _redirect(Routes.creator);
         break;
       case 'instructor':
-        _redirected = '/instructor';
-        if (mounted) context.go('/instructor');
-        break;
-      case 'admin':
-        _redirected = '/admin';
-        if (mounted) context.go('/admin');
+        _redirect(Routes.instructor);
         break;
       default:
-      // learner stays in the app shell
-        _redirected = '/';
+        _redirect(Routes.learnerShell);
     }
+  }
+
+  void _redirect(String route) {
+    if (!mounted) return;
+    Navigator.of(context).pushNamedAndRemoveUntil(route, (r) => false);
   }
 
   @override

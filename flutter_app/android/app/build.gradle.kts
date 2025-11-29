@@ -10,7 +10,7 @@ plugins {
 
 android {
     namespace = "my.edu.tarumt.flutter_app"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 35
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
