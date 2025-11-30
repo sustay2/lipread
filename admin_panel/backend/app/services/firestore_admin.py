@@ -1,8 +1,11 @@
 """Admin-facing Firestore helpers mapped to the provided data model."""
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
+from google.cloud.firestore_v1 import Query
 
 from google.cloud.firestore_v1.base_document import DocumentSnapshot
 
@@ -87,6 +90,50 @@ def list_users(search: str | None = None, role: str | None = None, limit: int = 
             break
     results.sort(key=lambda u: (u.get("email") or "").lower())
     return results
+
+
+def paginate_users(
+    search: str | None = None,
+    role: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> Tuple[List[Dict[str, Any]], int]:
+    users = list_users(search=search, role=role, limit=5000)
+    total = len(users)
+    start = max((page - 1) * page_size, 0)
+    end = start + page_size
+    return users[start:end], total
+
+
+def update_user(uid: str, display_name: Optional[str], role: Optional[str], status: Optional[str]):
+    doc_ref = db.collection("users").document(uid)
+    doc = doc_ref.get()
+    if not doc.exists:
+        return False
+    payload: Dict[str, Any] = {}
+    if display_name is not None:
+        payload["displayName"] = display_name
+    if role is not None:
+        payload["role"] = role
+    if status is not None:
+        payload["status"] = status
+    if payload:
+        payload["updatedAt"] = datetime.now(timezone.utc)
+        doc_ref.update(payload)
+    return True
+
+
+def soft_disable_user(uid: str, disabled: bool = True):
+    status = "disabled" if disabled else "active"
+    return update_user(uid, None, None, status)
+
+
+def force_logout_user(uid: str):
+    doc_ref = db.collection("users").document(uid)
+    if not doc_ref.get().exists:
+        return False
+    doc_ref.update({"forceLogoutAt": datetime.now(timezone.utc)})
+    return True
 
 
 def get_user_detail(uid: str) -> Optional[Dict[str, Any]]:
@@ -244,6 +291,278 @@ def list_courses_with_modules() -> List[Dict[str, Any]]:
     return output
 
 
+def get_course(course_id: str) -> Optional[Dict[str, Any]]:
+    snap = db.collection("courses").document(course_id).get()
+    if not snap.exists:
+        return None
+    data = snap.to_dict() or {}
+    return {
+        "id": snap.id,
+        "title": data.get("title"),
+        "description": data.get("description"),
+        "difficulty": data.get("difficulty"),
+        "published": data.get("published", False),
+        "tags": data.get("tags", []),
+        "summary": data.get("summary"),
+        "locale": data.get("locale"),
+        "order": data.get("order"),
+        "mediaId": data.get("mediaId"),
+        "createdAt": _iso(data.get("createdAt")),
+        "updatedAt": _iso(data.get("updatedAt")),
+    }
+
+
+def create_course(payload: Dict[str, Any]) -> str:
+    now = datetime.now(timezone.utc)
+    payload.setdefault("createdAt", now)
+    payload.setdefault("updatedAt", now)
+    doc_ref = db.collection("courses").document()
+    doc_ref.set(payload)
+    return doc_ref.id
+
+
+def update_course(course_id: str, payload: Dict[str, Any]) -> bool:
+    doc_ref = db.collection("courses").document(course_id)
+    if not doc_ref.get().exists:
+        return False
+    payload["updatedAt"] = datetime.now(timezone.utc)
+    doc_ref.update(payload)
+    return True
+
+
+def delete_course(course_id: str) -> bool:
+    doc_ref = db.collection("courses").document(course_id)
+    if not doc_ref.get().exists:
+        return False
+    # delete subcollections modules/lessons/activities
+    for module in doc_ref.collection("modules").stream():
+        module_ref = doc_ref.collection("modules").document(module.id)
+        for lesson in module_ref.collection("lessons").stream():
+            lesson_ref = module_ref.collection("lessons").document(lesson.id)
+            for activity in lesson_ref.collection("activities").stream():
+                lesson_ref.collection("activities").document(activity.id).delete()
+            lesson_ref.delete()
+        module_ref.delete()
+    doc_ref.delete()
+    return True
+
+
+def list_modules(course_id: str) -> List[Dict[str, Any]]:
+    modules: List[Dict[str, Any]] = []
+    for module in (
+        db.collection("courses").document(course_id).collection("modules").stream()
+    ):
+        mdata = module.to_dict() or {}
+        modules.append(
+            {
+                "id": module.id,
+                "title": mdata.get("title"),
+                "summary": mdata.get("summary"),
+                "order": mdata.get("order"),
+                "createdAt": _iso(mdata.get("createdAt")),
+            }
+        )
+    modules.sort(key=lambda m: (m.get("order") or 0))
+    return modules
+
+
+def create_module(course_id: str, payload: Dict[str, Any]) -> str:
+    now = datetime.now(timezone.utc)
+    payload.setdefault("createdAt", now)
+    payload.setdefault("updatedAt", now)
+    doc_ref = (
+        db.collection("courses").document(course_id).collection("modules").document()
+    )
+    doc_ref.set(payload)
+    return doc_ref.id
+
+
+def update_module(course_id: str, module_id: str, payload: Dict[str, Any]) -> bool:
+    doc_ref = (
+        db.collection("courses")
+        .document(course_id)
+        .collection("modules")
+        .document(module_id)
+    )
+    if not doc_ref.get().exists:
+        return False
+    payload["updatedAt"] = datetime.now(timezone.utc)
+    doc_ref.update(payload)
+    return True
+
+
+def delete_module(course_id: str, module_id: str) -> bool:
+    doc_ref = (
+        db.collection("courses")
+        .document(course_id)
+        .collection("modules")
+        .document(module_id)
+    )
+    if not doc_ref.get().exists:
+        return False
+    for lesson in doc_ref.collection("lessons").stream():
+        lesson_ref = doc_ref.collection("lessons").document(lesson.id)
+        for activity in lesson_ref.collection("activities").stream():
+            lesson_ref.collection("activities").document(activity.id).delete()
+        lesson_ref.delete()
+    doc_ref.delete()
+    return True
+
+
+def list_lessons(course_id: str, module_id: str) -> List[Dict[str, Any]]:
+    lessons: List[Dict[str, Any]] = []
+    for lesson in (
+        db.collection("courses")
+        .document(course_id)
+        .collection("modules")
+        .document(module_id)
+        .collection("lessons")
+        .stream()
+    ):
+        ldata = lesson.to_dict() or {}
+        lessons.append(
+            {
+                "id": lesson.id,
+                "title": ldata.get("title"),
+                "order": ldata.get("order"),
+                "estimatedMin": ldata.get("estimatedMin"),
+                "objectives": ldata.get("objectives", []),
+            }
+        )
+    lessons.sort(key=lambda l: (l.get("order") or 0))
+    return lessons
+
+
+def create_lesson(course_id: str, module_id: str, payload: Dict[str, Any]) -> str:
+    now = datetime.now(timezone.utc)
+    payload.setdefault("createdAt", now)
+    payload.setdefault("updatedAt", now)
+    doc_ref = (
+        db.collection("courses")
+        .document(course_id)
+        .collection("modules")
+        .document(module_id)
+        .collection("lessons")
+        .document()
+    )
+    doc_ref.set(payload)
+    return doc_ref.id
+
+
+def update_lesson(course_id: str, module_id: str, lesson_id: str, payload: Dict[str, Any]) -> bool:
+    doc_ref = (
+        db.collection("courses")
+        .document(course_id)
+        .collection("modules")
+        .document(module_id)
+        .collection("lessons")
+        .document(lesson_id)
+    )
+    if not doc_ref.get().exists:
+        return False
+    payload["updatedAt"] = datetime.now(timezone.utc)
+    doc_ref.update(payload)
+    return True
+
+
+def delete_lesson(course_id: str, module_id: str, lesson_id: str) -> bool:
+    doc_ref = (
+        db.collection("courses")
+        .document(course_id)
+        .collection("modules")
+        .document(module_id)
+        .collection("lessons")
+        .document(lesson_id)
+    )
+    if not doc_ref.get().exists:
+        return False
+    for activity in doc_ref.collection("activities").stream():
+        doc_ref.collection("activities").document(activity.id).delete()
+    doc_ref.delete()
+    return True
+
+
+def list_activities(course_id: str, module_id: str, lesson_id: str) -> List[Dict[str, Any]]:
+    activities: List[Dict[str, Any]] = []
+    base_ref = (
+        db.collection("courses")
+        .document(course_id)
+        .collection("modules")
+        .document(module_id)
+        .collection("lessons")
+        .document(lesson_id)
+        .collection("activities")
+    )
+    for activity in base_ref.stream():
+        adata = activity.to_dict() or {}
+        activities.append(
+            {
+                "id": activity.id,
+                "title": adata.get("title") or adata.get("type"),
+                "type": adata.get("type"),
+                "order": adata.get("order"),
+                "config": adata.get("config", {}),
+                "scoring": adata.get("scoring", {}),
+                "abVariant": adata.get("abVariant"),
+                "videoId": adata.get("videoId"),
+                "visemeSetId": adata.get("visemeSetId"),
+            }
+        )
+    activities.sort(key=lambda a: (a.get("order") or 0))
+    return activities
+
+
+def create_activity(course_id: str, module_id: str, lesson_id: str, payload: Dict[str, Any]) -> str:
+    doc_ref = (
+        db.collection("courses")
+        .document(course_id)
+        .collection("modules")
+        .document(module_id)
+        .collection("lessons")
+        .document(lesson_id)
+        .collection("activities")
+        .document()
+    )
+    doc_ref.set(payload)
+    return doc_ref.id
+
+
+def update_activity(
+    course_id: str, module_id: str, lesson_id: str, activity_id: str, payload: Dict[str, Any]
+) -> bool:
+    doc_ref = (
+        db.collection("courses")
+        .document(course_id)
+        .collection("modules")
+        .document(module_id)
+        .collection("lessons")
+        .document(lesson_id)
+        .collection("activities")
+        .document(activity_id)
+    )
+    if not doc_ref.get().exists:
+        return False
+    doc_ref.update(payload)
+    return True
+
+
+def delete_activity(course_id: str, module_id: str, lesson_id: str, activity_id: str) -> bool:
+    doc_ref = (
+        db.collection("courses")
+        .document(course_id)
+        .collection("modules")
+        .document(module_id)
+        .collection("lessons")
+        .document(lesson_id)
+        .collection("activities")
+        .document(activity_id)
+    )
+    if not doc_ref.get().exists:
+        return False
+    doc_ref.delete()
+    return True
+
+
 def collect_engagement_metrics() -> Dict[str, Any]:
     users = list_users(limit=5000)
     today = datetime.now(timezone.utc).date()
@@ -306,3 +625,67 @@ def collect_engagement_metrics() -> Dict[str, Any]:
         "avg_quiz_score": round(avg_quiz_score, 2),
         "avg_streak": round(avg_streak, 2),
     }
+
+
+# Subscriptions & billing ----------------------------------------------------
+
+
+def list_subscription_plans() -> List[Dict[str, Any]]:
+    plans: List[Dict[str, Any]] = []
+    for snap in db.collection("subscription_plans").stream():
+        data = snap.to_dict() or {}
+        plans.append(
+            {
+                "id": snap.id,
+                "name": data.get("name"),
+                "price": data.get("price"),
+                "currency": data.get("currency", "USD"),
+                "interval": data.get("interval", "month"),
+                "features": data.get("features", []),
+                "trialDays": data.get("trialDays", 0),
+            }
+        )
+    return plans
+
+
+def upsert_subscription_plan(plan_id: Optional[str], payload: Dict[str, Any]) -> str:
+    if plan_id:
+        ref = db.collection("subscription_plans").document(plan_id)
+        ref.set(payload, merge=True)
+        return plan_id
+    ref = db.collection("subscription_plans").document()
+    ref.set(payload)
+    return ref.id
+
+
+def delete_subscription_plan(plan_id: str) -> bool:
+    ref = db.collection("subscription_plans").document(plan_id)
+    if not ref.get().exists:
+        return False
+    ref.delete()
+    return True
+
+
+def list_payments(limit: int = 200) -> List[Dict[str, Any]]:
+    payments: List[Dict[str, Any]] = []
+    snaps = (
+        db.collection("payments")
+        .order_by("createdAt", direction=Query.DESCENDING)
+        .limit(limit)
+        .stream()
+    )
+    for snap in snaps:
+        data = snap.to_dict() or {}
+        payments.append(
+            {
+                "id": snap.id,
+                "userId": data.get("userId"),
+                "planId": data.get("planId"),
+                "amount": data.get("amount"),
+                "currency": data.get("currency", "USD"),
+                "status": data.get("status", "pending"),
+                "transactionId": data.get("transactionId"),
+                "createdAt": _iso(data.get("createdAt")),
+            }
+        )
+    return payments

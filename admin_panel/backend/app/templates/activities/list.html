@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Activities | LipRead Admin{% endblock %}
+{% block header %}Activities for {{ lesson.title }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h5 class="mb-1">Activities</h5>
+    <p class="text-muted mb-0">Create quizzes and lip-reading interactions.</p>
+  </div>
+  <a class="btn btn-outline-secondary" href="/courses/{{ course.id }}/modules/{{ module.id }}/lessons">Back to lessons</a>
+</div>
+{% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h6 class="fw-semibold">Add Activity</h6>
+        <form method="post" action="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities">
+          <div class="mb-2">
+            <label class="form-label">Title</label>
+            <input class="form-control" name="title" placeholder="Prompt or question">
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Type</label>
+            <select class="form-select" name="type" required>
+              <option value="quiz">Quiz (MCQ)</option>
+              <option value="fill_in_blank">Fill in the blank</option>
+              <option value="matching">Matching</option>
+              <option value="video_prompt">Video Prompt</option>
+            </select>
+          </div>
+          <div class="row g-2">
+            <div class="col-6">
+              <label class="form-label">Order</label>
+              <input class="form-control" type="number" name="order" value="0">
+            </div>
+            <div class="col-6">
+              <label class="form-label">AB Variant</label>
+              <input class="form-control" name="abVariant" placeholder="A/B">
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Video ID</label>
+            <input class="form-control" name="videoId">
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Viseme Set ID</label>
+            <input class="form-control" name="visemeSetId">
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Config (JSON)</label>
+            <textarea class="form-control" name="config" rows="3">{"choices": [], "answer": null}</textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Scoring (JSON)</label>
+            <textarea class="form-control" name="scoring" rows="3">{"maxScore": 100}</textarea>
+          </div>
+          <button class="btn btn-primary w-100" type="submit">Create Activity</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-8">
+    <div class="card shadow-sm">
+      <div class="table-responsive">
+        <table class="table table-striped align-middle mb-0">
+          <thead class="table-light"><tr><th>Order</th><th>Title</th><th>Type</th><th>Video</th><th>Actions</th></tr></thead>
+          <tbody>
+            {% for activity in activities %}
+            <tr>
+              <td>{{ activity.order }}</td>
+              <td>{{ activity.title }}</td>
+              <td><span class="badge bg-soft-primary text-primary">{{ activity.type }}</span></td>
+              <td class="text-muted small">{{ activity.videoId or 'N/A' }}</td>
+              <td>
+                <form method="post" action="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities/{{ activity.id }}/update" class="row g-2">
+                  <div class="col-md-3"><input class="form-control form-control-sm" name="title" value="{{ activity.title }}"></div>
+                  <div class="col-md-2"><input class="form-control form-control-sm" name="type" value="{{ activity.type }}"></div>
+                  <div class="col-md-2"><input class="form-control form-control-sm" type="number" name="order" value="{{ activity.order }}"></div>
+                  <div class="col-md-2"><input class="form-control form-control-sm" name="videoId" value="{{ activity.videoId }}"></div>
+                  <div class="col-md-3 d-flex gap-1">
+                    <button class="btn btn-outline-primary btn-sm" type="submit">Save</button>
+                    <button class="btn btn-outline-danger btn-sm" form="delete-{{ activity.id }}" type="submit">Delete</button>
+                  </div>
+                  <input type="hidden" name="visemeSetId" value="{{ activity.visemeSetId }}">
+                  <input type="hidden" name="abVariant" value="{{ activity.abVariant }}">
+                  <input type="hidden" name="config" value='{{ activity.config | tojson }}'>
+                  <input type="hidden" name="scoring" value='{{ activity.scoring | tojson }}'>
+                </form>
+                <form id="delete-{{ activity.id }}" method="post" action="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities/{{ activity.id }}/delete" onsubmit="return confirm('Delete activity?')"></form>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="text-center text-muted">No activities yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

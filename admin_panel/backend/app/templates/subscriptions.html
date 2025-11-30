@@ -2,81 +2,80 @@
 {% block title %}Subscriptions | LipRead Admin{% endblock %}
 {% block header %}Subscription Management{% endblock %}
 {% block content %}
+{% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
 <div class="row g-4">
-    <div class="col-lg-6">
+    <div class="col-lg-5">
         <div class="card shadow-sm h-100">
             <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
                 <h6 class="mb-0">Subscription Plan Editor</h6>
-                <button class="btn btn-sm btn-outline-primary">Save Plan</button>
             </div>
             <div class="card-body">
-                <form class="row g-3">
+                <form class="row g-3" method="post" action="/subscriptions">
+                    <input type="hidden" name="plan_id" id="plan_id">
                     <div class="col-12">
                         <label class="form-label text-muted">Plan Name</label>
-                        <input type="text" class="form-control" placeholder="Pro Learner">
+                        <input type="text" class="form-control" name="name" required>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label text-muted">Price</label>
                         <div class="input-group">
                             <span class="input-group-text">$</span>
-                            <input type="number" class="form-control" placeholder="29">
+                            <input type="number" class="form-control" step="0.01" name="price" required>
                         </div>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label text-muted">Billing Cycle</label>
-                        <select class="form-select">
-                            <option>Monthly</option>
-                            <option>Yearly</option>
+                        <select class="form-select" name="interval">
+                            <option value="month">Monthly</option>
+                            <option value="year">Yearly</option>
                         </select>
                     </div>
-                    <div class="col-12">
-                        <label class="form-label text-muted">Features</label>
-                        <textarea class="form-control" rows="3" placeholder="Unlimited lessons, quizzes, offline access"></textarea>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted">Currency</label>
+                        <input type="text" class="form-control" name="currency" value="USD">
                     </div>
-                    <div class="col-12 form-check form-switch">
-                        <input class="form-check-input" type="checkbox" id="trialToggle">
-                        <label class="form-check-label" for="trialToggle">Enable free trial</label>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted">Trial Days</label>
+                        <input type="number" class="form-control" name="trialDays" value="0">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label text-muted">Features (one per line)</label>
+                        <textarea class="form-control" rows="4" name="features"></textarea>
+                    </div>
+                    <div class="col-12">
+                        <button class="btn btn-primary w-100" type="submit">Save Plan</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
-    <div class="col-lg-6">
+    <div class="col-lg-7">
         <div class="card shadow-sm h-100">
             <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
-                <h6 class="mb-0">Payment Tracking</h6>
-                <span class="badge bg-soft-primary text-primary">Stripe API</span>
+                <h6 class="mb-0">Plans</h6>
+                <span class="badge bg-soft-primary text-primary">Stripe-ready</span>
             </div>
             <div class="card-body">
                 <div class="table-responsive">
-                    <table class="table table-striped">
-                        <thead class="table-light">
-                            <tr>
-                                <th>User</th>
-                                <th>Plan</th>
-                                <th>Amount</th>
-                                <th>Date</th>
-                                <th>Status</th>
-                                <th>Txn ID</th>
-                            </tr>
-                        </thead>
+                    <table class="table table-striped align-middle">
+                        <thead class="table-light"><tr><th>Name</th><th>Price</th><th>Interval</th><th>Features</th><th>Actions</th></tr></thead>
                         <tbody>
+                            {% for plan in plans %}
                             <tr>
-                                <td>Sample User</td>
-                                <td>Pro</td>
-                                <td>$29</td>
-                                <td>2024-05-01</td>
-                                <td><span class="badge bg-success">Paid</span></td>
-                                <td>#TX123</td>
+                                <td class="fw-semibold">{{ plan.name }}</td>
+                                <td>${{ plan.price }} {{ plan.currency }}</td>
+                                <td>{{ plan.interval|capitalize }}</td>
+                                <td class="text-muted small">{{ plan.features|join(', ') }}</td>
+                                <td class="d-flex gap-2">
+                                    <button class="btn btn-outline-primary btn-sm" onclick="loadPlan('{{ plan.id }}','{{ plan.name }}','{{ plan.price }}','{{ plan.currency }}','{{ plan.interval }}','{{ plan.trialDays }}','{{ plan.features|join('\\n') }}')">Edit</button>
+                                    <form method="post" action="/subscriptions/{{ plan.id }}/delete" onsubmit="return confirm('Delete plan?')">
+                                        <button class="btn btn-outline-danger btn-sm" type="submit">Delete</button>
+                                    </form>
+                                </td>
                             </tr>
-                            <tr>
-                                <td>Another User</td>
-                                <td>Starter</td>
-                                <td>$9</td>
-                                <td>2024-05-03</td>
-                                <td><span class="badge bg-danger">Failed</span></td>
-                                <td>#TX456</td>
-                            </tr>
+                            {% else %}
+                            <tr><td colspan="5" class="text-center text-muted">No plans defined.</td></tr>
+                            {% endfor %}
                         </tbody>
                     </table>
                 </div>
@@ -84,4 +83,15 @@
         </div>
     </div>
 </div>
+<script>
+function loadPlan(id, name, price, currency, interval, trialDays, features){
+  document.querySelector('[name="plan_id"]').value = id;
+  document.querySelector('[name="name"]').value = name;
+  document.querySelector('[name="price"]').value = price;
+  document.querySelector('[name="currency"]').value = currency;
+  document.querySelector('[name="interval"]').value = interval;
+  document.querySelector('[name="trialDays"]').value = trialDays;
+  document.querySelector('[name="features"]').value = features;
+}
+</script>
 {% endblock %}

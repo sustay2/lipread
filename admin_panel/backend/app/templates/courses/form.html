@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if course else 'Create' }} Course | LipRead Admin{% endblock %}
+{% block header %}{{ 'Edit' if course else 'Create' }} Course{% endblock %}
+{% block content %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" action="{% if course %}/courses/{{ course.id }}/update{% else %}/courses{% endif %}">
+      <div class="row g-3">
+        <div class="col-md-8">
+          <label class="form-label">Title</label>
+          <input type="text" name="title" value="{{ course.title if course else '' }}" class="form-control" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Difficulty</label>
+          <input type="text" name="difficulty" value="{{ course.difficulty if course else '' }}" class="form-control" placeholder="Beginner/Intermediate/Advanced">
+        </div>
+        <div class="col-12">
+          <label class="form-label">Description</label>
+          <textarea name="description" class="form-control" rows="3">{{ course.description if course else '' }}</textarea>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Tags (comma separated)</label>
+          <input type="text" name="tags" class="form-control" value="{{ course.tags|join(', ') if course else '' }}">
+        </div>
+        <div class="col-md-3 d-flex align-items-center">
+          <div class="form-check form-switch mt-4">
+            <input class="form-check-input" type="checkbox" role="switch" name="published" value="1" {% if course and course.published %}checked{% endif %}>
+            <label class="form-check-label">Published</label>
+          </div>
+        </div>
+      </div>
+      <div class="mt-4 d-flex gap-2">
+        <button class="btn btn-primary" type="submit">Save</button>
+        <a class="btn btn-outline-secondary" href="/courses">Back</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -5,6 +5,9 @@
 {% if not user %}
 <div class="alert alert-danger">User not found.</div>
 {% else %}
+{% if request.query_params.get('message') %}
+<div class="alert alert-success">{{ request.query_params.get('message') }}</div>
+{% endif %}
 <div class="row g-4">
     <div class="col-lg-4">
         <div class="card shadow-sm h-100">
@@ -18,11 +21,31 @@
                     {% endfor %}
                 </div>
                 <div class="text-muted small">Last active: {{ user.lastActiveAtIso or 'Unknown' }}</div>
-                <div class="d-grid gap-2 mt-3">
-                    <button class="btn btn-outline-primary">Reset Password</button>
-                    <button class="btn btn-outline-danger">Force Logout</button>
-                    <button class="btn btn-outline-secondary">Toggle Disable</button>
-                </div>
+                <form method="post" action="/users/{{ user.id }}/update" class="d-grid gap-2 mt-3">
+                    <div class="form-floating">
+                        <input type="text" class="form-control" id="displayName" name="display_name" value="{{ user.displayName }}">
+                        <label for="displayName">Display Name</label>
+                    </div>
+                    <div class="input-group">
+                        <select class="form-select" name="role">
+                            <option value="member" {% if user.role=='member' %}selected{% endif %}>Member</option>
+                            <option value="admin" {% if user.role=='admin' %}selected{% endif %}>Admin</option>
+                            <option value="content_editor" {% if user.role=='content_editor' %}selected{% endif %}>Content Editor</option>
+                        </select>
+                        <select class="form-select" name="status">
+                            <option value="active" {% if user.status=='active' %}selected{% endif %}>Active</option>
+                            <option value="disabled" {% if user.status=='disabled' %}selected{% endif %}>Disabled</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-outline-primary" type="submit">Save Profile</button>
+                </form>
+                <form method="post" action="/users/{{ user.id }}/logout" class="mt-2">
+                    <button class="btn btn-outline-danger w-100" type="submit">Force Logout</button>
+                </form>
+                <form method="post" action="/users/{{ user.id }}/disable" class="mt-2">
+                    <input type="hidden" name="disabled" value="{{ 'false' if user.status=='disabled' else 'true' }}">
+                    <button class="btn btn-outline-secondary w-100" type="submit">{{ 'Enable Account' if user.status=='disabled' else 'Disable Account' }}</button>
+                </form>
             </div>
         </div>
     </div>
