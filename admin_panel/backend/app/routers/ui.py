@@ -5,10 +5,11 @@ from pathlib import Path
 from typing import Optional, List, Dict
 import json
 
-from fastapi import APIRouter, Form, Query, Request, UploadFile, File
+from fastapi import APIRouter, Depends, Form, Query, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from app.deps.admin_session import require_admin_session
 from app.services import firestore_admin
 from app.services.media_library import save_media_file
 from app.services import reporting
@@ -17,7 +18,7 @@ from app.services.lessons import lesson_service
 BASE_DIR = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_admin_session)])
 
 
 @router.get("/", response_class=HTMLResponse)

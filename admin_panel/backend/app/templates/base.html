@@ -11,6 +11,7 @@
     {% block head %}{% endblock %}
 </head>
 <body class="bg-light">
+{% set admin = request.session.get('admin') %}
 <div class="d-flex">
     <nav class="sidebar bg-white shadow-sm">
         <div class="p-3 d-flex align-items-center justify-content-between border-bottom">
@@ -49,8 +50,25 @@
             <div class="container-fluid">
                 <span class="navbar-brand fw-semibold">{% block header %}Admin Panel{% endblock %}</span>
                 <div class="d-flex align-items-center gap-3">
-                    <div class="text-muted small">FastAPI + Bootstrap + Firebase</div>
-                    <button class="btn btn-outline-primary btn-sm">Logout</button>
+                    <div class="text-end">
+                        <div class="fw-semibold small">{{ admin.name or admin.email or 'Administrator' }}</div>
+                        <div class="text-muted small">FastAPI + Firebase</div>
+                    </div>
+                    {% if admin %}
+                        <div class="dropdown">
+                            <button class="btn btn-outline-primary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="bi bi-person-circle me-1"></i> Account
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li class="dropdown-header small">Signed in as<br><strong>{{ admin.email }}</strong></li>
+                                <li><a class="dropdown-item" href="/profile"><i class="bi bi-person me-2"></i>Profile</a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item text-danger" href="/logout"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
+                            </ul>
+                        </div>
+                    {% else %}
+                        <a class="btn btn-primary btn-sm" href="/login">Login</a>
+                    {% endif %}
                 </div>
             </div>
         </header>
