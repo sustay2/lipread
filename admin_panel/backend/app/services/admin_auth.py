@@ -16,6 +16,8 @@ from app.services.firebase_client import get_firestore_client
 from app.services.firebase_client import get_firebase_app
 
 
+MAX_PASSWORD_BYTES = 72
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 db = get_firestore_client()
 
@@ -90,7 +92,16 @@ def _reset_collection():
     return db.collection(RESET_COLLECTION)
 
 
+def _password_within_limit(password: str) -> bool:
+    try:
+        return len(password.encode("utf-8")) <= MAX_PASSWORD_BYTES
+    except Exception:
+        return False
+
+
 def hash_password(password: str) -> str:
+    if not _password_within_limit(password):
+        raise ValueError("Password exceeds maximum supported length")
     return pwd_context.hash(password)
 
 
@@ -111,6 +122,8 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 def verify_admin_credentials(email: str, password: str) -> Optional[Dict[str, Any]]:
+    if not _password_within_limit(password):
+        return None
     admin_doc = get_admin_by_email(email)
     if not admin_doc:
         return None
@@ -143,6 +156,8 @@ def update_admin_profile(admin_id: str, display_name: Optional[str], photo_url: 
 
 def update_admin_password(admin_id: str, new_password: str) -> bool:
     if not admin_id or not new_password:
+        return False
+    if not _password_within_limit(new_password):
         return False
     ref = db.collection(ADMIN_COLLECTION).document(admin_id)
     doc = ref.get()
