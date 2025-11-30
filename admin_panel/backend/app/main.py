@@ -23,6 +23,7 @@ from app.routers import (
     import_export,
     ui,
     admin_auth,
+    admin_profile,
 )
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -68,6 +69,7 @@ app.mount("/badge_icons", StaticFiles(directory=BADGE_ICON_ROOT, check_dir=False
 
 # Auth routes
 app.include_router(admin_auth.router, tags=["auth"])
+app.include_router(admin_profile.router, tags=["admin-profile"])
 
 # Public/health
 app.include_router(health.router, prefix="/health", tags=["health"])
