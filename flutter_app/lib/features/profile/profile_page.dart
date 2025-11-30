@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import '../../common/theme/app_colors.dart';
 import '../../services/router.dart';
 import '../../common/utils/media_utils.dart';
-import '../../services/xp_service.dart'; // <-- XP logic
+import '../../services/xp_service.dart';
 import 'all_badges_page.dart';
 
 class ProfilePage extends StatelessWidget {

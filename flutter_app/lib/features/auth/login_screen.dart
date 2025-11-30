@@ -55,7 +55,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // NORMAL EMAIL/PASSWORD LOGIN
+  // NORMAL LOGIN
   // ---------------------------------------------------------------------------
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
@@ -82,22 +82,21 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // OFFER TO ENROLL BIOMETRICS AFTER SUCCESSFUL LOGIN
+  // OFFER BIOMETRIC ENROLL
   // ---------------------------------------------------------------------------
   Future<void> _maybeOfferBiometrics(String email, String password) async {
     final can = await BiometricService.canUseBiometrics();
     if (!can) return;
 
-    final hasStored = await SecureStorageService.hasBiometricCredentials();
-    if (hasStored) return;
+    final stored = await SecureStorageService.hasBiometricCredentials();
+    if (stored) return;
 
     final enable = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text("Enable quick login?"),
         content: const Text(
-          "Use fingerprint or face recognition next time you sign in.",
-        ),
+            "Use fingerprint or face recognition next time you sign in."),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -250,7 +249,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // ERROR MESSAGE
+  // ERROR MESSAGE PARSER
   // ---------------------------------------------------------------------------
   String _friendlyError(Object e) {
     if (e is FirebaseAuthException) {
@@ -280,237 +279,188 @@ class _LoginScreenState extends State<LoginScreen> {
           padding: const EdgeInsets.all(24),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
-            child: Column(
-              children: [
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 5),
-                      ),
-                    ],
-                  ),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      children: [
-                        Icon(Icons.mic_none_rounded,
-                            size: 64, color: theme.colorScheme.primary),
-                        const SizedBox(height: 12),
-
-                        Text(
-                          "Welcome Back 👋",
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-
-                        Text(
-                          "Sign in to continue learning",
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.grey,
-                          ),
-                        ),
-
-                        const SizedBox(height: 32),
-
-                        // EMAIL
-                        TextFormField(
-                          controller: _emailCtrl,
-                          keyboardType: TextInputType.emailAddress,
-                          decoration: _input(
-                            "Email",
-                            prefix: Icons.email_outlined,
-                          ),
-                          validator: (v) =>
-                              v == null || v.isEmpty ? "Required" : null,
-                        ),
-                        const SizedBox(height: 16),
-
-                        // PASSWORD
-                        TextFormField(
-                          controller: _passwordCtrl,
-                          obscureText: _obscure,
-                          decoration: _input(
-                            "Password",
-                            prefix: Icons.lock_outline,
-                            suffix: IconButton(
-                              icon: Icon(
-                                _obscure
-                                    ? Icons.visibility_off
-                                    : Icons.visibility,
-                              ),
-                              onPressed: () =>
-                                  setState(() => _obscure = !_obscure),
-                            ),
-                          ),
-                          validator: (v) =>
-                              v == null || v.isEmpty ? "Required" : null,
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        if (_error != null)
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: Colors.red.shade50,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.red.shade100),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.error_outline,
-                                    color: Colors.red, size: 20),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    _error!,
-                                    style: const TextStyle(
-                                      color: Colors.red,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: () => Navigator.pushNamed(
-                                context, Routes.forgotPassword),
-                            child: const Text("Forgot Password?"),
-                          ),
-                        ),
-
-                        const SizedBox(height: 8),
-
-                        // LOGIN BUTTON
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton(
-                            onPressed: _loading ? null : _login,
-                            child: _loading
-                                ? const SizedBox(
-                                    height: 18,
-                                    width: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : const Text("Login"),
-                          ),
-                        ),
-
-                        const SizedBox(height: 20),
-
-                        // BIOMETRIC BUTTONS (SIDE-BY-SIDE)
-                        if (_storedForThisUser)
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              if (_hasFingerprint)
-                                _bioButton(
-                                  key: UniqueKey(),
-                                  icon: Icons.fingerprint,
-                                  onTap: _loginWithFingerprint,
-                                ),
-                              if (_hasFingerprint && _hasFace)
-                                const SizedBox(width: 20),
-                              if (_hasFace)
-                                _bioButton(
-                                  key: UniqueKey(),
-                                  icon: Icons.face_unlock_rounded,
-                                  onTap: _loginWithFace,
-                                ),
-                            ],
-                          ),
-
-                        const SizedBox(height: 20),
-
-                        Row(
-                          children: const [
-                            Expanded(child: Divider()),
-                            SizedBox(width: 8),
-                            Text("Or Continue With"),
-                            SizedBox(width: 8),
-                            Expanded(child: Divider()),
-                          ],
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        // GOOGLE LOGIN BUTTON
-                        SizedBox(
-                          width: 200,
-                          height: 55,
-                          child: InkWell(
-                            onTap: _loading ? null : _loginWithGoogle,
-                            borderRadius: BorderRadius.circular(14),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(14),
-                                border:
-                                    Border.all(color: Colors.grey.shade300),
-                                color: Colors.white,
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Image.asset(
-                                    "assets/icons/google.png",
-                                    width: 28,
-                                    height: 28,
-                                  ),
-                                  const SizedBox(width: 10),
-                                  const Text(
-                                    "Google",
-                                    style: TextStyle(fontSize: 16),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        TextButton(
-                          onPressed: () =>
-                              Navigator.pushNamed(context, Routes.register),
-                          child: const Text(
-                            "Don't have an account? Sign Up",
-                            style: TextStyle(
-                              color: Color(0xFF4A90E2),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            child: _buildCard(theme),
           ),
         ),
       ),
     );
   }
 
+  Widget _buildCard(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          )
+        ],
+      ),
+      child: Column(
+        children: [
+          Icon(Icons.mic_none_rounded,
+              size: 64, color: theme.colorScheme.primary),
+          const SizedBox(height: 12),
+
+          Text(
+            "Welcome Back 👋",
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 6),
+
+          const Text(
+            "Sign in to continue learning",
+            style: TextStyle(color: Colors.grey),
+          ),
+
+          const SizedBox(height: 32),
+
+          _buildForm(),
+
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            _errorBox(),
+          ],
+
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => Navigator.pushNamed(
+                  context, Routes.forgotPassword),
+              child: const Text("Forgot Password?"),
+            ),
+          ),
+
+          const SizedBox(height: 8),
+
+          _buildLoginButton(),
+
+          const SizedBox(height: 20),
+
+          _buildBiometricRow(),
+
+          const SizedBox(height: 20),
+
+          _buildDivider(),
+
+          const SizedBox(height: 16),
+
+          _googleButton(),
+
+          const SizedBox(height: 16),
+
+          TextButton(
+            onPressed: () =>
+                Navigator.pushNamed(context, Routes.register),
+            child: const Text(
+              "Don't have an account? Sign Up",
+              style: TextStyle(color: Color(0xFF4A90E2)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // SUB-WIDGETS
+  // ---------------------------------------------------------------------------
+
+  Widget _buildForm() {
+    return Form(
+      key: _formKey,
+      child: Column(
+        children: [
+          TextFormField(
+            controller: _emailCtrl,
+            decoration: _input("Email", prefix: Icons.email_outlined),
+            validator: (v) =>
+                v == null || v.isEmpty ? "Required" : null,
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _passwordCtrl,
+            obscureText: _obscure,
+            decoration: _input(
+              "Password",
+              prefix: Icons.lock_outline,
+              suffix: IconButton(
+                icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility),
+                onPressed: () => setState(() => _obscure = !_obscure),
+              ),
+            ),
+            validator: (v) =>
+                v == null || v.isEmpty ? "Required" : null,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoginButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton(
+        onPressed: _loading ? null : _login,
+        child: _loading
+            ? const SizedBox(
+                height: 18,
+                width: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : const Text("Login"),
+      ),
+    );
+  }
+
+  Widget _buildBiometricRow() {
+    if (!_storedForThisUser) return const SizedBox.shrink();
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        if (_hasFingerprint)
+          _bioButton(
+            key: UniqueKey(),
+            icon: Icons.fingerprint,
+            onTap: _loginWithFingerprint,
+          ),
+        if (_hasFingerprint && _hasFace) const SizedBox(width: 20),
+        if (_hasFace)
+          _bioButton(
+            key: UniqueKey(),
+            icon: Icons.face_unlock_rounded,
+            onTap: _loginWithFace,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildDivider() {
+    return Row(
+      children: const [
+        Expanded(child: Divider()),
+        SizedBox(width: 8),
+        Text("Or Continue With"),
+        SizedBox(width: 8),
+        Expanded(child: Divider()),
+      ],
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // HELPERS
   // ---------------------------------------------------------------------------
+
   InputDecoration _input(
     String label, {
     IconData? prefix,
@@ -536,7 +486,7 @@ class _LoginScreenState extends State<LoginScreen> {
     Key? key,
   }) {
     return InkWell(
-      key: key, // avoid GlobalKey reuse issues
+      key: key,
       onTap: _loading ? null : onTap,
       borderRadius: BorderRadius.circular(14),
       child: Container(
@@ -548,6 +498,59 @@ class _LoginScreenState extends State<LoginScreen> {
           color: Colors.white,
         ),
         child: Icon(icon, size: 32, color: Colors.black87),
+      ),
+    );
+  }
+
+  Widget _errorBox() {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.red.shade100),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, color: Colors.red, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _error ?? "",
+              style: const TextStyle(color: Colors.red, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _googleButton() {
+    return SizedBox(
+      width: 200,
+      height: 55,
+      child: InkWell(
+        onTap: _loading ? null : _loginWithGoogle,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.grey.shade300),
+            color: Colors.white,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Image.asset(
+                "assets/icons/google.png",
+                width: 28,
+                height: 28,
+              ),
+              const SizedBox(width: 10),
+              const Text("Google", style: TextStyle(fontSize: 16)),
+            ],
+          ),
+        ),
       ),
     );
   }
