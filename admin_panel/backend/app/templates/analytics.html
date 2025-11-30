@@ -41,19 +41,29 @@
         <h6 class="mb-0">Engagement Trends</h6>
     </div>
     <div class="card-body">
-        <div class="placeholder-chart bg-light rounded-3 p-5 text-center text-muted">Charts for DAU, course completions, quiz accuracy</div>
+        <div class="row g-3">
+            <div class="col-lg-8">
+                <canvas id="dauChart" height="140"></canvas>
+            </div>
+            <div class="col-lg-4">
+                <canvas id="quizChart" height="140"></canvas>
+            </div>
+        </div>
     </div>
 </div>
 <div class="card shadow-sm">
     <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
         <h6 class="mb-0">Filters</h6>
-        <button class="btn btn-sm btn-outline-primary">Apply Filters</button>
+        <button class="btn btn-sm btn-outline-primary" type="submit" form="analytics-filter">Apply Filters</button>
     </div>
     <div class="card-body">
-        <form class="row g-3">
+        <form class="row g-3" id="analytics-filter" method="get" action="/analytics">
             <div class="col-md-4">
                 <label class="form-label text-muted">Date Range</label>
-                <input type="text" class="form-control" placeholder="2024-01-01 to 2024-12-31">
+                <div class="d-flex gap-2">
+                    <input type="date" class="form-control" name="start_date" value="{{ chart.labels[0] }}">
+                    <input type="date" class="form-control" name="end_date" value="{{ chart.labels[-1] }}">
+                </div>
             </div>
             <div class="col-md-4">
                 <label class="form-label text-muted">Course</label>
@@ -70,4 +80,63 @@
         </form>
     </div>
 </div>
+<script>
+    const analyticsData = {{ chart | tojson }};
+    if (analyticsData && analyticsData.labels) {
+        const dauCtx = document.getElementById('dauChart');
+        new Chart(dauCtx, {
+            type: 'line',
+            data: {
+                labels: analyticsData.labels,
+                datasets: [
+                    {
+                        label: 'Daily Active Users',
+                        data: analyticsData.dau,
+                        borderColor: '#0d6efd',
+                        backgroundColor: 'rgba(13,110,253,0.15)',
+                        tension: 0.3,
+                        fill: true,
+                    },
+                    {
+                        label: 'Course Completions',
+                        data: analyticsData.completions,
+                        borderColor: '#198754',
+                        backgroundColor: 'rgba(25,135,84,0.2)',
+                        type: 'bar',
+                        borderWidth: 1,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                interaction: { mode: 'index', intersect: false },
+                plugins: { legend: { position: 'bottom' } },
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+
+        const quizCtx = document.getElementById('quizChart');
+        new Chart(quizCtx, {
+            type: 'line',
+            data: {
+                labels: analyticsData.labels,
+                datasets: [
+                    {
+                        label: 'Quiz Accuracy %',
+                        data: analyticsData.quiz_accuracy,
+                        borderColor: '#6f42c1',
+                        backgroundColor: 'rgba(111,66,193,0.15)',
+                        fill: true,
+                        tension: 0.3,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                scales: { y: { suggestedMin: 0, suggestedMax: 100 } },
+                plugins: { legend: { display: true } }
+            }
+        });
+    }
+</script>
 {% endblock %}

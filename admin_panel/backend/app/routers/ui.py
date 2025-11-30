@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict
 import json
 
-from fastapi import APIRouter, Form, Query, Request
+from fastapi import APIRouter, Form, Query, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app.services import firestore_admin
+from app.services.media_library import save_media_file
+from app.services import reporting
 from app.services.lessons import lesson_service
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -23,6 +26,7 @@ async def dashboard(request: Request):
     engagement = firestore_admin.collect_engagement_metrics()
     courses = firestore_admin.list_courses_with_modules()
     users = firestore_admin.list_users(limit=5)
+    chart = firestore_admin.analytics_timeseries(days=14)
 
     return templates.TemplateResponse(
         "dashboard.html",
@@ -32,7 +36,17 @@ async def dashboard(request: Request):
             "engagement": engagement,
             "courses": courses[:4],
             "recent_users": users,
+            "chart": chart,
         },
+    )
+
+
+@router.get("/content-library", response_class=HTMLResponse)
+async def content_library(request: Request):
+    media_items = firestore_admin.list_media_library()
+    return templates.TemplateResponse(
+        "content_library.html",
+        {"request": request, "media_items": media_items},
     )
 
 
@@ -116,23 +130,36 @@ async def course_management(request: Request, message: Optional[str] = None):
 
 @router.get("/courses/new", response_class=HTMLResponse)
 async def course_new(request: Request):
-    return templates.TemplateResponse("courses/form.html", {"request": request, "course": None})
+    return templates.TemplateResponse(
+        "courses/form.html",
+        {
+            "request": request,
+            "course": None,
+            "thumbnail": None,
+        },
+    )
 
 
 @router.post("/courses")
 async def course_create(
     title: str = Form(...),
     description: str = Form(""),
-    difficulty: str = Form(""),
+    difficulty: str = Form("beginner"),
     tags: str = Form(""),
     published: bool = Form(False),
+    thumbnail: UploadFile = File(None),
 ):
+    media_id = None
+    if thumbnail and thumbnail.filename:
+        media = save_media_file(thumbnail, media_type="images")
+        media_id = media.get("id")
     payload = {
         "title": title,
         "description": description,
         "difficulty": difficulty,
         "tags": [t.strip() for t in tags.split(",") if t.strip()],
         "published": bool(published),
+        "mediaId": media_id,
     }
     course_id = firestore_admin.create_course(payload)
     return RedirectResponse(url=f"/courses/{course_id}/modules?message=created", status_code=303)
@@ -141,8 +168,9 @@ async def course_create(
 @router.get("/courses/{course_id}/edit", response_class=HTMLResponse)
 async def course_edit(request: Request, course_id: str):
     course = firestore_admin.get_course(course_id)
+    thumbnail = firestore_admin.get_media(course.get("mediaId")) if course and course.get("mediaId") else None
     return templates.TemplateResponse(
-        "courses/form.html", {"request": request, "course": course}
+        "courses/form.html", {"request": request, "course": course, "thumbnail": thumbnail}
     )
 
 
@@ -151,10 +179,15 @@ async def course_update(
     course_id: str,
     title: str = Form(...),
     description: str = Form(""),
-    difficulty: str = Form(""),
+    difficulty: str = Form("beginner"),
     tags: str = Form(""),
     published: bool = Form(False),
+    thumbnail: UploadFile = File(None),
 ):
+    media_id = None
+    if thumbnail and thumbnail.filename:
+        media = save_media_file(thumbnail, media_type="images")
+        media_id = media.get("id")
     payload = {
         "title": title,
         "description": description,
@@ -162,6 +195,8 @@ async def course_update(
         "tags": [t.strip() for t in tags.split(",") if t.strip()],
         "published": bool(published),
     }
+    if media_id:
+        payload["mediaId"] = media_id
     firestore_admin.update_course(course_id, payload)
     return RedirectResponse(url=f"/courses?message=updated", status_code=303)
 
@@ -176,6 +211,7 @@ async def course_delete(course_id: str):
 async def module_list(request: Request, course_id: str, message: Optional[str] = None):
     course = firestore_admin.get_course(course_id)
     modules = firestore_admin.list_modules(course_id)
+    next_order = firestore_admin.get_next_module_order(course_id)
     return templates.TemplateResponse(
         "modules/list.html",
         {
@@ -183,6 +219,7 @@ async def module_list(request: Request, course_id: str, message: Optional[str] =
             "course": course,
             "modules": modules,
             "message": message,
+            "next_order": next_order,
         },
     )
 
@@ -192,8 +229,8 @@ async def module_create(
     course_id: str,
     title: str = Form(...),
     summary: str = Form(""),
-    order: int = Form(0),
 ):
+    order = firestore_admin.get_next_module_order(course_id)
     firestore_admin.create_module(course_id, {"title": title, "summary": summary, "order": order})
     return RedirectResponse(url=f"/courses/{course_id}/modules?message=module-created", status_code=303)
 
@@ -227,6 +264,7 @@ async def lesson_list(
 ):
     course = firestore_admin.get_course(course_id)
     module = lesson_service.get_module(course_id, module_id)
+    next_order = 0
     if not course or not module:
         module_ctx = module or {"id": module_id, "title": "Unknown module"}
         course_ctx = course or {"id": course_id, "title": "Unknown course"}
@@ -241,10 +279,12 @@ async def lesson_list(
                 "page": page,
                 "page_size": page_size,
                 "total": 0,
+                "next_order": next_order,
             },
             status_code=404,
         )
     lessons, total = lesson_service.list_lessons(course_id, module_id, page=page, page_size=page_size)
+    next_order = firestore_admin.get_next_lesson_order(course_id, module_id)
     return templates.TemplateResponse(
         "lessons/list.html",
         {
@@ -256,6 +296,7 @@ async def lesson_list(
             "page": page,
             "page_size": page_size,
             "total": total,
+            "next_order": next_order,
         },
     )
 
@@ -299,10 +340,10 @@ async def lesson_create(
     course_id: str,
     module_id: str,
     title: str = Form(...),
-    order: int = Form(0),
     estimatedMin: int = Form(0),
     objectives: str = Form(""),
 ):
+    order = firestore_admin.get_next_lesson_order(course_id, module_id)
     lesson_service.create_lesson(
         course_id,
         module_id,
@@ -366,7 +407,12 @@ async def activity_list(
     course = firestore_admin.get_course(course_id)
     module = lesson_service.get_module(course_id, module_id)
     lesson = lesson_service.get_lesson(course_id, module_id, lesson_id)
-    activities = firestore_admin.list_activities(course_id, module_id, lesson_id)
+    next_order = 0
+    if not course or not module or not lesson:
+        activities = []
+    else:
+        activities = firestore_admin.list_activities(course_id, module_id, lesson_id)
+        next_order = firestore_admin.get_next_activity_order(course_id, module_id, lesson_id)
     return templates.TemplateResponse(
         "activities/list.html",
         {
@@ -376,6 +422,7 @@ async def activity_list(
             "lesson": lesson,
             "activities": activities,
             "message": message,
+            "next_order": next_order,
         },
     )
 
@@ -389,13 +436,35 @@ async def activity_create(
     lesson_id: str,
     title: str = Form(""),
     type: str = Form(...),
-    order: int = Form(0),
-    videoId: str = Form(""),
-    visemeSetId: str = Form(""),
-    abVariant: str = Form(""),
-    config: str = Form(""),
-    scoring: str = Form(""),
+    order: Optional[int] = Form(None),
+    maxScore: int = Form(100),
+    passingScore: int = Form(60),
+    choices: List[str] = Form([]),
+    correct_choice: Optional[int] = Form(None),
+    answer_text: str = Form(""),
+    case_sensitive: bool = Form(False),
+    video: UploadFile = File(None),
 ):
+    order = firestore_admin.get_next_activity_order(course_id, module_id, lesson_id)
+    config_payload = {}
+    scoring_payload = {"maxScore": int(maxScore), "passingScore": int(passingScore)}
+    if type == "mcq":
+        cleaned_choices = [c.strip() for c in choices if c.strip()]
+        config_payload = {"choices": cleaned_choices, "answer": correct_choice}
+    elif type == "fill_in_blank":
+        config_payload = {"answer": answer_text.strip(), "caseSensitive": bool(case_sensitive)}
+    else:
+        config_payload = {}
+
+    video_payload: Dict[str, Optional[str]] = {"videoId": None, "videoUrl": None, "mediaId": None}
+    if video and video.filename:
+        media = save_media_file(video, media_type="videos")
+        video_payload = {
+            "videoId": media.get("id"),
+            "videoUrl": media.get("url"),
+            "mediaId": media.get("id"),
+        }
+
     firestore_admin.create_activity(
         course_id,
         module_id,
@@ -404,11 +473,9 @@ async def activity_create(
             "title": title or type,
             "type": type,
             "order": order,
-            "videoId": videoId or None,
-            "visemeSetId": visemeSetId or None,
-            "abVariant": abVariant or None,
-            "config": json.loads(config) if config else {},
-            "scoring": json.loads(scoring) if scoring else {},
+            **video_payload,
+            "config": config_payload,
+            "scoring": scoring_payload,
         },
     )
     return RedirectResponse(
@@ -428,12 +495,30 @@ async def activity_update(
     title: str = Form(""),
     type: str = Form(...),
     order: int = Form(0),
-    videoId: str = Form(""),
-    visemeSetId: str = Form(""),
-    abVariant: str = Form(""),
-    config: str = Form(""),
-    scoring: str = Form(""),
+    maxScore: int = Form(100),
+    passingScore: int = Form(60),
+    choices: List[str] = Form([]),
+    correct_choice: Optional[int] = Form(None),
+    answer_text: str = Form(""),
+    case_sensitive: bool = Form(False),
+    video: UploadFile = File(None),
 ):
+    config_payload = {}
+    scoring_payload = {"maxScore": int(maxScore), "passingScore": int(passingScore)}
+    if type == "mcq":
+        cleaned_choices = [c.strip() for c in choices if c.strip()]
+        config_payload = {"choices": cleaned_choices, "answer": correct_choice}
+    elif type == "fill_in_blank":
+        config_payload = {"answer": answer_text.strip(), "caseSensitive": bool(case_sensitive)}
+
+    video_payload: Dict[str, Optional[str]] = {}
+    if video and video.filename:
+        media = save_media_file(video, media_type="videos")
+        video_payload = {
+            "videoId": media.get("id"),
+            "videoUrl": media.get("url"),
+            "mediaId": media.get("id"),
+        }
     firestore_admin.update_activity(
         course_id,
         module_id,
@@ -443,11 +528,9 @@ async def activity_update(
             "title": title or type,
             "type": type,
             "order": order,
-            "videoId": videoId or None,
-            "visemeSetId": visemeSetId or None,
-            "abVariant": abVariant or None,
-            "config": json.loads(config) if config else {},
-            "scoring": json.loads(scoring) if scoring else {},
+            **video_payload,
+            "config": config_payload,
+            "scoring": scoring_payload,
         },
     )
     return RedirectResponse(
@@ -468,22 +551,73 @@ async def activity_delete(course_id: str, module_id: str, lesson_id: str, activi
 
 
 @router.get("/analytics", response_class=HTMLResponse)
-async def analytics_dashboard(request: Request):
+async def analytics_dashboard(
+    request: Request,
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+):
     kpis = firestore_admin.summarize_kpis()
     engagement = firestore_admin.collect_engagement_metrics()
+    start_dt = datetime.fromisoformat(start_date) if start_date else None
+    end_dt = datetime.fromisoformat(end_date) if end_date else None
+    chart = firestore_admin.analytics_timeseries(days=30, start_date=start_dt.date() if start_dt else None, end_date=end_dt.date() if end_dt else None)
     return templates.TemplateResponse(
         "analytics.html",
         {
             "request": request,
             "kpis": kpis,
             "engagement": engagement,
+            "chart": chart,
         },
     )
 
 
 @router.get("/reports", response_class=HTMLResponse)
 async def reports(request: Request):
-    return templates.TemplateResponse("reports.html", {"request": request})
+    report_name = request.query_params.get("report")
+    message = request.query_params.get("message")
+    today_str = datetime.utcnow().date().isoformat()
+    default_start = request.query_params.get("start_date") or today_str
+    default_end = request.query_params.get("end_date") or today_str
+    return templates.TemplateResponse(
+        "reports.html",
+        {
+            "request": request,
+            "report_name": report_name,
+            "message": message,
+            "start_date": default_start,
+            "end_date": default_end,
+        },
+    )
+
+
+@router.post("/reports")
+async def generate_report(
+    report_type: str = Form(...),
+    start_date: str = Form(...),
+    end_date: str = Form(...),
+    course: str = Form(""),
+    template_name: str = Form(""),
+):
+    start_dt = datetime.fromisoformat(start_date)
+    end_dt = datetime.fromisoformat(end_date)
+    chart = firestore_admin.analytics_timeseries(
+        days=(end_dt - start_dt).days + 1,
+        start_date=start_dt.date(),
+        end_date=end_dt.date(),
+    )
+    file_name = reporting.generate_pdf_report(
+        report_type=report_type,
+        start_date=start_dt.date(),
+        end_date=end_dt.date(),
+        course=course,
+        template_name=template_name,
+        chart=chart,
+    )
+    return RedirectResponse(
+        url=f"/reports?report={file_name}&message=generated",
+        status_code=303,
+    )
 
 
 @router.get("/subscriptions", response_class=HTMLResponse)

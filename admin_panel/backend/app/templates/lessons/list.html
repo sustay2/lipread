@@ -23,7 +23,8 @@
           <div class="row g-2">
             <div class="col-6">
               <label class="form-label">Order</label>
-              <input type="number" class="form-control" name="order" value="0">
+              <input type="number" class="form-control" name="order" value="{{ next_order }}" readonly>
+              <div class="form-text">Automatically set to the next sequence.</div>
             </div>
             <div class="col-6">
               <label class="form-label">Estimated Minutes</label>

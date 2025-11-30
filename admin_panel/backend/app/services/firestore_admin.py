@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from google.cloud.firestore_v1 import Query
@@ -212,6 +212,7 @@ def summarize_kpis() -> Dict[str, Any]:
     courses = list(db.collection("courses").stream())
     modules = list(db.collection("modules").stream())
     videos = list(db.collection("videos").stream())
+    media_assets = list(db.collection("media").stream())
 
     today = datetime.now(timezone.utc).date()
     daily_active = 0
@@ -225,6 +226,7 @@ def summarize_kpis() -> Dict[str, Any]:
         "total_courses": len(courses),
         "total_modules": len(modules),
         "total_videos": len(videos),
+        "total_media": len(media_assets),
         "daily_active": daily_active,
     }
 
@@ -286,9 +288,64 @@ def list_courses_with_modules() -> List[Dict[str, Any]]:
                 "lesson_count": lesson_count,
                 "tags": cdata.get("tags", []),
                 "createdAt": _iso(cdata.get("createdAt")),
+                "mediaId": cdata.get("mediaId"),
             }
         )
     return output
+
+
+def get_media(media_id: str) -> Optional[Dict[str, Any]]:
+    snap = db.collection("media").document(media_id).get()
+    if not snap.exists:
+        return None
+    data = snap.to_dict() or {}
+    return {
+        "id": snap.id,
+        "type": data.get("type", "file"),
+        "name": data.get("name"),
+        "contentType": data.get("contentType"),
+        "url": data.get("url"),
+        "storagePath": data.get("storagePath"),
+        "sizeBytes": data.get("sizeBytes"),
+        "createdAt": _iso(data.get("createdAt")),
+    }
+
+
+def list_media_library(limit: int = 200) -> List[Dict[str, Any]]:
+    items: List[Dict[str, Any]] = []
+    for snap in db.collection("media").order_by("createdAt", direction=Query.DESCENDING).limit(limit).stream():
+        data = snap.to_dict() or {}
+        items.append(
+            {
+                "id": snap.id,
+                "type": data.get("type", "file"),
+                "name": data.get("name") or data.get("fileName"),
+                "url": data.get("url"),
+                "contentType": data.get("contentType"),
+                "sizeBytes": data.get("sizeBytes"),
+                "createdAt": _iso(data.get("createdAt")),
+                "source": "media",
+            }
+        )
+
+    for snap in db.collection("videos").order_by("createdAt", direction=Query.DESCENDING).limit(limit).stream():
+        data = snap.to_dict() or {}
+        items.append(
+            {
+                "id": snap.id,
+                "type": "video",
+                "name": data.get("title") or snap.id,
+                "url": data.get("url"),
+                "contentType": "video/mp4",
+                "sizeBytes": data.get("sizeBytes"),
+                "createdAt": _iso(data.get("createdAt")),
+                "source": "videos",
+                "thumbUrl": data.get("thumbUrl") or data.get("thumbPath"),
+            }
+        )
+
+    items.sort(key=lambda i: i.get("createdAt") or "", reverse=True)
+    return items
 
 
 def get_course(course_id: str) -> Optional[Dict[str, Any]]:
@@ -377,6 +434,23 @@ def create_module(course_id: str, payload: Dict[str, Any]) -> str:
     return doc_ref.id
 
 
+def get_next_module_order(course_id: str) -> int:
+    collection = db.collection("courses").document(course_id).collection("modules")
+    try:
+        snap = (
+            collection.order_by("order", direction=Query.DESCENDING)
+            .limit(1)
+            .stream()
+        )
+        last = next(iter(snap), None)
+        if last:
+            data = last.to_dict() or {}
+            return int(data.get("order") or 0) + 1
+    except Exception:
+        pass
+    return 0
+
+
 def update_module(course_id: str, module_id: str, payload: Dict[str, Any]) -> bool:
     doc_ref = (
         db.collection("courses")
@@ -449,6 +523,29 @@ def create_lesson(course_id: str, module_id: str, payload: Dict[str, Any]) -> st
     return doc_ref.id
 
 
+def get_next_lesson_order(course_id: str, module_id: str) -> int:
+    collection = (
+        db.collection("courses")
+        .document(course_id)
+        .collection("modules")
+        .document(module_id)
+        .collection("lessons")
+    )
+    try:
+        snap = (
+            collection.order_by("order", direction=Query.DESCENDING)
+            .limit(1)
+            .stream()
+        )
+        last = next(iter(snap), None)
+        if last:
+            data = last.to_dict() or {}
+            return int(data.get("order") or 0) + 1
+    except Exception:
+        pass
+    return 0
+
+
 def update_lesson(course_id: str, module_id: str, lesson_id: str, payload: Dict[str, Any]) -> bool:
     doc_ref = (
         db.collection("courses")
@@ -503,9 +600,9 @@ def list_activities(course_id: str, module_id: str, lesson_id: str) -> List[Dict
                 "order": adata.get("order"),
                 "config": adata.get("config", {}),
                 "scoring": adata.get("scoring", {}),
-                "abVariant": adata.get("abVariant"),
                 "videoId": adata.get("videoId"),
-                "visemeSetId": adata.get("visemeSetId"),
+                "videoUrl": adata.get("videoUrl"),
+                "mediaId": adata.get("mediaId"),
             }
         )
     activities.sort(key=lambda a: (a.get("order") or 0))
@@ -525,6 +622,31 @@ def create_activity(course_id: str, module_id: str, lesson_id: str, payload: Dic
     )
     doc_ref.set(payload)
     return doc_ref.id
+
+
+def get_next_activity_order(course_id: str, module_id: str, lesson_id: str) -> int:
+    collection = (
+        db.collection("courses")
+        .document(course_id)
+        .collection("modules")
+        .document(module_id)
+        .collection("lessons")
+        .document(lesson_id)
+        .collection("activities")
+    )
+    try:
+        snap = (
+            collection.order_by("order", direction=Query.DESCENDING)
+            .limit(1)
+            .stream()
+        )
+        last = next(iter(snap), None)
+        if last:
+            data = last.to_dict() or {}
+            return int(data.get("order") or 0) + 1
+    except Exception:
+        pass
+    return 0
 
 
 def update_activity(
@@ -624,6 +746,67 @@ def collect_engagement_metrics() -> Dict[str, Any]:
         "avg_completion": round(avg_completion, 2),
         "avg_quiz_score": round(avg_quiz_score, 2),
         "avg_streak": round(avg_streak, 2),
+    }
+
+
+def analytics_timeseries(days: int = 14, start_date: Optional[date] = None, end_date: Optional[date] = None) -> Dict[str, List[Any]]:
+    if start_date and end_date:
+        days = max((end_date - start_date).days + 1, 1)
+    end_date = end_date or datetime.now(timezone.utc).date()
+    start_date = start_date or (end_date - timedelta(days=days - 1))
+
+    dau: Dict[date, int] = {start_date + timedelta(days=i): 0 for i in range(days)}
+    completions: Dict[date, int] = {start_date + timedelta(days=i): 0 for i in range(days)}
+    quiz_accuracy: Dict[date, List[int]] = {start_date + timedelta(days=i): [] for i in range(days)}
+
+    users = list_users(limit=5000)
+    for user in users:
+        last_active = _to_datetime(user.get("lastActiveAt"))
+        if last_active:
+            d = last_active.date()
+            if start_date <= d <= end_date:
+                dau[d] = dau.get(d, 0) + 1
+
+        uid = user["id"]
+        for enroll in (
+            db.collection("users")
+            .document(uid)
+            .collection("enrollments")
+            .stream()
+        ):
+            edata = enroll.to_dict() or {}
+            progress = edata.get("progress")
+            updated_at = _to_datetime(edata.get("updatedAt"))
+            if progress is not None and progress >= 99 and updated_at:
+                d = updated_at.date()
+                if start_date <= d <= end_date:
+                    completions[d] = completions.get(d, 0) + 1
+
+        for attempt in (
+            db.collection("users")
+            .document(uid)
+            .collection("attempts")
+            .stream()
+        ):
+            adata = attempt.to_dict() or {}
+            created_at = _to_datetime(adata.get("createdAt"))
+            if created_at:
+                d = created_at.date()
+                if start_date <= d <= end_date and adata.get("score") is not None:
+                    quiz_accuracy[d].append(int(adata.get("score")))
+
+    labels = [(start_date + timedelta(days=i)).isoformat() for i in range(days)]
+    avg_accuracy = []
+    for label in labels:
+        d = datetime.fromisoformat(label).date()
+        scores = quiz_accuracy.get(d, [])
+        avg_accuracy.append(round(sum(scores) / len(scores), 2) if scores else 0)
+
+    return {
+        "labels": labels,
+        "dau": [dau.get(datetime.fromisoformat(l).date(), 0) for l in labels],
+        "completions": [completions.get(datetime.fromisoformat(l).date(), 0) for l in labels],
+        "quiz_accuracy": avg_accuracy,
     }
 
 

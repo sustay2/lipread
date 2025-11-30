@@ -2,44 +2,58 @@
 {% block title %}Reports | LipRead Admin{% endblock %}
 {% block header %}PDF Reporting{% endblock %}
 {% block content %}
+{% if message %}
+<div class="alert alert-success">Report {{ report_name }} generated successfully.</div>
+{% endif %}
 <div class="card shadow-sm">
     <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
         <h6 class="mb-0">Generate PDF Reports</h6>
-        <button class="btn btn-primary">Generate PDF</button>
+        <button class="btn btn-primary" form="report-form" type="submit">Generate PDF</button>
     </div>
     <div class="card-body">
-        <form class="row g-3">
+        <form id="report-form" class="row g-3" method="post" action="/reports">
             <div class="col-md-4">
                 <label class="form-label text-muted">Report Type</label>
-                <select class="form-select">
-                    <option>User progress</option>
-                    <option>Course completion</option>
-                    <option>Quiz scores</option>
-                    <option>Revenue (subscription)</option>
-                    <option>Engagement analytics</option>
+                <select class="form-select" name="report_type" required>
+                    <option value="User progress">User progress</option>
+                    <option value="Course completion">Course completion</option>
+                    <option value="Quiz scores">Quiz scores</option>
+                    <option value="Revenue (subscription)">Revenue (subscription)</option>
+                    <option value="Engagement analytics">Engagement analytics</option>
                 </select>
             </div>
             <div class="col-md-4">
-                <label class="form-label text-muted">Date Range</label>
-                <input type="text" class="form-control" placeholder="2024-01-01 to 2024-12-31">
+                <label class="form-label text-muted">Start Date</label>
+                <input type="date" class="form-control" name="start_date" required value="{{ start_date }}">
             </div>
             <div class="col-md-4">
-                <label class="form-label text-muted">Course</label>
-                <input type="text" class="form-control" placeholder="Optional course filter">
+                <label class="form-label text-muted">End Date</label>
+                <input type="date" class="form-control" name="end_date" required value="{{ end_date }}">
             </div>
-            <div class="col-12">
+            <div class="col-md-6">
+                <label class="form-label text-muted">Course</label>
+                <input type="text" class="form-control" name="course" placeholder="Optional course filter">
+            </div>
+            <div class="col-md-6">
                 <label class="form-label text-muted">Save Template Name</label>
-                <input type="text" class="form-control" placeholder="Monthly engagement overview">
+                <input type="text" class="form-control" name="template_name" placeholder="Monthly engagement overview">
             </div>
         </form>
     </div>
 </div>
 <div class="card shadow-sm mt-4">
-    <div class="card-header bg-white border-0">
+    <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
         <h6 class="mb-0">Preview</h6>
+        {% if report_name %}
+        <a class="btn btn-sm btn-outline-primary" href="/static/reports/{{ report_name }}" target="_blank">Download PDF</a>
+        {% endif %}
     </div>
     <div class="card-body">
-        <div class="placeholder-chart bg-light rounded-3 p-5 text-center text-muted">Preview placeholder</div>
+        {% if report_name %}
+        <iframe src="/static/reports/{{ report_name }}" title="Report preview" class="w-100" style="height:600px;"></iframe>
+        {% else %}
+        <div class="alert alert-info">Generate a report to view the PDF preview.</div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}
