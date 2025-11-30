@@ -61,8 +61,8 @@
                                     {% endfor %}
                                 </ul>
                                 <div class="d-flex gap-2 mt-3">
-                                    <button class="btn btn-sm btn-outline-primary">Add Lesson</button>
-                                    <button class="btn btn-sm btn-outline-secondary">Edit Module</button>
+                                    <a class="btn btn-sm btn-outline-primary" href="/courses/{{ course.id }}/modules#{{ module.id }}">Edit Module</a>
+                                    <a class="btn btn-sm btn-outline-secondary" href="/courses/{{ course.id }}/modules/{{ module.id }}/lessons">Lessons</a>
                                 </div>
                             </div>
                         </div>
