@@ -79,9 +79,7 @@
                         <h4 class="fw-bold">{{ engagement.avg_streak }} days</h4>
                     </div>
                 </div>
-                <div class="placeholder-chart rounded-3 bg-light p-5 text-center text-muted">
-                    Line/Bar chart placeholder
-                </div>
+                <canvas id="engagementChart" height="140"></canvas>
             </div>
         </div>
     </div>
@@ -146,4 +144,56 @@
         </div>
     </div>
 </div>
+<script>
+    const chartCtx = document.getElementById('engagementChart');
+    if (chartCtx) {
+        const chartData = {{ chart | tojson }};
+        new Chart(chartCtx, {
+            type: 'bar',
+            data: {
+                labels: chartData.labels,
+                datasets: [
+                    {
+                        type: 'line',
+                        label: 'Daily Active Users',
+                        data: chartData.dau,
+                        borderColor: '#0d6efd',
+                        backgroundColor: 'rgba(13,110,253,0.2)',
+                        borderWidth: 2,
+                        yAxisID: 'y',
+                    },
+                    {
+                        type: 'bar',
+                        label: 'Course Completions',
+                        data: chartData.completions,
+                        backgroundColor: 'rgba(25, 135, 84, 0.4)',
+                        borderColor: '#198754',
+                        borderWidth: 1,
+                        yAxisID: 'y1',
+                    },
+                    {
+                        type: 'line',
+                        label: 'Quiz Accuracy %',
+                        data: chartData.quiz_accuracy,
+                        borderColor: '#6f42c1',
+                        backgroundColor: 'rgba(111,66,193,0.15)',
+                        yAxisID: 'y2',
+                        borderWidth: 2,
+                        tension: 0.3,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                interaction: { mode: 'index', intersect: false },
+                stacked: false,
+                scales: {
+                    y: { type: 'linear', position: 'left', title: { display: true, text: 'Users' }, grid: { drawOnChartArea: false } },
+                    y1: { type: 'linear', position: 'right', title: { display: true, text: 'Completions' }, grid: { drawOnChartArea: false } },
+                    y2: { type: 'linear', position: 'right', display: false }
+                }
+            }
+        });
+    }
+</script>
 {% endblock %}
