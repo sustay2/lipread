@@ -1,19 +1,30 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import datetime, timedelta, timezone
+import secrets
+from typing import Any, Dict, Optional, Tuple
 
 from passlib.context import CryptContext
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+from firebase_admin import auth
+import requests
 
 from app.services.firebase_client import get_firestore_client
+from app.services.firebase_client import get_firebase_app
 
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 db = get_firestore_client()
 
 ADMIN_COLLECTION = os.getenv("ADMIN_COLLECTION", "admins")
+RESET_COLLECTION = os.getenv("ADMIN_RESET_COLLECTION", "admin_password_resets")
+RESET_SECRET = os.getenv("ADMIN_RESET_SECRET") or os.getenv("ADMIN_SESSION_SECRET", "change-me-please")
+RESET_TOKEN_TTL = int(os.getenv("ADMIN_RESET_TOKEN_TTL", str(3600)))
+RESET_SALT = "admin-password-reset"
+
+reset_serializer = URLSafeTimedSerializer(RESET_SECRET, salt=RESET_SALT)
 
 
 def _to_datetime(value: Any) -> Optional[datetime]:
@@ -72,9 +83,10 @@ def get_admin_by_id(admin_id: str | None) -> Optional[Dict[str, Any]]:
     if not doc.exists:
         return None
     return _map_admin(doc)
-    data = snap.to_dict() or {}
-    data["id"] = snap.id
-    return data
+
+
+def _reset_collection():
+    return db.collection(RESET_COLLECTION)
 
 
 def hash_password(password: str) -> str:
@@ -129,3 +141,123 @@ def update_admin_password(admin_id: str, new_password: str) -> bool:
     password_hash = hash_password(new_password)
     ref.update({"passwordHash": password_hash, "updatedAt": SERVER_TIMESTAMP})
     return True
+
+
+def send_password_reset_email(email: str, reset_url: str | None = None) -> Optional[str]:
+    """Generate and dispatch a Firebase password reset email.
+
+    If FIREBASE_WEB_API_KEY is provided, the Identity Toolkit REST API will send the
+    email using Firebase's hosted templates. Otherwise, a password reset link will be
+    generated and returned for logging or alternative delivery.
+    """
+
+    get_firebase_app()
+    action_settings = auth.ActionCodeSettings(url=reset_url) if reset_url else None
+    try:
+        reset_link = auth.generate_password_reset_link(email, action_settings)
+    except Exception:
+        return None
+
+    api_key = os.getenv("FIREBASE_WEB_API_KEY")
+    if api_key:
+        try:
+            requests.post(
+                f"https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={api_key}",
+                json={"requestType": "PASSWORD_RESET", "email": email, "continueUrl": reset_url},
+                timeout=10,
+            )
+        except Exception:
+            # Even if the API call fails, return the generated link for fallback delivery.
+            pass
+
+    return reset_link
+
+
+def create_password_reset(email: str) -> Optional[str]:
+    admin_doc = get_admin_by_email(email)
+    if not admin_doc:
+        return None
+
+    admin_id = admin_doc.get("id")
+    token_id = secrets.token_hex(16)
+    nonce = secrets.token_urlsafe(32)
+
+    signed_token = reset_serializer.dumps({"aid": admin_id, "em": admin_doc.get("email"), "jti": token_id, "n": nonce})
+
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=RESET_TOKEN_TTL)
+    _reset_collection().document(token_id).set(
+        {
+            "adminId": admin_id,
+            "email": admin_doc.get("email"),
+            "tokenHash": hash_password(nonce),
+            "createdAt": SERVER_TIMESTAMP,
+            "expiresAt": expires_at,
+            "used": False,
+        }
+    )
+
+    return signed_token
+
+
+def _validate_reset_token(token: str) -> Optional[Tuple[Dict[str, Any], str]]:
+    if not token:
+        return None
+    try:
+        payload = reset_serializer.loads(token, max_age=RESET_TOKEN_TTL)
+    except (BadSignature, SignatureExpired):
+        return None
+
+    token_id = payload.get("jti")
+    nonce = payload.get("n")
+    admin_id = payload.get("aid")
+    email = (payload.get("em") or "").lower()
+    if not token_id or not nonce or not admin_id or not email:
+        return None
+
+    doc_ref = _reset_collection().document(token_id)
+    doc = doc_ref.get()
+    if not doc.exists:
+        return None
+    data = doc.to_dict() or {}
+    if data.get("used"):
+        return None
+
+    expires_at = _to_datetime(data.get("expiresAt"))
+    if expires_at and expires_at < datetime.now(timezone.utc):
+        return None
+
+    if str(data.get("adminId")) != str(admin_id):
+        return None
+
+    stored_email = (data.get("email") or "").lower()
+    if stored_email and stored_email != email:
+        return None
+
+    if not verify_password(nonce, data.get("tokenHash", "")):
+        return None
+
+    admin_doc = get_admin_by_id(admin_id)
+    if not admin_doc:
+        return None
+
+    return admin_doc, token_id
+
+
+def verify_reset_token(token: str) -> Optional[Dict[str, Any]]:
+    verified = _validate_reset_token(token)
+    if not verified:
+        return None
+    admin_doc, _ = verified
+    return admin_doc
+
+
+def consume_reset_token(token: str, new_password: str) -> bool:
+    verified = _validate_reset_token(token)
+    if not verified:
+        return False
+
+    admin_doc, token_id = verified
+    success = update_admin_password(admin_doc.get("id"), new_password)
+    if success:
+        _reset_collection().document(token_id).set({"used": True, "usedAt": SERVER_TIMESTAMP}, merge=True)
+    return success
