@@ -52,19 +52,13 @@
               <td>{{ lesson.estimatedMin }} min</td>
               <td class="text-muted small">{{ lesson.objectives|join(', ') }}</td>
               <td>
-                <form method="post" action="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/update" class="row g-2">
-                  <div class="col-md-3"><input class="form-control form-control-sm" name="title" value="{{ lesson.title }}"></div>
-                  <div class="col-md-2"><input class="form-control form-control-sm" type="number" name="order" value="{{ lesson.order }}"></div>
-                  <div class="col-md-2"><input class="form-control form-control-sm" type="number" name="estimatedMin" value="{{ lesson.estimatedMin }}"></div>
-                  <div class="col-md-3"><textarea class="form-control form-control-sm" name="objectives" rows="1">{{ lesson.objectives|join('\n') }}</textarea></div>
-                  <div class="col-md-2 d-flex gap-1">
-                    <button class="btn btn-outline-primary btn-sm" type="submit">Save</button>
-                    <a class="btn btn-outline-secondary btn-sm" href="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities">Activities</a>
-                  </div>
-                </form>
-                <form method="post" action="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/delete" class="mt-1" onsubmit="return confirm('Delete lesson?')">
-                  <button class="btn btn-outline-danger btn-sm">Delete</button>
-                </form>
+                <div class="d-flex gap-2">
+                  <a class="btn btn-outline-primary btn-sm" href="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}">Edit</a>
+                  <a class="btn btn-outline-secondary btn-sm" href="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities">Activities</a>
+                  <form method="post" action="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/delete" onsubmit="return confirm('Delete lesson?')">
+                    <button class="btn btn-outline-danger btn-sm" type="submit">Delete</button>
+                  </form>
+                </div>
               </td>
             </tr>
             {% else %}
@@ -72,6 +66,24 @@
             {% endfor %}
           </tbody>
         </table>
+      </div>
+      <div class="card-body border-top">
+        {% set total_pages = (total // page_size) + (1 if total % page_size else 0) %}
+        <div class="d-flex justify-content-between align-items-center">
+          <div class="text-muted small">Page {{ page }} of {{ total_pages }} — {{ total }} lessons</div>
+          <div>
+            <nav>
+              <ul class="pagination pagination-sm mb-0">
+                <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+                  <a class="page-link" href="?page={{ page - 1 if page>1 else 1 }}&page_size={{ page_size }}">Prev</a>
+                </li>
+                <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+                  <a class="page-link" href="?page={{ page + 1 if page < total_pages else total_pages }}&page_size={{ page_size }}">Next</a>
+                </li>
+              </ul>
+            </nav>
+          </div>
+        </div>
       </div>
     </div>
   </div>

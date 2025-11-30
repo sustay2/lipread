@@ -6,3 +6,4 @@ from .firestore_admin import (  # noqa: F401
     list_courses_with_modules,
     collect_engagement_metrics,
 )
+from .lessons import LessonService, lesson_service  # noqa: F401

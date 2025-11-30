@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app.services import firestore_admin
+from app.services.lessons import lesson_service
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -216,11 +217,34 @@ async def module_delete(course_id: str, module_id: str):
 
 
 @router.get("/courses/{course_id}/modules/{module_id}/lessons", response_class=HTMLResponse)
-async def lesson_list(request: Request, course_id: str, module_id: str, message: Optional[str] = None):
+async def lesson_list(
+    request: Request,
+    course_id: str,
+    module_id: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    message: Optional[str] = None,
+):
     course = firestore_admin.get_course(course_id)
-    modules = firestore_admin.list_modules(course_id)
-    module = next((m for m in modules if m["id"] == module_id), None)
-    lessons = firestore_admin.list_lessons(course_id, module_id)
+    module = lesson_service.get_module(course_id, module_id)
+    if not course or not module:
+        module_ctx = module or {"id": module_id, "title": "Unknown module"}
+        course_ctx = course or {"id": course_id, "title": "Unknown course"}
+        return templates.TemplateResponse(
+            "lessons/list.html",
+            {
+                "request": request,
+                "course": course_ctx,
+                "module": module_ctx,
+                "lessons": [],
+                "message": "Module not found",
+                "page": page,
+                "page_size": page_size,
+                "total": 0,
+            },
+            status_code=404,
+        )
+    lessons, total = lesson_service.list_lessons(course_id, module_id, page=page, page_size=page_size)
     return templates.TemplateResponse(
         "lessons/list.html",
         {
@@ -228,6 +252,43 @@ async def lesson_list(request: Request, course_id: str, module_id: str, message:
             "course": course,
             "module": module,
             "lessons": lessons,
+            "message": message,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+        },
+    )
+
+
+@router.get(
+    "/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}",
+    response_class=HTMLResponse,
+)
+async def lesson_detail(
+    request: Request,
+    course_id: str,
+    module_id: str,
+    lesson_id: str,
+    message: Optional[str] = None,
+):
+    course = firestore_admin.get_course(course_id)
+    module = lesson_service.get_module(course_id, module_id)
+    lesson = lesson_service.get_lesson(course_id, module_id, lesson_id)
+    if not course or not module or not lesson:
+        course_ctx = course or {"id": course_id, "title": "Unknown course"}
+        module_ctx = module or {"id": module_id, "title": "Unknown module"}
+        return templates.TemplateResponse(
+            "lessons/form.html",
+            {"request": request, "course": course_ctx, "module": module_ctx, "lesson": lesson},
+            status_code=404,
+        )
+    return templates.TemplateResponse(
+        "lessons/form.html",
+        {
+            "request": request,
+            "course": course,
+            "module": module,
+            "lesson": lesson,
             "message": message,
         },
     )
@@ -242,13 +303,13 @@ async def lesson_create(
     estimatedMin: int = Form(0),
     objectives: str = Form(""),
 ):
-    firestore_admin.create_lesson(
+    lesson_service.create_lesson(
         course_id,
         module_id,
         {
             "title": title,
-            "order": order,
-            "estimatedMin": estimatedMin,
+            "order": int(order),
+            "estimatedMin": int(estimatedMin),
             "objectives": [o.strip() for o in objectives.split("\n") if o.strip()],
         },
     )
@@ -268,26 +329,27 @@ async def lesson_update(
     estimatedMin: int = Form(0),
     objectives: str = Form(""),
 ):
-    firestore_admin.update_lesson(
+    lesson_service.update_lesson(
         course_id,
         module_id,
         lesson_id,
         {
             "title": title,
-            "order": order,
-            "estimatedMin": estimatedMin,
+            "order": int(order),
+            "estimatedMin": int(estimatedMin),
             "objectives": [o.strip() for o in objectives.split("\n") if o.strip()],
         },
     )
     return RedirectResponse(
-        url=f"/courses/{course_id}/modules/{module_id}/lessons?message=lesson-updated",
+        url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}?message=lesson-updated",
         status_code=303,
     )
 
 
 @router.post("/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/delete")
 async def lesson_delete(course_id: str, module_id: str, lesson_id: str):
-    firestore_admin.delete_lesson(course_id, module_id, lesson_id)
+    lesson_service.delete_lesson(course_id, module_id, lesson_id)
+    lesson_service.reindex_orders(course_id, module_id)
     return RedirectResponse(
         url=f"/courses/{course_id}/modules/{module_id}/lessons?message=lesson-deleted",
         status_code=303,
@@ -302,11 +364,8 @@ async def activity_list(
     request: Request, course_id: str, module_id: str, lesson_id: str, message: Optional[str] = None
 ):
     course = firestore_admin.get_course(course_id)
-    module = next((m for m in firestore_admin.list_modules(course_id) if m["id"] == module_id), None)
-    lesson = next(
-        (l for l in firestore_admin.list_lessons(course_id, module_id) if l["id"] == lesson_id),
-        None,
-    )
+    module = lesson_service.get_module(course_id, module_id)
+    lesson = lesson_service.get_lesson(course_id, module_id, lesson_id)
     activities = firestore_admin.list_activities(course_id, module_id, lesson_id)
     return templates.TemplateResponse(
         "activities/list.html",
