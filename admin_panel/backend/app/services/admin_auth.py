@@ -72,6 +72,9 @@ def get_admin_by_id(admin_id: str | None) -> Optional[Dict[str, Any]]:
     if not doc.exists:
         return None
     return _map_admin(doc)
+    data = snap.to_dict() or {}
+    data["id"] = snap.id
+    return data
 
 
 def hash_password(password: str) -> str:
