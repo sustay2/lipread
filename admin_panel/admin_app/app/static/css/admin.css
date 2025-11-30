@@ -1,0 +1,7 @@
+body { font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif; }
+.sidebar .nav-link { color: #4b5563; border-radius: .5rem; }
+.sidebar .nav-link:hover { background: #f3f4f6; color: #111827; }
+.card { border: none; box-shadow: 0 6px 18px rgba(0,0,0,0.05); }
+.badge-soft-success { background-color: #e7f5ef; color: #198754; }
+.badge-soft-danger { background-color: #fdecea; color: #dc3545; }
+.badge-soft-warning { background-color: #fff4e5; color: #fd7e14; }

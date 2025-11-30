@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block title %}Lessons{% endblock %}
+{% block page_title %}Lesson List{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/courses/{{ breadcrumb.course_id }}">Course</a></li>
+    <li class="breadcrumb-item active" aria-current="page">Module {{ breadcrumb.module_id }}</li>
+  </ol>
+</nav>
+<div class="card p-0">
+    <div class="table-responsive">
+        <table class="table align-middle mb-0">
+            <thead class="table-light"><tr><th>Lesson Title</th><th>Type</th><th>Duration</th><th>Activities</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody>
+            {% for lesson in lessons %}
+            <tr>
+                <td>{{ lesson.title }}</td>
+                <td>{{ lesson.type|capitalize }}</td>
+                <td>{{ lesson.duration }}</td>
+                <td>{{ lesson.activities }}</td>
+                <td><span class="badge bg-success">Published</span></td>
+                <td><a class="btn btn-sm btn-outline-primary" href="/lessons/{{ lesson.id }}/activities">Activities</a></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block title %}User Management{% endblock %}
+{% block page_title %}User Management{% endblock %}
+{% block content %}
+<div class="card p-4 mb-3">
+    <form class="row g-3 align-items-center" method="get">
+        <div class="col-md-4">
+            <input type="text" class="form-control" name="q" placeholder="Search name or email" value="{{ query or '' }}">
+        </div>
+        <div class="col-md-3">
+            <select class="form-select" name="role">
+                <option value="">All roles</option>
+                <option value="admin" {% if role=='admin' %}selected{% endif %}>Admin</option>
+                <option value="student" {% if role=='student' %}selected{% endif %}>Student</option>
+                <option value="instructor" {% if role=='instructor' %}selected{% endif %}>Instructor</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <button class="btn btn-primary" type="submit"><i class="bi bi-search"></i> Search</button>
+        </div>
+        <div class="col-md-3 text-end">
+            <a href="#" class="btn btn-outline-secondary"><i class="bi bi-person-plus"></i> Invite</a>
+        </div>
+    </form>
+</div>
+<div class="card p-0">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead class="table-light">
+            <tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+            {% for user in users %}
+            <tr>
+                <td>{{ user.name or user.displayName or '—' }}</td>
+                <td>{{ user.email }}</td>
+                <td><span class="badge bg-info text-dark">{{ user.role or user.customClaims.role or 'student' }}</span></td>
+                <td><span class="badge {% if user.status == 'disabled' %}badge-soft-danger{% else %}badge-soft-success{% endif %}">{{ user.status or 'active' }}</span></td>
+                <td>{{ user.last_login or user.lastSignInTime or '—' }}</td>
+                <td><a class="btn btn-sm btn-primary" href="/users/{{ user.id }}">View</a></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

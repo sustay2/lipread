@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block title %}System Analytics{% endblock %}
+{% block page_title %}System Analytics Dashboard{% endblock %}
+{% block content %}
+<div class="row g-3 mb-4">
+    <div class="col-md-3"><div class="card p-3"><div class="text-muted">Total Users</div><h4>{{ analytics.totals.users }}</h4></div></div>
+    <div class="col-md-3"><div class="card p-3"><div class="text-muted">Subscribers</div><h4>{{ analytics.totals.subscribers }}</h4></div></div>
+    <div class="col-md-3"><div class="card p-3"><div class="text-muted">DAU</div><h4>{{ analytics.totals.dau }}</h4></div></div>
+    <div class="col-md-3"><div class="card p-3"><div class="text-muted">MAU</div><h4>{{ analytics.totals.mau }}</h4></div></div>
+</div>
+<div class="card p-4 mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h6 class="mb-0">Course Popularity</h6>
+        <span class="text-muted small">Top courses</span>
+    </div>
+    <div class="row">
+        {% for course in analytics.course_popularity %}
+        <div class="col-md-4 mb-3">
+            <div class="p-3 bg-white border rounded">
+                <div class="fw-semibold">{{ course.name }}</div>
+                <div class="progress" style="height: 6px;">
+                    <div class="progress-bar" role="progressbar" style="width: {{ course.value }}%;"></div>
+                </div>
+                <small class="text-muted">{{ course.value }}% of active learners</small>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+<div class="card p-4">
+    <h6 class="mb-3">Quiz Performance Distribution</h6>
+    <div class="d-flex gap-3">
+        {% for score in analytics.quiz_distribution %}
+        <div class="flex-grow-1">
+            <div class="bg-light border rounded text-center p-3">
+                <div class="display-6">{{ score }}%</div>
+                <div class="text-muted">Cohort {{ loop.index }}</div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

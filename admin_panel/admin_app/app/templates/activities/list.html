@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block title %}Activities{% endblock %}
+{% block page_title %}Activity List{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h6 class="mb-0">Lesson {{ lesson_id }}</h6>
+    <button class="btn btn-primary btn-sm"><i class="bi bi-plus"></i> Create Activity</button>
+</div>
+<div class="card p-0">
+    <div class="table-responsive">
+        <table class="table align-middle mb-0">
+            <thead class="table-light"><tr><th>Question</th><th>Type</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody>
+            {% for activity in activities %}
+            <tr>
+                <td>{{ activity.question }}</td>
+                <td><span class="badge bg-info text-dark">{{ activity.type|upper }}</span></td>
+                <td><span class="badge {% if activity.status=='draft' %}badge-soft-warning{% else %}badge-soft-success{% endif %}">{{ activity.status }}</span></td>
+                <td>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-primary">Edit</button>
+                        <button class="btn btn-outline-secondary">Preview</button>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
