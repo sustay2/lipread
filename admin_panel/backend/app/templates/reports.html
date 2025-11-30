@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Reports | LipRead Admin{% endblock %}
+{% block header %}PDF Reporting{% endblock %}
+{% block content %}
+<div class="card shadow-sm">
+    <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">Generate PDF Reports</h6>
+        <button class="btn btn-primary">Generate PDF</button>
+    </div>
+    <div class="card-body">
+        <form class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label text-muted">Report Type</label>
+                <select class="form-select">
+                    <option>User progress</option>
+                    <option>Course completion</option>
+                    <option>Quiz scores</option>
+                    <option>Revenue (subscription)</option>
+                    <option>Engagement analytics</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label text-muted">Date Range</label>
+                <input type="text" class="form-control" placeholder="2024-01-01 to 2024-12-31">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label text-muted">Course</label>
+                <input type="text" class="form-control" placeholder="Optional course filter">
+            </div>
+            <div class="col-12">
+                <label class="form-label text-muted">Save Template Name</label>
+                <input type="text" class="form-control" placeholder="Monthly engagement overview">
+            </div>
+        </form>
+    </div>
+</div>
+<div class="card shadow-sm mt-4">
+    <div class="card-header bg-white border-0">
+        <h6 class="mb-0">Preview</h6>
+    </div>
+    <div class="card-body">
+        <div class="placeholder-chart bg-light rounded-3 p-5 text-center text-muted">Preview placeholder</div>
+    </div>
+</div>
+{% endblock %}

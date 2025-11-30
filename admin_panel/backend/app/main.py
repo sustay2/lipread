@@ -1,4 +1,5 @@
 import os
+import pathlib
 from fastapi import FastAPI
 from starlette.staticfiles import StaticFiles
 from app.routers import (
@@ -17,6 +18,7 @@ from app.routers import (
     feedback,
     flags,
     import_export,
+    ui,
 )
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -34,7 +36,9 @@ app.add_middleware(
 # Serve local media read-only
 DEFAULT_MEDIA_ROOT = "C:/lipread_media"
 MEDIA_ROOT = os.getenv("MEDIA_ROOT", DEFAULT_MEDIA_ROOT)
+STATIC_ROOT = pathlib.Path(__file__).resolve().parent / "static"
 app.mount("/media", StaticFiles(directory=MEDIA_ROOT, check_dir=False), name="media")
+app.mount("/static", StaticFiles(directory=STATIC_ROOT, check_dir=False), name="static")
 
 # Legacy badge icon paths
 BADGE_ICON_ROOT = os.path.join(MEDIA_ROOT, "badge_icons")
@@ -60,3 +64,4 @@ app.include_router(visemes.router, prefix="/admin/visemes", tags=["visemes"])
 # app.include_router(flags.router, prefix="/admin/flags", tags=["flags"])
 app.include_router(import_export.router, prefix="/admin", tags=["import_export"])
 # app.include_router(feedback.router, prefix="/admin/feedback", tags=["feedback"])
+app.include_router(ui.router, tags=["ui"])

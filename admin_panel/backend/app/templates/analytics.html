@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Analytics | LipRead Admin{% endblock %}
+{% block header %}Analytics Dashboard{% endblock %}
+{% block content %}
+<div class="row g-4 mb-3">
+    <div class="col-md-3">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <p class="text-muted mb-1">Total Users</p>
+                <h4 class="fw-bold">{{ kpis.total_users }}</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <p class="text-muted mb-1">Daily Active</p>
+                <h4 class="fw-bold">{{ engagement.daily_active }}</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <p class="text-muted mb-1">Avg Completion</p>
+                <h4 class="fw-bold">{{ engagement.avg_completion }}%</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <p class="text-muted mb-1">Avg Quiz Score</p>
+                <h4 class="fw-bold">{{ engagement.avg_quiz_score }}%</h4>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white border-0">
+        <h6 class="mb-0">Engagement Trends</h6>
+    </div>
+    <div class="card-body">
+        <div class="placeholder-chart bg-light rounded-3 p-5 text-center text-muted">Charts for DAU, course completions, quiz accuracy</div>
+    </div>
+</div>
+<div class="card shadow-sm">
+    <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">Filters</h6>
+        <button class="btn btn-sm btn-outline-primary">Apply Filters</button>
+    </div>
+    <div class="card-body">
+        <form class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label text-muted">Date Range</label>
+                <input type="text" class="form-control" placeholder="2024-01-01 to 2024-12-31">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label text-muted">Course</label>
+                <input type="text" class="form-control" placeholder="Course ID or name">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label text-muted">User Type</label>
+                <select class="form-select">
+                    <option>All</option>
+                    <option>Subscribers</option>
+                    <option>Free tier</option>
+                </select>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
