@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
+import hashlib
 import secrets
 from typing import Any, Dict, Optional, Tuple
 
@@ -91,6 +92,19 @@ def _reset_collection():
 
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
+
+
+def _hash_reset_secret(secret: str) -> str:
+    digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
+    return pwd_context.hash(digest)
+
+
+def _verify_reset_secret(secret: str, secret_hash: str) -> bool:
+    try:
+        digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
+        return pwd_context.verify(digest, secret_hash)
+    except Exception:
+        return False
 
 
 def verify_password(password: str, password_hash: str) -> bool:
@@ -189,7 +203,7 @@ def create_password_reset(email: str) -> Optional[str]:
         {
             "adminId": admin_id,
             "email": admin_doc.get("email"),
-            "tokenHash": hash_password(nonce),
+            "tokenHash": _hash_reset_secret(nonce),
             "createdAt": SERVER_TIMESTAMP,
             "expiresAt": expires_at,
             "used": False,
@@ -233,7 +247,7 @@ def _validate_reset_token(token: str) -> Optional[Tuple[Dict[str, Any], str]]:
     if stored_email and stored_email != email:
         return None
 
-    if not verify_password(nonce, data.get("tokenHash", "")):
+    if not _verify_reset_secret(nonce, data.get("tokenHash", "")):
         return None
 
     admin_doc = get_admin_by_id(admin_id)
