@@ -95,16 +95,12 @@ def hash_password(password: str) -> str:
 
 
 def _hash_reset_secret(secret: str) -> str:
-    digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
-    return pwd_context.hash(digest)
+    return hashlib.sha256(secret.encode("utf-8")).hexdigest()
 
 
 def _verify_reset_secret(secret: str, secret_hash: str) -> bool:
-    try:
-        digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
-        return pwd_context.verify(digest, secret_hash)
-    except Exception:
-        return False
+    digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
+    return digest == secret_hash
 
 
 def verify_password(password: str, password_hash: str) -> bool:
