@@ -88,6 +88,21 @@ async def change_password(
     if not admin:
         return RedirectResponse(url="/logout", status_code=status.HTTP_303_SEE_OTHER)
 
+    try:
+        for value in (current_password, new_password, confirm_password):
+            if len(value.encode("utf-8")) > admin_auth.MAX_PASSWORD_BYTES:
+                raise ValueError
+    except Exception:
+        return templates.TemplateResponse(
+            "admin_profile_edit.html",
+            {
+                "request": request,
+                "admin": admin,
+                "error": "Password must not exceed 72 characters.",
+            },
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
     if new_password != confirm_password:
         return templates.TemplateResponse(
             "admin_profile_edit.html",

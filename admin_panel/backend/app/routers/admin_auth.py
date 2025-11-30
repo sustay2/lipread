@@ -24,6 +24,20 @@ async def login_form(request: Request):
 
 @router.post("/login")
 async def login(request: Request, email: str = Form(...), password: str = Form(...)):
+    try:
+        if len(password.encode("utf-8")) > admin_auth.MAX_PASSWORD_BYTES:
+            raise ValueError
+    except Exception:
+        return templates.TemplateResponse(
+            "login.html",
+            {
+                "request": request,
+                "error": "Password must not exceed 72 characters.",
+                "email": email,
+            },
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
     admin = admin_auth.verify_admin_credentials(email, password)
     if not admin:
         return templates.TemplateResponse(
@@ -122,6 +136,22 @@ async def reset_password(
                 "request": request,
                 "error": "Invalid or expired reset link. Please request a new one.",
                 "token": token,
+            },
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        for value in (new_password, confirm_password):
+            if len(value.encode("utf-8")) > admin_auth.MAX_PASSWORD_BYTES:
+                raise ValueError
+    except Exception:
+        return templates.TemplateResponse(
+            "reset_password.html",
+            {
+                "request": request,
+                "error": "Password must not exceed 72 characters.",
+                "token": token,
+                "admin": admin_doc,
             },
             status_code=status.HTTP_400_BAD_REQUEST,
         )
