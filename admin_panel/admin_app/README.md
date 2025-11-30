@@ -24,8 +24,11 @@ admin_panel/admin_app/
 ```
 
 ## Running locally
+Run Uvicorn from the `admin_panel` repo root and point it at the FastAPI source directory so the `app` package resolves correctly:
 ```bash
-uvicorn app.main:app --reload --port 8501
+uvicorn --app-dir admin_app app.main:app --reload --port 8501
 ```
+
+Alternatively, `cd admin_panel/admin_app` and run the shorter command `uvicorn app.main:app --reload --port 8501`.
 
 Point `LIPREAD_ADMIN_API_BASE_URL` to your admin API to drive live data. The UI falls back to demo data when the API is unreachable.
