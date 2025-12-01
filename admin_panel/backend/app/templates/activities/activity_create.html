@@ -5,65 +5,114 @@
 <div class="mb-3">
   <a class="text-decoration-none" href="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities">&larr; Back to activities</a>
 </div>
+
 <div class="card shadow-sm">
   <div class="card-body">
-    <form method="post" action="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities">
+    <form id="activityForm" method="post" action="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities">
+      <input type="hidden" name="payload" id="activityPayload">
       <div class="row g-3">
         <div class="col-md-6">
           <label class="form-label">Title</label>
-          <input class="form-control" name="title" placeholder="e.g. Mid-lesson quiz">
+          <input class="form-control" id="activityTitle" placeholder="e.g. Mid-lesson quiz">
         </div>
         <div class="col-md-3">
           <label class="form-label">Type</label>
-          <select class="form-select" name="type" required>
-            <option value="quiz" selected>Quiz</option>
-            <option value="practice_lip">Practice Lip</option>
+          <select class="form-select" id="activityType" required>
+            <option value="quiz" selected>MCQ Quiz</option>
             <option value="dictation">Dictation</option>
+            <option value="practice_lip">Practice</option>
           </select>
         </div>
         <div class="col-md-3">
           <label class="form-label">Order</label>
-          <input class="form-control" type="number" name="order" value="{{ next_order }}" min="0">
+          <input class="form-control" type="number" id="activityOrder" value="{{ next_order }}" min="0">
         </div>
       </div>
+
       <div class="row g-3 mt-3">
         <div class="col-md-6">
           <div class="card h-100">
             <div class="card-body">
-              <h6 class="card-title">New Question Bank</h6>
-              <div class="mb-3">
-                <label class="form-label">Title</label>
-                <input class="form-control" name="bankTitle" placeholder="e.g. Unit 1 Quiz Bank" required>
+              <h6 class="card-title">Scoring (activity level)</h6>
+              <div class="input-group mb-2">
+                <span class="input-group-text">Max</span>
+                <input class="form-control" type="number" id="maxScore" value="100" min="0">
+                <span class="input-group-text">Pass</span>
+                <input class="form-control" type="number" id="passingScore" value="60" min="0">
               </div>
-              <div class="row g-3">
-                <div class="col-md-6">
-                  <label class="form-label">Difficulty</label>
-                  <input class="form-control" type="number" name="bankDifficulty" value="1" min="1" max="5" required>
-                </div>
-                <div class="col-md-6">
-                  <label class="form-label">Tags (comma separated)</label>
-                  <input class="form-control" name="bankTags" placeholder="listening,phonetics">
-                </div>
-              </div>
-              <div class="mt-3">
-                <label class="form-label">Description <span class="text-muted small">(optional)</span></label>
-                <textarea class="form-control" name="bankDescription" rows="3" placeholder="Describe this question bank"></textarea>
-              </div>
+              <p class="text-muted small mb-0">Scoring is per activity, not per question.</p>
             </div>
           </div>
         </div>
         <div class="col-md-6">
           <div class="card h-100">
             <div class="card-body">
-              <h6 class="card-title">Scoring</h6>
-              <div class="input-group mb-3">
-                <span class="input-group-text">Max</span>
-                <input class="form-control" type="number" name="maxScore" value="100" min="0">
-                <span class="input-group-text">Pass</span>
-                <input class="form-control" type="number" name="passingScore" value="60" min="0">
-              </div>
-              <p class="text-muted mb-0 small">A fresh question bank will be created when this activity is saved.</p>
+              <h6 class="card-title">Display</h6>
+              <p class="text-muted small mb-0">Switch the activity type to reveal the correct fields below.</p>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-3" id="mcqSection">
+        <div class="card mb-3">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="mb-0">Question Bank</h6>
+              <span class="badge bg-primary">MCQ</span>
+            </div>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">Bank title</label>
+                <input class="form-control" id="bankTitle" placeholder="e.g. Unit 1 Quiz Bank">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Difficulty</label>
+                <input class="form-control" type="number" id="bankDifficulty" value="1" min="1" max="5">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Tags (comma separated)</label>
+                <input class="form-control" id="bankTags" placeholder="listening,phonetics">
+              </div>
+            </div>
+            <div class="mt-3">
+              <label class="form-label">Description <span class="text-muted small">(optional)</span></label>
+              <textarea class="form-control" id="bankDescription" rows="3" placeholder="Describe this question bank"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="mb-0">MCQ Questions</h6>
+              <button class="btn btn-sm btn-outline-primary" type="button" id="addQuestionBtn">Add Question</button>
+            </div>
+            <div id="questionList" class="d-flex flex-column gap-2"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-3 d-none" id="dictationSection">
+        <div class="card">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="mb-0">Dictation Items</h6>
+              <button class="btn btn-sm btn-outline-primary" type="button" id="addDictationBtn">Add Dictation Item</button>
+            </div>
+            <div id="dictationList" class="d-flex flex-column gap-2"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-3 d-none" id="practiceSection">
+        <div class="card">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="mb-0">Practice Items</h6>
+              <button class="btn btn-sm btn-outline-primary" type="button" id="addPracticeBtn">Add Practice Item</button>
+            </div>
+            <div id="practiceList" class="d-flex flex-column gap-2"></div>
           </div>
         </div>
       </div>
@@ -74,4 +123,257 @@
     </form>
   </div>
 </div>
+
+<template id="mcqTemplate">
+  <div class="card border-1 mcq-question">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="fw-semibold">Question <span class="question-index"></span></span>
+        <button class="btn btn-sm btn-outline-danger remove-question" type="button">Remove</button>
+      </div>
+      <div class="mb-2">
+        <label class="form-label">Question stem</label>
+        <textarea class="form-control question-stem" rows="2" placeholder="Enter the question"></textarea>
+      </div>
+      <div class="mb-2">
+        <label class="form-label">Options <span class="text-muted small">(one per line)</span></label>
+        <textarea class="form-control question-options" rows="3" placeholder="Option A\nOption B\nOption C"></textarea>
+      </div>
+      <div class="row g-3">
+        <div class="col-md-8">
+          <label class="form-label">Correct answers <span class="text-muted small">(comma separated)</span></label>
+          <input class="form-control question-answers" placeholder="Option A, Option C">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Media ID <span class="text-muted small">(optional)</span></label>
+          <input class="form-control question-media" placeholder="media_123">
+        </div>
+      </div>
+      <div class="mt-2">
+        <label class="form-label">Explanation <span class="text-muted small">(optional)</span></label>
+        <textarea class="form-control question-explanation" rows="2"></textarea>
+      </div>
+    </div>
+  </div>
+</template>
+
+<template id="dictationTemplate">
+  <div class="card border-1 dictation-item">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="fw-semibold">Dictation Item <span class="dictation-index"></span></span>
+        <button class="btn btn-sm btn-outline-danger remove-dictation" type="button">Remove</button>
+      </div>
+      <div class="mb-2">
+        <label class="form-label">Correct text</label>
+        <textarea class="form-control dictation-correct" rows="2" placeholder="Type the correct transcript" required></textarea>
+      </div>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Media / Video ID</label>
+          <input class="form-control dictation-media" placeholder="media_123" required>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Hints <span class="text-muted small">(optional)</span></label>
+          <input class="form-control dictation-hints" placeholder="Example: focus on consonants">
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<template id="practiceTemplate">
+  <div class="card border-1 practice-item">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="fw-semibold">Practice Item <span class="practice-index"></span></span>
+        <button class="btn btn-sm btn-outline-danger remove-practice" type="button">Remove</button>
+      </div>
+      <div class="mb-2">
+        <label class="form-label">Prompt / Description</label>
+        <textarea class="form-control practice-description" rows="2" placeholder="Describe what the learner should practice" required></textarea>
+      </div>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Target word or phrase <span class="text-muted small">(optional)</span></label>
+          <input class="form-control practice-target" placeholder="e.g. Lip reading">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Media / Video ID</label>
+          <input class="form-control practice-media" placeholder="media_456" required>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+  (function () {
+    const typeSelect = document.getElementById('activityType');
+    const sections = {
+      quiz: document.getElementById('mcqSection'),
+      dictation: document.getElementById('dictationSection'),
+      practice_lip: document.getElementById('practiceSection'),
+    };
+
+    const questionList = document.getElementById('questionList');
+    const dictationList = document.getElementById('dictationList');
+    const practiceList = document.getElementById('practiceList');
+
+    function updateVisibility() {
+      const type = typeSelect.value;
+      Object.entries(sections).forEach(([key, el]) => {
+        if (!el) return;
+        el.classList.toggle('d-none', key !== type);
+      });
+    }
+
+    function addMcqQuestion() {
+      const tpl = document.getElementById('mcqTemplate');
+      const clone = tpl.content.firstElementChild.cloneNode(true);
+      clone.querySelector('.remove-question').addEventListener('click', () => {
+        clone.remove();
+        renumber();
+      });
+      questionList.appendChild(clone);
+      renumber();
+    }
+
+    function addDictationItem() {
+      const tpl = document.getElementById('dictationTemplate');
+      const clone = tpl.content.firstElementChild.cloneNode(true);
+      clone.querySelector('.remove-dictation').addEventListener('click', () => {
+        clone.remove();
+        renumber();
+      });
+      dictationList.appendChild(clone);
+      renumber();
+    }
+
+    function addPracticeItem() {
+      const tpl = document.getElementById('practiceTemplate');
+      const clone = tpl.content.firstElementChild.cloneNode(true);
+      clone.querySelector('.remove-practice').addEventListener('click', () => {
+        clone.remove();
+        renumber();
+      });
+      practiceList.appendChild(clone);
+      renumber();
+    }
+
+    function renumber() {
+      document.querySelectorAll('#questionList .mcq-question .question-index').forEach((el, idx) => el.textContent = idx + 1);
+      document.querySelectorAll('#dictationList .dictation-item .dictation-index').forEach((el, idx) => el.textContent = idx + 1);
+      document.querySelectorAll('#practiceList .practice-item .practice-index').forEach((el, idx) => el.textContent = idx + 1);
+    }
+
+    function collectMcqQuestions() {
+      const questions = [];
+      document.querySelectorAll('#questionList .mcq-question').forEach((card) => {
+        const stem = card.querySelector('.question-stem').value.trim();
+        const options = card.querySelector('.question-options').value.split('\n').map(o => o.trim()).filter(Boolean);
+        const answers = card.querySelector('.question-answers').value.split(',').map(a => a.trim()).filter(Boolean);
+        const mediaId = card.querySelector('.question-media').value.trim() || null;
+        const explanation = card.querySelector('.question-explanation').value.trim();
+        if (stem) {
+          questions.push({
+            stem,
+            options,
+            answers,
+            explanation: explanation || undefined,
+            mediaId: mediaId || undefined,
+            type: 'mcq',
+          });
+        }
+      });
+      return questions;
+    }
+
+    function collectDictationItems() {
+      const items = [];
+      document.querySelectorAll('#dictationList .dictation-item').forEach((card) => {
+        const correctText = card.querySelector('.dictation-correct').value.trim();
+        const mediaId = card.querySelector('.dictation-media').value.trim();
+        const hints = card.querySelector('.dictation-hints').value.trim();
+        if (correctText && mediaId) {
+          items.push({ correctText, mediaId, hints: hints || undefined });
+        }
+      });
+      return items;
+    }
+
+    function collectPracticeItems() {
+      const items = [];
+      document.querySelectorAll('#practiceList .practice-item').forEach((card) => {
+        const description = card.querySelector('.practice-description').value.trim();
+        const targetWord = card.querySelector('.practice-target').value.trim();
+        const mediaId = card.querySelector('.practice-media').value.trim();
+        if (description && mediaId) {
+          items.push({ description, targetWord: targetWord || undefined, mediaId });
+        }
+      });
+      return items;
+    }
+
+    document.getElementById('addQuestionBtn').addEventListener('click', addMcqQuestion);
+    document.getElementById('addDictationBtn').addEventListener('click', addDictationItem);
+    document.getElementById('addPracticeBtn').addEventListener('click', addPracticeItem);
+    typeSelect.addEventListener('change', updateVisibility);
+
+    addMcqQuestion();
+    addDictationItem();
+    addPracticeItem();
+    updateVisibility();
+
+    document.getElementById('activityForm').addEventListener('submit', (e) => {
+      const type = typeSelect.value;
+      const payload = {
+        title: document.getElementById('activityTitle').value.trim(),
+        type,
+        order: parseInt(document.getElementById('activityOrder').value || '0', 10),
+        scoring: {
+          maxScore: parseInt(document.getElementById('maxScore').value || '100', 10),
+          passingScore: parseInt(document.getElementById('passingScore').value || '60', 10),
+        },
+      };
+
+      if (type === 'quiz') {
+        const bankTitle = document.getElementById('bankTitle').value.trim();
+        if (!bankTitle) {
+          e.preventDefault();
+          alert('Question bank title is required for MCQ activities.');
+          return;
+        }
+        payload.questionBank = {
+          title: bankTitle,
+          difficulty: parseInt(document.getElementById('bankDifficulty').value || '1', 10),
+          tags: document.getElementById('bankTags').value.split(',').map(t => t.trim()).filter(Boolean),
+          description: document.getElementById('bankDescription').value.trim(),
+        };
+        payload.questions = collectMcqQuestions();
+        if (!payload.questions.length) {
+          e.preventDefault();
+          alert('Add at least one MCQ question before saving.');
+          return;
+        }
+      } else if (type === 'dictation') {
+        payload.dictationItems = collectDictationItems();
+        if (!payload.dictationItems.length) {
+          e.preventDefault();
+          alert('Add at least one dictation item.');
+          return;
+        }
+      } else if (type === 'practice_lip') {
+        payload.practiceItems = collectPracticeItems();
+        if (!payload.practiceItems.length) {
+          e.preventDefault();
+          alert('Add at least one practice item.');
+          return;
+        }
+      }
+
+      document.getElementById('activityPayload').value = JSON.stringify(payload);
+    });
+  })();
+</script>
 {% endblock %}

@@ -8,8 +8,9 @@ from app.services.question_banks import question_bank_service
 router = APIRouter()
 
 
-def _validate_scoring(scoring: Dict[str, Any]) -> Dict[str, Any]:
-    max_score = int(scoring.get("maxScore", 100)) if scoring else 100
+def _validate_scoring(scoring: Dict[str, Any], default_max: int = 100) -> Dict[str, Any]:
+    base_max = default_max if default_max is not None else 100
+    max_score = int(scoring.get("maxScore", base_max)) if scoring is not None else base_max
     passing = int(scoring.get("passingScore", max_score))
     weights = scoring.get("weights") or {"score": 1.0}
     return {"maxScore": max_score, "passingScore": passing, "weights": weights}
@@ -48,7 +49,7 @@ async def list_activities(
                 "order": a.order,
                 "config": a.config,
                 "scoring": a.scoring,
-                "questionCount": a.questionCount,
+                "itemCount": a.itemCount,
                 "createdAt": a.createdAt,
                 "updatedAt": a.updatedAt,
             }
@@ -92,44 +93,94 @@ async def create_activity(
 
     title = (body.get("title") or activity_type).strip()
     order_val = int(body.get("order") or 0)
-    scoring = _validate_scoring(body.get("scoring") or {})
     config = dict(body.get("config") or {})
     embed_questions = bool(config.get("embedQuestions") or body.get("embedQuestions", False))
 
-    bank_payload = body.get("questionBank") or {}
-    bank_title = (bank_payload.get("title") or body.get("questionBankTitle") or "").strip()
-    if not bank_title:
-        raise HTTPException(400, "Missing field 'questionBank.title'.")
-    bank_difficulty = int(bank_payload.get("difficulty") or body.get("questionBankDifficulty") or 1)
-    bank_tags = bank_payload.get("tags") or body.get("questionBankTags") or []
-    if isinstance(bank_tags, str):
-        bank_tags = [t.strip() for t in bank_tags.split(",") if t.strip()]
-    bank_description = (bank_payload.get("description") or body.get("questionBankDescription") or "").strip()
+    activity_id: Optional[str] = None
 
-    bank_id = question_bank_service.create_bank(
-        title=bank_title,
-        difficulty=bank_difficulty,
-        tags=bank_tags,
-        description=bank_description or None,
-        created_by=user["uid"],
-    )
-    config.pop("questionBankId", None)
+    if activity_type == "dictation":
+        dict_items = body.get("dictationItems") or []
+        scoring = _validate_scoring(body.get("scoring") or {}, default_max=len(dict_items) or 100)
+        activity_id = activity_service.create_activity(
+            courseId,
+            moduleId,
+            lessonId,
+            title=title,
+            type=activity_type,
+            order=order_val,
+            scoring=scoring,
+            config=config,
+            dictation_items=dict_items,
+            ab_variant=body.get("abVariant"),
+            created_by=user["uid"],
+        )
+    elif activity_type == "practice_lip":
+        practice_items = body.get("practiceItems") or []
+        scoring = _validate_scoring(body.get("scoring") or {}, default_max=len(practice_items) or 100)
+        activity_id = activity_service.create_activity(
+            courseId,
+            moduleId,
+            lessonId,
+            title=title,
+            type=activity_type,
+            order=order_val,
+            scoring=scoring,
+            config=config,
+            practice_items=practice_items,
+            ab_variant=body.get("abVariant"),
+            created_by=user["uid"],
+        )
+    else:
+        bank_payload = body.get("questionBank") or {}
+        bank_title = (bank_payload.get("title") or body.get("questionBankTitle") or "").strip()
+        if not bank_title:
+            raise HTTPException(400, "Missing field 'questionBank.title'.")
+        bank_difficulty = int(bank_payload.get("difficulty") or body.get("questionBankDifficulty") or 1)
+        bank_tags = bank_payload.get("tags") or body.get("questionBankTags") or []
+        if isinstance(bank_tags, str):
+            bank_tags = [t.strip() for t in bank_tags.split(",") if t.strip()]
+        bank_description = (bank_payload.get("description") or body.get("questionBankDescription") or "").strip()
 
-    activity_id = activity_service.create_activity(
-        courseId,
-        moduleId,
-        lessonId,
-        title=title,
-        type=activity_type,
-        order=order_val,
-        scoring=scoring,
-        config=config,
-        question_bank_id=bank_id,
-        question_ids=[],
-        embed_questions=embed_questions,
-        ab_variant=body.get("abVariant"),
-        created_by=user["uid"],
-    )
+        bank_id = question_bank_service.create_bank(
+            title=bank_title,
+            difficulty=bank_difficulty,
+            tags=bank_tags,
+            description=bank_description or None,
+            created_by=user["uid"],
+        )
+        config.pop("questionBankId", None)
+        created_questions = []
+        for q in body.get("questions") or []:
+            qid = question_bank_service.create_question(
+                bank_id,
+                stem=q.get("stem", ""),
+                options=q.get("options") or [],
+                answers=q.get("answers") or [],
+                answer_pattern=q.get("answerPattern"),
+                explanation=q.get("explanation"),
+                tags=q.get("tags") or [],
+                difficulty=int(q.get("difficulty") or 1),
+                media_id=q.get("mediaId"),
+                question_type=q.get("type", "mcq"),
+            )
+            created_questions.append(qid)
+
+        scoring = _validate_scoring(body.get("scoring") or {})
+        activity_id = activity_service.create_activity(
+            courseId,
+            moduleId,
+            lessonId,
+            title=title,
+            type=activity_type,
+            order=order_val,
+            scoring=scoring,
+            config=config,
+            question_bank_id=bank_id,
+            question_ids=created_questions,
+            embed_questions=embed_questions,
+            ab_variant=body.get("abVariant"),
+            created_by=user["uid"],
+        )
 
     return activity_service.get_activity(courseId, moduleId, lessonId, activity_id)
 
@@ -152,30 +203,63 @@ async def update_activity(
 
     title = (body.get("title") or activity_type).strip()
     order_val = int(body.get("order") or 0)
-    scoring = _validate_scoring(body.get("scoring") or {})
     config = body.get("config") or {}
-    bank_id = config.get("questionBankId") or body.get("questionBankId")
-    question_ids = body.get("questionIds") or []
     embed_questions = bool(config.get("embedQuestions") or body.get("embedQuestions", False))
 
-    if question_ids:
-        _ensure_questions(bank_id, question_ids)
-
-    updated = activity_service.update_activity(
-        courseId,
-        moduleId,
-        lessonId,
-        activityId,
-        title=title,
-        type=activity_type,
-        order=order_val,
-        scoring=scoring,
-        config=config,
-        question_bank_id=bank_id,
-        question_ids=question_ids,
-        embed_questions=embed_questions,
-        ab_variant=body.get("abVariant"),
-    )
+    updated = False
+    if activity_type == "dictation":
+        dict_items = body.get("dictationItems") or []
+        scoring = _validate_scoring(body.get("scoring") or {}, default_max=len(dict_items) or 100)
+        updated = activity_service.update_activity(
+            courseId,
+            moduleId,
+            lessonId,
+            activityId,
+            title=title,
+            type=activity_type,
+            order=order_val,
+            scoring=scoring,
+            config=config,
+            dictation_items=dict_items,
+            ab_variant=body.get("abVariant"),
+        )
+    elif activity_type == "practice_lip":
+        practice_items = body.get("practiceItems") or []
+        scoring = _validate_scoring(body.get("scoring") or {}, default_max=len(practice_items) or 100)
+        updated = activity_service.update_activity(
+            courseId,
+            moduleId,
+            lessonId,
+            activityId,
+            title=title,
+            type=activity_type,
+            order=order_val,
+            scoring=scoring,
+            config=config,
+            practice_items=practice_items,
+            ab_variant=body.get("abVariant"),
+        )
+    else:
+        bank_id = config.get("questionBankId") or body.get("questionBankId")
+        question_ids = body.get("questionIds") or []
+        if question_ids:
+            _ensure_questions(bank_id, question_ids)
+        scoring = _validate_scoring(body.get("scoring") or {})
+        updated = activity_service.update_activity(
+            courseId,
+            moduleId,
+            lessonId,
+            activityId,
+            title=title,
+            type=activity_type,
+            order=order_val,
+            scoring=scoring,
+            config=config,
+            question_bank_id=bank_id,
+            question_ids=question_ids,
+            embed_questions=embed_questions,
+            ab_variant=body.get("abVariant"),
+        )
     if not updated:
         raise HTTPException(404, "Activity not found")
 

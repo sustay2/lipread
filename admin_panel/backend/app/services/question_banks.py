@@ -81,6 +81,40 @@ class QuestionBankService:
     def _question_collection(self, bank_id: str):
         return self._bank_doc(bank_id).collection("questions")
 
+    def create_question(
+        self,
+        bank_id: str,
+        *,
+        stem: str,
+        options: Optional[List[Any]] = None,
+        answers: Optional[List[Any]] = None,
+        answer_pattern: Optional[str] = None,
+        explanation: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        difficulty: int = 1,
+        media_id: Optional[str] = None,
+        question_type: str = "mcq",
+    ) -> str:
+        """Create a question inside a bank and return its id."""
+
+        now = datetime.now(timezone.utc)
+        payload = {
+            "type": question_type or "mcq",
+            "stem": stem,
+            "options": list(options or []),
+            "answers": list(answers or []),
+            "answerPattern": answer_pattern,
+            "explanation": explanation,
+            "tags": list(tags or []),
+            "difficulty": int(difficulty) if difficulty is not None else 1,
+            "mediaId": media_id,
+            "createdAt": now,
+            "updatedAt": now,
+        }
+        doc_ref = self._question_collection(bank_id).document()
+        doc_ref.set(payload)
+        return doc_ref.id
+
     def list_banks(self, limit: int = 200) -> List[QuestionBank]:
         banks: List[QuestionBank] = []
         for doc in self._bank_collection().limit(limit).stream():

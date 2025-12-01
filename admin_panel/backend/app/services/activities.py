@@ -18,7 +18,7 @@ class ActivityRecord:
     order: int
     scoring: Dict[str, Any]
     config: Dict[str, Any]
-    questionCount: int
+    itemCount: int
     createdAt: Any = None
     updatedAt: Any = None
 
@@ -32,6 +32,24 @@ class ActivityQuestion:
     order: int
     data: Optional[Dict[str, Any]]
     resolvedQuestion: Optional[Dict[str, Any]]
+
+
+@dataclass
+class DictationItem:
+    id: str
+    correctText: str
+    mediaId: Optional[str]
+    hints: Optional[str]
+    order: int
+
+
+@dataclass
+class PracticeItem:
+    id: str
+    description: str
+    targetWord: Optional[str]
+    mediaId: Optional[str]
+    order: int
 
 
 class ActivityService:
@@ -57,28 +75,50 @@ class ActivityService:
     def _questions_collection(self, course_id: str, module_id: str, lesson_id: str, activity_id: str):
         return self._activity_doc(course_id, module_id, lesson_id, activity_id).collection("questions")
 
+    def _dictation_collection(
+        self, course_id: str, module_id: str, lesson_id: str, activity_id: str
+    ):
+        return self._activity_doc(course_id, module_id, lesson_id, activity_id).collection(
+            "dictationItems"
+        )
+
+    def _practice_collection(
+        self, course_id: str, module_id: str, lesson_id: str, activity_id: str
+    ):
+        return self._activity_doc(course_id, module_id, lesson_id, activity_id).collection(
+            "practiceItems"
+        )
+
     def list_activities(self, course_id: str, module_id: str, lesson_id: str) -> List[ActivityRecord]:
         activities: List[ActivityRecord] = []
         for doc in self._activities_collection(course_id, module_id, lesson_id).order_by("order").stream():
             data = doc.to_dict() or {}
-            question_count = self._count_questions(course_id, module_id, lesson_id, doc.id)
+            activity_type = data.get("type") or "activity"
+            question_count = self._count_items(course_id, module_id, lesson_id, doc.id, activity_type)
             activities.append(
                 ActivityRecord(
                     id=doc.id,
-                    title=data.get("title") or data.get("type", "activity"),
-                    type=data.get("type", "activity"),
+                    title=data.get("title") or activity_type,
+                    type=activity_type,
                     order=int(data.get("order") or 0),
                     scoring=dict(data.get("scoring") or {}),
                     config=dict(data.get("config") or {}),
-                    questionCount=question_count,
+                    itemCount=question_count,
                     createdAt=data.get("createdAt"),
                     updatedAt=data.get("updatedAt"),
                 )
             )
         return activities
 
-    def _count_questions(self, course_id: str, module_id: str, lesson_id: str, activity_id: str) -> int:
-        collection = self._questions_collection(course_id, module_id, lesson_id, activity_id)
+    def _count_items(
+        self, course_id: str, module_id: str, lesson_id: str, activity_id: str, activity_type: str
+    ) -> int:
+        if activity_type == "dictation":
+            collection = self._dictation_collection(course_id, module_id, lesson_id, activity_id)
+        elif activity_type == "practice_lip":
+            collection = self._practice_collection(course_id, module_id, lesson_id, activity_id)
+        else:
+            collection = self._questions_collection(course_id, module_id, lesson_id, activity_id)
         try:
             agg = collection.count().get()
             return agg[0][0].value  # type: ignore[index]
@@ -90,7 +130,16 @@ class ActivityService:
         if not doc.exists:
             return None
         data = doc.to_dict() or {}
-        questions = self._load_questions(course_id, module_id, lesson_id, activity_id)
+        activity_type = data.get("type")
+        questions: List[ActivityQuestion] = []
+        dictation_items: List[DictationItem] = []
+        practice_items: List[PracticeItem] = []
+        if activity_type == "dictation":
+            dictation_items = self._load_dictation_items(course_id, module_id, lesson_id, activity_id)
+        elif activity_type == "practice_lip":
+            practice_items = self._load_practice_items(course_id, module_id, lesson_id, activity_id)
+        else:
+            questions = self._load_questions(course_id, module_id, lesson_id, activity_id)
         return {
             "id": doc.id,
             "title": data.get("title") or data.get("type"),
@@ -100,6 +149,8 @@ class ActivityService:
             "scoring": dict(data.get("scoring") or {}),
             "questionBankId": data.get("questionBankId"),
             "questions": questions,
+            "dictationItems": [item.__dict__ for item in dictation_items],
+            "practiceItems": [item.__dict__ for item in practice_items],
             "createdAt": data.get("createdAt"),
             "updatedAt": data.get("updatedAt"),
         }
@@ -135,6 +186,42 @@ class ActivityService:
         attached.sort(key=lambda q: q.order)
         return attached
 
+    def _load_dictation_items(
+        self, course_id: str, module_id: str, lesson_id: str, activity_id: str
+    ) -> List[DictationItem]:
+        items: List[DictationItem] = []
+        for doc in self._dictation_collection(course_id, module_id, lesson_id, activity_id).order_by("order").stream():
+            data = doc.to_dict() or {}
+            items.append(
+                DictationItem(
+                    id=doc.id,
+                    correctText=data.get("correctText", ""),
+                    mediaId=data.get("mediaId"),
+                    hints=data.get("hints"),
+                    order=int(data.get("order") or 0),
+                )
+            )
+        items.sort(key=lambda i: i.order)
+        return items
+
+    def _load_practice_items(
+        self, course_id: str, module_id: str, lesson_id: str, activity_id: str
+    ) -> List[PracticeItem]:
+        items: List[PracticeItem] = []
+        for doc in self._practice_collection(course_id, module_id, lesson_id, activity_id).order_by("order").stream():
+            data = doc.to_dict() or {}
+            items.append(
+                PracticeItem(
+                    id=doc.id,
+                    description=data.get("description", ""),
+                    targetWord=data.get("targetWord"),
+                    mediaId=data.get("mediaId"),
+                    order=int(data.get("order") or 0),
+                )
+            )
+        items.sort(key=lambda i: i.order)
+        return items
+
     def create_activity(
         self,
         course_id: str,
@@ -151,6 +238,8 @@ class ActivityService:
         embed_questions: bool = False,
         ab_variant: Optional[str] = None,
         created_by: Optional[str] = None,
+        dictation_items: Optional[List[Dict[str, Any]]] = None,
+        practice_items: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         now = datetime.now(timezone.utc)
         payload = {
@@ -174,7 +263,11 @@ class ActivityService:
         doc_ref = self._activities_collection(course_id, module_id, lesson_id).document()
         doc_ref.set(payload)
 
-        if question_bank_id and question_ids:
+        if type == "dictation" and dictation_items is not None:
+            self._replace_dictation_items(course_id, module_id, lesson_id, doc_ref.id, dictation_items)
+        elif type == "practice_lip" and practice_items is not None:
+            self._replace_practice_items(course_id, module_id, lesson_id, doc_ref.id, practice_items)
+        elif question_bank_id and question_ids:
             self._attach_questions(
                 course_id,
                 module_id,
@@ -202,6 +295,8 @@ class ActivityService:
         question_ids: Optional[List[str]] = None,
         embed_questions: bool = False,
         ab_variant: Optional[str] = None,
+        dictation_items: Optional[List[Dict[str, Any]]] = None,
+        practice_items: Optional[List[Dict[str, Any]]] = None,
     ) -> bool:
         doc_ref = self._activity_doc(course_id, module_id, lesson_id, activity_id)
         if not doc_ref.get().exists:
@@ -223,7 +318,11 @@ class ActivityService:
         doc_ref.update(payload)
 
         questions = question_ids or []
-        if question_bank_id is not None:
+        if type == "dictation" and dictation_items is not None:
+            self._replace_dictation_items(course_id, module_id, lesson_id, activity_id, dictation_items)
+        elif type == "practice_lip" and practice_items is not None:
+            self._replace_practice_items(course_id, module_id, lesson_id, activity_id, practice_items)
+        elif question_bank_id is not None:
             self._replace_questions(
                 course_id,
                 module_id,
@@ -243,6 +342,10 @@ class ActivityService:
             return False
         for q in self._questions_collection(course_id, module_id, lesson_id, activity_id).stream():
             q.reference.delete()
+        for d in self._dictation_collection(course_id, module_id, lesson_id, activity_id).stream():
+            d.reference.delete()
+        for p in self._practice_collection(course_id, module_id, lesson_id, activity_id).stream():
+            p.reference.delete()
         doc_ref.delete()
         return True
 
@@ -302,6 +405,56 @@ class ActivityService:
             }
             if embed:
                 payload["data"] = self._question_to_dict(question)
+            batch.set(col.document(), payload)
+        batch.commit()
+
+    def _replace_dictation_items(
+        self,
+        course_id: str,
+        module_id: str,
+        lesson_id: str,
+        activity_id: str,
+        items: List[Dict[str, Any]],
+    ) -> None:
+        col = self._dictation_collection(course_id, module_id, lesson_id, activity_id)
+        for doc in col.stream():
+            doc.reference.delete()
+        batch = self.db.batch()
+        now = datetime.now(timezone.utc)
+        for idx, item in enumerate(items):
+            payload = {
+                "correctText": item.get("correctText", ""),
+                "mediaId": item.get("mediaId"),
+                "hints": item.get("hints"),
+                "order": idx,
+                "createdAt": now,
+                "updatedAt": now,
+            }
+            batch.set(col.document(), payload)
+        batch.commit()
+
+    def _replace_practice_items(
+        self,
+        course_id: str,
+        module_id: str,
+        lesson_id: str,
+        activity_id: str,
+        items: List[Dict[str, Any]],
+    ) -> None:
+        col = self._practice_collection(course_id, module_id, lesson_id, activity_id)
+        for doc in col.stream():
+            doc.reference.delete()
+        batch = self.db.batch()
+        now = datetime.now(timezone.utc)
+        for idx, item in enumerate(items):
+            payload = {
+                "description": item.get("description", ""),
+                "targetWord": item.get("targetWord"),
+                "mediaId": item.get("mediaId"),
+                "order": idx,
+                "createdAt": now,
+                "updatedAt": now,
+            }
             batch.set(col.document(), payload)
         batch.commit()
 
