@@ -223,16 +223,23 @@ class ActivityQuestion {
   });
 
   factory ActivityQuestion.fromJson(Map<String, dynamic> json) {
+    Map<String, dynamic>? _asMap(Object? value) {
+      if (value is Map<String, dynamic>) return value;
+      if (value is Map) return Map<String, dynamic>.from(value);
+      return null;
+    }
+
+    final data = _asMap(json['data']);
+    final resolved = _asMap(json['resolvedQuestion']) ?? data;
+
     return ActivityQuestion(
       id: json['id'] as String,
       questionId: json['questionId'] as String?,
       bankId: json['bankId'] as String?,
       mode: (json['mode'] as String?) ?? 'reference',
       order: (json['order'] as num?)?.toInt() ?? 0,
-      data: json['data'] is Map<String, dynamic> ? json['data'] as Map<String, dynamic> : null,
-      resolvedQuestion: json['resolvedQuestion'] is Map<String, dynamic>
-          ? json['resolvedQuestion'] as Map<String, dynamic>
-          : null,
+      data: data,
+      resolvedQuestion: resolved,
     );
   }
 
@@ -313,6 +320,12 @@ class ActivityDetail extends ActivitySummary {
   });
 
   factory ActivityDetail.fromJson(Map<String, dynamic> json) {
+    Map<String, dynamic> _asMap(dynamic value) {
+      if (value is Map<String, dynamic>) return value;
+      if (value is Map) return Map<String, dynamic>.from(value);
+      return <String, dynamic>{};
+    }
+
     return ActivityDetail(
       id: json['id'] as String,
       title: json['title'] as String?,
@@ -329,7 +342,7 @@ class ActivityDetail extends ActivitySummary {
       createdAt: json['createdAt'],
       updatedAt: json['updatedAt'],
       questions: (json['questions'] as List?)
-              ?.map((q) => ActivityQuestion.fromJson(q as Map<String, dynamic>))
+              ?.map((q) => ActivityQuestion.fromJson(_asMap(q)))
               .toList() ??
           const [],
       dictationItems: (json['dictationItems'] as List?)

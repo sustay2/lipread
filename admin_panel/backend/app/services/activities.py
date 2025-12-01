@@ -162,7 +162,7 @@ class ActivityService:
         for doc in self._questions_collection(course_id, module_id, lesson_id, activity_id).order_by("order").stream():
             data = doc.to_dict() or {}
             mode = data.get("mode", "reference")
-            embedded = data.get("data") if mode == "embedded" else None
+            embedded = data.get("data") if data.get("data") else None
             resolved = None
             bank_id = data.get("bankId")
             question_id = data.get("questionId")
@@ -400,11 +400,11 @@ class ActivityService:
             payload: Dict[str, Any] = {
                 "questionId": qid,
                 "bankId": bank_id,
-                "mode": "embedded" if embed else "reference",
+                "mode": "copied" if embed else "reference",
                 "order": idx,
+                "type": question.type,
+                "data": self._question_to_dict(question),
             }
-            if embed:
-                payload["data"] = self._question_to_dict(question)
             batch.set(col.document(), payload)
         batch.commit()
 
