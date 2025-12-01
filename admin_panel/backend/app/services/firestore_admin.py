@@ -10,6 +10,7 @@ from google.cloud.firestore_v1 import Query
 from google.cloud.firestore_v1.base_document import DocumentSnapshot
 
 from app.services.firebase_client import get_firestore_client
+from app.services.activities import activity_service
 
 
 db = get_firestore_client()
@@ -580,109 +581,73 @@ def delete_lesson(course_id: str, module_id: str, lesson_id: str) -> bool:
 
 
 def list_activities(course_id: str, module_id: str, lesson_id: str) -> List[Dict[str, Any]]:
-    activities: List[Dict[str, Any]] = []
-    base_ref = (
-        db.collection("courses")
-        .document(course_id)
-        .collection("modules")
-        .document(module_id)
-        .collection("lessons")
-        .document(lesson_id)
-        .collection("activities")
-    )
-    for activity in base_ref.stream():
-        adata = activity.to_dict() or {}
-        activities.append(
-            {
-                "id": activity.id,
-                "title": adata.get("title") or adata.get("type"),
-                "type": adata.get("type"),
-                "order": adata.get("order"),
-                "config": adata.get("config", {}),
-                "scoring": adata.get("scoring", {}),
-                "videoId": adata.get("videoId"),
-                "videoUrl": adata.get("videoUrl"),
-                "mediaId": adata.get("mediaId"),
-            }
-        )
-    activities.sort(key=lambda a: (a.get("order") or 0))
-    return activities
+    activities = activity_service.list_activities(course_id, module_id, lesson_id)
+    return [
+        {
+            "id": item.id,
+            "title": item.title,
+            "type": item.type,
+            "order": item.order,
+            "config": item.config,
+            "scoring": item.scoring,
+            "questionCount": item.questionCount,
+            "createdAt": item.createdAt,
+            "updatedAt": item.updatedAt,
+        }
+        for item in activities
+    ]
+
+
+def get_activity_detail(
+    course_id: str, module_id: str, lesson_id: str, activity_id: str
+) -> Optional[Dict[str, Any]]:
+    return activity_service.get_activity(course_id, module_id, lesson_id, activity_id)
 
 
 def create_activity(course_id: str, module_id: str, lesson_id: str, payload: Dict[str, Any]) -> str:
-    doc_ref = (
-        db.collection("courses")
-        .document(course_id)
-        .collection("modules")
-        .document(module_id)
-        .collection("lessons")
-        .document(lesson_id)
-        .collection("activities")
-        .document()
+    return activity_service.create_activity(
+        course_id,
+        module_id,
+        lesson_id,
+        title=payload.get("title") or payload.get("type", "activity"),
+        type=payload.get("type", "activity"),
+        order=int(payload.get("order", 0)),
+        scoring=payload.get("scoring") or {},
+        config=payload.get("config") or {},
+        question_bank_id=(payload.get("config") or {}).get("questionBankId"),
+        question_ids=payload.get("questionIds") or [],
+        embed_questions=bool((payload.get("config") or {}).get("embedQuestions")),
+        ab_variant=payload.get("abVariant"),
+        created_by=payload.get("createdBy"),
     )
-    doc_ref.set(payload)
-    return doc_ref.id
 
 
 def get_next_activity_order(course_id: str, module_id: str, lesson_id: str) -> int:
-    collection = (
-        db.collection("courses")
-        .document(course_id)
-        .collection("modules")
-        .document(module_id)
-        .collection("lessons")
-        .document(lesson_id)
-        .collection("activities")
-    )
-    try:
-        snap = (
-            collection.order_by("order", direction=Query.DESCENDING)
-            .limit(1)
-            .stream()
-        )
-        last = next(iter(snap), None)
-        if last:
-            data = last.to_dict() or {}
-            return int(data.get("order") or 0) + 1
-    except Exception:
-        pass
-    return 0
+    return activity_service.next_order(course_id, module_id, lesson_id)
 
 
 def update_activity(
     course_id: str, module_id: str, lesson_id: str, activity_id: str, payload: Dict[str, Any]
 ) -> bool:
-    doc_ref = (
-        db.collection("courses")
-        .document(course_id)
-        .collection("modules")
-        .document(module_id)
-        .collection("lessons")
-        .document(lesson_id)
-        .collection("activities")
-        .document(activity_id)
+    return activity_service.update_activity(
+        course_id,
+        module_id,
+        lesson_id,
+        activity_id,
+        title=payload.get("title") or payload.get("type", "activity"),
+        type=payload.get("type", "activity"),
+        order=int(payload.get("order", 0)),
+        scoring=payload.get("scoring") or {},
+        config=payload.get("config") or {},
+        question_bank_id=(payload.get("config") or {}).get("questionBankId"),
+        question_ids=payload.get("questionIds") or [],
+        embed_questions=bool((payload.get("config") or {}).get("embedQuestions")),
+        ab_variant=payload.get("abVariant"),
     )
-    if not doc_ref.get().exists:
-        return False
-    doc_ref.update(payload)
-    return True
 
 
 def delete_activity(course_id: str, module_id: str, lesson_id: str, activity_id: str) -> bool:
-    doc_ref = (
-        db.collection("courses")
-        .document(course_id)
-        .collection("modules")
-        .document(module_id)
-        .collection("lessons")
-        .document(lesson_id)
-        .collection("activities")
-        .document(activity_id)
-    )
-    if not doc_ref.get().exists:
-        return False
-    doc_ref.delete()
-    return True
+    return activity_service.delete_activity(course_id, module_id, lesson_id, activity_id)
 
 
 def collect_engagement_metrics() -> Dict[str, Any]:

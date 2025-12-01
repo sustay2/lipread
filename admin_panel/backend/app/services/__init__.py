@@ -7,3 +7,5 @@ from .firestore_admin import (  # noqa: F401
     collect_engagement_metrics,
 )
 from .lessons import LessonService, lesson_service  # noqa: F401
+from .activities import ActivityService, activity_service  # noqa: F401
+from .question_banks import QuestionBankService, question_bank_service  # noqa: F401

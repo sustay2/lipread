@@ -14,6 +14,8 @@ from app.services import firestore_admin
 from app.services.media_library import save_media_file
 from app.services import reporting
 from app.services.lessons import lesson_service
+from app.services.activities import activity_service
+from app.services.question_banks import question_bank_service
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -408,12 +410,7 @@ async def activity_list(
     course = firestore_admin.get_course(course_id)
     module = lesson_service.get_module(course_id, module_id)
     lesson = lesson_service.get_lesson(course_id, module_id, lesson_id)
-    next_order = 0
-    if not course or not module or not lesson:
-        activities = []
-    else:
-        activities = firestore_admin.list_activities(course_id, module_id, lesson_id)
-        next_order = firestore_admin.get_next_activity_order(course_id, module_id, lesson_id)
+    activities = activity_service.list_activities(course_id, module_id, lesson_id)
     return templates.TemplateResponse(
         "activities/list.html",
         {
@@ -423,6 +420,30 @@ async def activity_list(
             "lesson": lesson,
             "activities": activities,
             "message": message,
+        },
+    )
+
+
+@router.get(
+    "/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/new",
+    response_class=HTMLResponse,
+)
+async def activity_create_view(request: Request, course_id: str, module_id: str, lesson_id: str):
+    course = firestore_admin.get_course(course_id)
+    module = lesson_service.get_module(course_id, module_id)
+    lesson = lesson_service.get_lesson(course_id, module_id, lesson_id)
+    banks = question_bank_service.list_banks()
+    questions_by_bank = {b.id: question_bank_service.list_questions(b.id) for b in banks}
+    next_order = activity_service.next_order(course_id, module_id, lesson_id)
+    return templates.TemplateResponse(
+        "activities/activity_create.html",
+        {
+            "request": request,
+            "course": course,
+            "module": module,
+            "lesson": lesson,
+            "banks": banks,
+            "questions_by_bank": questions_by_bank,
             "next_order": next_order,
         },
     )
@@ -437,51 +458,84 @@ async def activity_create(
     lesson_id: str,
     title: str = Form(""),
     type: str = Form(...),
-    order: Optional[int] = Form(None),
+    order: int = Form(0),
     maxScore: int = Form(100),
     passingScore: int = Form(60),
-    choices: List[str] = Form([]),
-    correct_choice: Optional[int] = Form(None),
-    answer_text: str = Form(""),
-    case_sensitive: bool = Form(False),
-    video: UploadFile = File(None),
+    questionBankId: Optional[str] = Form(None),
+    questionIds: List[str] = Form([]),
+    embedQuestions: bool = Form(False),
 ):
-    order = firestore_admin.get_next_activity_order(course_id, module_id, lesson_id)
-    config_payload = {}
     scoring_payload = {"maxScore": int(maxScore), "passingScore": int(passingScore)}
-    if type == "mcq":
-        cleaned_choices = [c.strip() for c in choices if c.strip()]
-        config_payload = {"choices": cleaned_choices, "answer": correct_choice}
-    elif type == "fill_in_blank":
-        config_payload = {"answer": answer_text.strip(), "caseSensitive": bool(case_sensitive)}
-    else:
-        config_payload = {}
-
-    video_payload: Dict[str, Optional[str]] = {"videoId": None, "videoUrl": None, "mediaId": None}
-    if video and video.filename:
-        media = save_media_file(video, media_type="videos")
-        video_payload = {
-            "videoId": media.get("id"),
-            "videoUrl": media.get("url"),
-            "mediaId": media.get("id"),
-        }
-
-    firestore_admin.create_activity(
+    activity_id = activity_service.create_activity(
         course_id,
         module_id,
         lesson_id,
-        {
-            "title": title or type,
-            "type": type,
-            "order": order,
-            **video_payload,
-            "config": config_payload,
-            "scoring": scoring_payload,
-        },
+        title=title or type,
+        type=type,
+        order=order,
+        scoring=scoring_payload,
+        config={"questionBankId": questionBankId, "embedQuestions": embedQuestions},
+        question_bank_id=questionBankId,
+        question_ids=questionIds,
+        embed_questions=embedQuestions,
     )
     return RedirectResponse(
-        url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities?message=activity-created",
+        url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=activity-created",
         status_code=303,
+    )
+
+
+@router.get(
+    "/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}",
+    response_class=HTMLResponse,
+)
+async def activity_detail(
+    request: Request,
+    course_id: str,
+    module_id: str,
+    lesson_id: str,
+    activity_id: str,
+    message: Optional[str] = None,
+):
+    course = firestore_admin.get_course(course_id)
+    module = lesson_service.get_module(course_id, module_id)
+    lesson = lesson_service.get_lesson(course_id, module_id, lesson_id)
+    activity = activity_service.get_activity(course_id, module_id, lesson_id, activity_id)
+    return templates.TemplateResponse(
+        "activities/activity_detail.html",
+        {
+            "request": request,
+            "course": course,
+            "module": module,
+            "lesson": lesson,
+            "activity": activity,
+            "message": message,
+        },
+    )
+
+
+@router.get(
+    "/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}/edit",
+    response_class=HTMLResponse,
+)
+async def activity_edit_view(request: Request, course_id: str, module_id: str, lesson_id: str, activity_id: str):
+    course = firestore_admin.get_course(course_id)
+    module = lesson_service.get_module(course_id, module_id)
+    lesson = lesson_service.get_lesson(course_id, module_id, lesson_id)
+    activity = activity_service.get_activity(course_id, module_id, lesson_id, activity_id)
+    banks = question_bank_service.list_banks()
+    questions_by_bank = {b.id: question_bank_service.list_questions(b.id) for b in banks}
+    return templates.TemplateResponse(
+        "activities/activity_edit.html",
+        {
+            "request": request,
+            "course": course,
+            "module": module,
+            "lesson": lesson,
+            "activity": activity,
+            "banks": banks,
+            "questions_by_bank": questions_by_bank,
+        },
     )
 
 
@@ -498,44 +552,27 @@ async def activity_update(
     order: int = Form(0),
     maxScore: int = Form(100),
     passingScore: int = Form(60),
-    choices: List[str] = Form([]),
-    correct_choice: Optional[int] = Form(None),
-    answer_text: str = Form(""),
-    case_sensitive: bool = Form(False),
-    video: UploadFile = File(None),
+    questionBankId: Optional[str] = Form(None),
+    questionIds: List[str] = Form([]),
+    embedQuestions: bool = Form(False),
 ):
-    config_payload = {}
     scoring_payload = {"maxScore": int(maxScore), "passingScore": int(passingScore)}
-    if type == "mcq":
-        cleaned_choices = [c.strip() for c in choices if c.strip()]
-        config_payload = {"choices": cleaned_choices, "answer": correct_choice}
-    elif type == "fill_in_blank":
-        config_payload = {"answer": answer_text.strip(), "caseSensitive": bool(case_sensitive)}
-
-    video_payload: Dict[str, Optional[str]] = {}
-    if video and video.filename:
-        media = save_media_file(video, media_type="videos")
-        video_payload = {
-            "videoId": media.get("id"),
-            "videoUrl": media.get("url"),
-            "mediaId": media.get("id"),
-        }
-    firestore_admin.update_activity(
+    activity_service.update_activity(
         course_id,
         module_id,
         lesson_id,
         activity_id,
-        {
-            "title": title or type,
-            "type": type,
-            "order": order,
-            **video_payload,
-            "config": config_payload,
-            "scoring": scoring_payload,
-        },
+        title=title or type,
+        type=type,
+        order=order,
+        scoring=scoring_payload,
+        config={"questionBankId": questionBankId, "embedQuestions": embedQuestions},
+        question_bank_id=questionBankId,
+        question_ids=questionIds,
+        embed_questions=embedQuestions,
     )
     return RedirectResponse(
-        url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities?message=activity-updated",
+        url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=activity-updated",
         status_code=303,
     )
 
@@ -544,7 +581,7 @@ async def activity_update(
     "/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}/delete"
 )
 async def activity_delete(course_id: str, module_id: str, lesson_id: str, activity_id: str):
-    firestore_admin.delete_activity(course_id, module_id, lesson_id, activity_id)
+    activity_service.delete_activity(course_id, module_id, lesson_id, activity_id)
     return RedirectResponse(
         url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities?message=activity-deleted",
         status_code=303,
