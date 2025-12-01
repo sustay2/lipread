@@ -5,6 +5,23 @@
     return [];
   }
 
+  const difficultyToNumber = {
+    beginner: 1,
+    intermediate: 2,
+    advanced: 3,
+  };
+
+  function difficultyFromValue(value) {
+    if (typeof value === 'string') {
+      return difficultyToNumber[value] || 1;
+    }
+    if (typeof value === 'number') {
+      if (value >= 3) return difficultyToNumber.advanced;
+      if (value >= 2) return difficultyToNumber.intermediate;
+    }
+    return difficultyToNumber.beginner;
+  }
+
   function createExistingMediaNote(inputEl, mediaId) {
     if (!inputEl) return;
     let helper = inputEl.parentElement.querySelector('.existing-media-note');
@@ -74,7 +91,7 @@
         if (!el) return;
         el.classList.toggle('d-none', key !== type);
       });
-      toggleRequired('.question-stem, .question-options, .question-answers', type === 'quiz');
+      toggleRequired('.question-stem, .option-text', type === 'quiz');
       toggleRequired('.dictation-correct', type === 'dictation');
       toggleRequired('.practice-description', type === 'practice_lip');
       enforceMediaRequirements();
@@ -86,14 +103,75 @@
       document.querySelectorAll('#practiceList .practice-item .practice-index').forEach((el, idx) => (el.textContent = idx + 1));
     }
 
+    function ensureOptionGroup(card) {
+      if (!card.dataset.optionGroup) {
+        card.dataset.optionGroup = `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      }
+      return card.dataset.optionGroup;
+    }
+
+    function updateOptionRemoveState(card) {
+      const rows = card.querySelectorAll('.option-row');
+      const disable = rows.length <= 2;
+      rows.forEach((row) => row.querySelector('.remove-option').toggleAttribute('disabled', disable));
+    }
+
+    function addOptionRow(card, value, isCorrect) {
+      const list = card.querySelector('.option-list');
+      if (!list) return;
+      const groupName = ensureOptionGroup(card);
+      const row = document.createElement('div');
+      row.className = 'input-group option-row mb-2';
+      const addon = document.createElement('div');
+      addon.className = 'input-group-text';
+      const radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = groupName;
+      radio.className = 'form-check-input mt-0 option-correct';
+      radio.title = 'Mark as correct';
+      radio.checked = Boolean(isCorrect);
+      addon.appendChild(radio);
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'form-control option-text';
+      input.placeholder = 'Option text';
+      if (value) input.value = value;
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'btn btn-outline-danger remove-option';
+      removeBtn.innerHTML = '<i class="bi bi-x"></i>';
+      removeBtn.addEventListener('click', () => {
+        if (card.querySelectorAll('.option-row').length <= 2) return;
+        row.remove();
+        updateOptionRemoveState(card);
+      });
+      row.appendChild(addon);
+      row.appendChild(input);
+      row.appendChild(removeBtn);
+      list.appendChild(row);
+      updateOptionRemoveState(card);
+    }
+
+    function populateOptions(card, options, answers) {
+      const opts = Array.isArray(options) && options.length ? options : ['Option A', 'Option B'];
+      const answerSet = new Set(safeArray(answers));
+      const list = card.querySelector('.option-list');
+      if (list) list.innerHTML = '';
+      opts.forEach((opt, idx) => {
+        const isCorrect = answerSet.has(opt) || (!answerSet.size && idx === 0);
+        addOptionRow(card, opt, isCorrect);
+      });
+      if (card.querySelectorAll('.option-row').length < 2) {
+        addOptionRow(card, '', false);
+      }
+      updateOptionRemoveState(card);
+    }
+
     function populateQuestionCard(card, data) {
       const stem = data?.stem || '';
-      const options = safeArray(data?.options || []).join('\n');
-      const answers = safeArray(data?.answers || []).join(', ');
       const explanation = data?.explanation || '';
       if (stem) card.querySelector('.question-stem').value = stem;
-      if (options) card.querySelector('.question-options').value = options;
-      if (answers) card.querySelector('.question-answers').value = answers;
+      populateOptions(card, data?.options || [], data?.answers || []);
       if (explanation) card.querySelector('.question-explanation').value = explanation;
       if (data?.mediaId) {
         card.dataset.existingMedia = data.mediaId;
@@ -131,6 +209,9 @@
         clone.remove();
         renumber();
       });
+      clone.querySelector('.add-option')?.addEventListener('click', () => {
+        addOptionRow(clone, '', false);
+      });
       questionList.appendChild(clone);
       populateQuestionCard(clone, data);
       enforceMediaRequirements();
@@ -165,35 +246,47 @@
 
     function collectMcqQuestions() {
       const questions = [];
-      document.querySelectorAll('#questionList .mcq-question').forEach((card) => {
+      const issues = [];
+      document.querySelectorAll('#questionList .mcq-question').forEach((card, idx) => {
         const stem = card.querySelector('.question-stem').value.trim();
-        const options = card
-          .querySelector('.question-options')
-          .value.split('\n')
-          .map((o) => o.trim())
-          .filter(Boolean);
-        const answers = card
-          .querySelector('.question-answers')
-          .value.split(',')
-          .map((a) => a.trim())
-          .filter(Boolean);
+        const optionRows = Array.from(card.querySelectorAll('.option-row'));
+        const options = [];
+        let correctAnswer = null;
+        optionRows.forEach((row) => {
+          const text = row.querySelector('.option-text').value.trim();
+          const isCorrect = row.querySelector('.option-correct').checked;
+          if (!text) return;
+          options.push(text);
+          if (isCorrect) correctAnswer = text;
+        });
+        if (!stem) {
+          issues.push(`Question ${idx + 1} is missing a stem.`);
+          return;
+        }
+        if (options.length < 2) {
+          issues.push(`Question ${idx + 1} needs at least two options.`);
+          return;
+        }
+        if (!correctAnswer) {
+          issues.push(`Please select the correct option for question ${idx + 1}.`);
+          return;
+        }
         const explanation = card.querySelector('.question-explanation').value.trim();
         const mediaInput = card.querySelector('.question-media');
         const mediaFile = mediaInput.files[0];
         const existingMedia = card.dataset.existingMedia || null;
-        if (!stem) return;
         questions.push({
           id: card.dataset.questionId || undefined,
           stem,
           options,
-          answers,
+          answers: [correctAnswer],
           explanation: explanation || undefined,
           type: 'mcq',
           mediaId: existingMedia || undefined,
           needsUpload: Boolean(mediaFile),
         });
       });
-      return questions;
+      return { questions, issues };
     }
 
     function collectDictationItems() {
@@ -238,15 +331,20 @@
 
     function renderInitialState() {
       const scoring = initial.scoring || {};
+      const difficultySelect = document.getElementById('activityDifficulty');
+      const difficultyValue = difficultyFromValue(initial.difficultyLevel ?? initial.questionBank?.difficulty ?? 1);
       document.getElementById('activityTitle').value = initial.title || '';
       document.getElementById('activityType').value = initial.type || 'quiz';
       document.getElementById('activityOrder').value = initial.order ?? 0;
+      if (difficultySelect) {
+        const selected = Object.entries(difficultyToNumber).find(([, num]) => num === difficultyValue);
+        difficultySelect.value = (selected && selected[0]) || 'beginner';
+      }
       document.getElementById('maxScore').value = scoring.maxScore ?? 100;
       document.getElementById('passingScore').value = scoring.passingScore ?? 60;
 
       if (initial.questionBank) {
         document.getElementById('bankTitle').value = initial.questionBank.title || '';
-        document.getElementById('bankDifficulty').value = initial.questionBank.difficulty ?? 1;
         document.getElementById('bankTags').value = safeArray(initial.questionBank.tags || []).join(',');
         document.getElementById('bankDescription').value = initial.questionBank.description || '';
       }
@@ -279,10 +377,12 @@
     const form = document.getElementById('activityForm');
     form?.addEventListener('submit', (e) => {
       const type = typeSelect.value;
+      const selectedDifficulty = document.getElementById('activityDifficulty')?.value || 'beginner';
       const payload = {
         title: document.getElementById('activityTitle').value.trim(),
         type,
         order: parseInt(document.getElementById('activityOrder').value || '0', 10),
+        difficultyLevel: selectedDifficulty,
         scoring: {
           maxScore: parseInt(document.getElementById('maxScore').value || '100', 10),
           passingScore: parseInt(document.getElementById('passingScore').value || '60', 10),
@@ -299,7 +399,7 @@
         payload.questionBank = {
           id: initial.questionBank?.id,
           title: bankTitle,
-          difficulty: parseInt(document.getElementById('bankDifficulty').value || '1', 10),
+          difficulty: difficultyFromValue(selectedDifficulty),
           tags: document
             .getElementById('bankTags')
             .value.split(',')
@@ -307,7 +407,13 @@
             .filter(Boolean),
           description: document.getElementById('bankDescription').value.trim(),
         };
-        payload.questions = collectMcqQuestions();
+        const mcqResult = collectMcqQuestions();
+        if (mcqResult.issues.length) {
+          e.preventDefault();
+          alert(mcqResult.issues[0]);
+          return;
+        }
+        payload.questions = mcqResult.questions;
         if (!payload.questions.length) {
           e.preventDefault();
           alert('Add at least one MCQ question before saving.');

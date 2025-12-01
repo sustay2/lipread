@@ -476,9 +476,15 @@ async def activity_create(
         )
 
     title = (data.get("title") or activity_type).strip()
-    order = int(data.get("order") or 0)
+    order = (
+        int(data.get("order"))
+        if data.get("order") is not None
+        else activity_service.next_order(course_id, module_id, lesson_id)
+    )
     scoring = data.get("scoring") or {}
     config = data.get("config") or {}
+    if data.get("difficultyLevel"):
+        config["difficultyLevel"] = data.get("difficultyLevel")
     embed_questions = bool(config.get("embedQuestions"))
 
     def _save_video(file: UploadFile, error_code: str) -> Optional[str]:
@@ -676,6 +682,7 @@ async def activity_edit_view(request: Request, course_id: str, module_id: str, l
 
     def _build_initial_activity() -> Dict[str, Any]:
         scoring = activity.get("scoring") or {"maxScore": 100, "passingScore": 60}
+        difficulty_level = (activity.get("config") or {}).get("difficultyLevel") or "beginner"
         initial: Dict[str, Any] = {
             "title": activity.get("title") or "",
             "type": activity.get("type") or "quiz",
@@ -685,6 +692,7 @@ async def activity_edit_view(request: Request, course_id: str, module_id: str, l
                 "passingScore": scoring.get("passingScore", 60),
             },
             "config": activity.get("config") or {},
+            "difficultyLevel": difficulty_level,
             "questionBank": None,
             "questions": [],
             "dictationItems": activity.get("dictationItems") or [],
@@ -703,6 +711,13 @@ async def activity_edit_view(request: Request, course_id: str, module_id: str, l
                         "tags": bank.tags,
                         "description": bank.description,
                     }
+                    initial["difficultyLevel"] = initial.get("difficultyLevel") or (
+                        "advanced"
+                        if bank.difficulty >= 3
+                        else "intermediate"
+                        if bank.difficulty >= 2
+                        else "beginner"
+                    )
             questions_payload: List[Dict[str, Any]] = []
             for q in activity.get("questions") or []:
                 resolved = (q.resolvedQuestion if hasattr(q, "resolvedQuestion") else None)
@@ -778,6 +793,8 @@ async def activity_update(
     order = int(data.get("order") or 0)
     scoring = data.get("scoring") or {}
     config = data.get("config") or {}
+    if data.get("difficultyLevel"):
+        config["difficultyLevel"] = data.get("difficultyLevel")
 
     if activity_type == "dictation":
         items = data.get("dictationItems") or []

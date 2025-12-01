@@ -92,8 +92,14 @@ async def create_activity(
         raise HTTPException(400, "Missing field 'type'.")
 
     title = (body.get("title") or activity_type).strip()
-    order_val = int(body.get("order") or 0)
+    order_val = (
+        int(body.get("order"))
+        if body.get("order") is not None
+        else activity_service.next_order(courseId, moduleId, lessonId)
+    )
     config = dict(body.get("config") or {})
+    if body.get("difficultyLevel"):
+        config["difficultyLevel"] = body.get("difficultyLevel")
     embed_questions = bool(config.get("embedQuestions") or body.get("embedQuestions", False))
 
     activity_id: Optional[str] = None
@@ -204,6 +210,8 @@ async def update_activity(
     title = (body.get("title") or activity_type).strip()
     order_val = int(body.get("order") or 0)
     config = body.get("config") or {}
+    if body.get("difficultyLevel"):
+        config["difficultyLevel"] = body.get("difficultyLevel")
     embed_questions = bool(config.get("embedQuestions") or body.get("embedQuestions", False))
 
     updated = False
