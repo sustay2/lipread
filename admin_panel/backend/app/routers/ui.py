@@ -433,7 +433,7 @@ async def activity_create_view(request: Request, course_id: str, module_id: str,
     module = lesson_service.get_module(course_id, module_id)
     lesson = lesson_service.get_lesson(course_id, module_id, lesson_id)
     banks = question_bank_service.list_banks()
-    questions_by_bank = {b.id: question_bank_service.list_questions(b.id) for b in banks}
+    questions_by_bank = {b.id: question_bank_service.list_questions(b.id, as_dict=True) for b in banks}
     next_order = activity_service.next_order(course_id, module_id, lesson_id)
     return templates.TemplateResponse(
         "activities/activity_create.html",
@@ -524,7 +524,7 @@ async def activity_edit_view(request: Request, course_id: str, module_id: str, l
     lesson = lesson_service.get_lesson(course_id, module_id, lesson_id)
     activity = activity_service.get_activity(course_id, module_id, lesson_id, activity_id)
     banks = question_bank_service.list_banks()
-    questions_by_bank = {b.id: question_bank_service.list_questions(b.id) for b in banks}
+    questions_by_bank = {b.id: question_bank_service.list_questions(b.id, as_dict=True) for b in banks}
     return templates.TemplateResponse(
         "activities/activity_edit.html",
         {

@@ -33,6 +33,33 @@ class BankQuestion:
     createdAt: Any = None
     updatedAt: Any = None
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Return a JSON-serializable representation for templates / APIs."""
+
+        def _serialize_ts(value: Any) -> Optional[str]:
+            if not value:
+                return None
+            iso = getattr(value, "isoformat", None)
+            if callable(iso):
+                return iso()
+            return str(value)
+
+        return {
+            "id": self.id,
+            "bankId": self.bankId,
+            "type": self.type,
+            "stem": self.stem,
+            "options": list(self.options or []),
+            "answers": list(self.answers or []),
+            "answerPattern": self.answerPattern,
+            "explanation": self.explanation,
+            "tags": list(self.tags or []),
+            "difficulty": self.difficulty,
+            "mediaId": self.mediaId,
+            "createdAt": _serialize_ts(self.createdAt),
+            "updatedAt": _serialize_ts(self.updatedAt),
+        }
+
 
 class QuestionBankService:
     """Read-only helpers for question banks used by admin activities."""
@@ -82,13 +109,13 @@ class QuestionBankService:
             isArchive=bool(data.get("isArchive", False)),
         )
 
-    def list_questions(self, bank_id: str, limit: int = 500) -> List[BankQuestion]:
-        questions: List[BankQuestion] = []
+    def list_questions(self, bank_id: str, limit: int = 500, as_dict: bool = False) -> List[Any]:
+        questions: List[Any] = []
         for doc in self._question_collection(bank_id).limit(limit).stream():
             mapped = self._map_question(doc, bank_id)
             if mapped:
-                questions.append(mapped)
-        questions.sort(key=lambda q: q.stem.lower())
+                questions.append(mapped.to_dict() if as_dict else mapped)
+        questions.sort(key=lambda q: (q["stem"] if isinstance(q, dict) else q.stem).lower())
         return questions
 
     def get_question(self, bank_id: str, question_id: str) -> Optional[BankQuestion]:
