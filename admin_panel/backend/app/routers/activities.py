@@ -93,13 +93,27 @@ async def create_activity(
     title = (body.get("title") or activity_type).strip()
     order_val = int(body.get("order") or 0)
     scoring = _validate_scoring(body.get("scoring") or {})
-    config = body.get("config") or {}
-    bank_id = config.get("questionBankId") or body.get("questionBankId")
-    question_ids = body.get("questionIds") or []
+    config = dict(body.get("config") or {})
     embed_questions = bool(config.get("embedQuestions") or body.get("embedQuestions", False))
 
-    if question_ids:
-        _ensure_questions(bank_id, question_ids)
+    bank_payload = body.get("questionBank") or {}
+    bank_title = (bank_payload.get("title") or body.get("questionBankTitle") or "").strip()
+    if not bank_title:
+        raise HTTPException(400, "Missing field 'questionBank.title'.")
+    bank_difficulty = int(bank_payload.get("difficulty") or body.get("questionBankDifficulty") or 1)
+    bank_tags = bank_payload.get("tags") or body.get("questionBankTags") or []
+    if isinstance(bank_tags, str):
+        bank_tags = [t.strip() for t in bank_tags.split(",") if t.strip()]
+    bank_description = (bank_payload.get("description") or body.get("questionBankDescription") or "").strip()
+
+    bank_id = question_bank_service.create_bank(
+        title=bank_title,
+        difficulty=bank_difficulty,
+        tags=bank_tags,
+        description=bank_description or None,
+        created_by=user["uid"],
+    )
+    config.pop("questionBankId", None)
 
     activity_id = activity_service.create_activity(
         courseId,
@@ -111,7 +125,7 @@ async def create_activity(
         scoring=scoring,
         config=config,
         question_bank_id=bank_id,
-        question_ids=question_ids,
+        question_ids=[],
         embed_questions=embed_questions,
         ab_variant=body.get("abVariant"),
         created_by=user["uid"],

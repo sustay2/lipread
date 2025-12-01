@@ -98,6 +98,7 @@ class ActivityService:
             "order": int(data.get("order") or 0),
             "config": dict(data.get("config") or {}),
             "scoring": dict(data.get("scoring") or {}),
+            "questionBankId": data.get("questionBankId"),
             "questions": questions,
             "createdAt": data.get("createdAt"),
             "updatedAt": data.get("updatedAt"),
@@ -159,6 +160,7 @@ class ActivityService:
             "scoring": scoring or {},
             "config": config or {},
             "abVariant": ab_variant,
+            "questionBankId": question_bank_id,
             "createdAt": now,
             "updatedAt": now,
         }
@@ -211,6 +213,7 @@ class ActivityService:
             "scoring": scoring or {},
             "config": config or {},
             "abVariant": ab_variant,
+            "questionBankId": question_bank_id,
             "updatedAt": datetime.now(timezone.utc),
         }
         if question_bank_id:

@@ -432,8 +432,6 @@ async def activity_create_view(request: Request, course_id: str, module_id: str,
     course = firestore_admin.get_course(course_id)
     module = lesson_service.get_module(course_id, module_id)
     lesson = lesson_service.get_lesson(course_id, module_id, lesson_id)
-    banks = question_bank_service.list_banks()
-    questions_by_bank = {b.id: question_bank_service.list_questions(b.id, as_dict=True) for b in banks}
     next_order = activity_service.next_order(course_id, module_id, lesson_id)
     return templates.TemplateResponse(
         "activities/activity_create.html",
@@ -442,8 +440,6 @@ async def activity_create_view(request: Request, course_id: str, module_id: str,
             "course": course,
             "module": module,
             "lesson": lesson,
-            "banks": banks,
-            "questions_by_bank": questions_by_bank,
             "next_order": next_order,
         },
     )
@@ -453,6 +449,7 @@ async def activity_create_view(request: Request, course_id: str, module_id: str,
     "/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities",
 )
 async def activity_create(
+    request: Request,
     course_id: str,
     module_id: str,
     lesson_id: str,
@@ -461,10 +458,20 @@ async def activity_create(
     order: int = Form(0),
     maxScore: int = Form(100),
     passingScore: int = Form(60),
-    questionBankId: Optional[str] = Form(None),
-    questionIds: List[str] = Form([]),
-    embedQuestions: bool = Form(False),
+    bankTitle: str = Form(...),
+    bankDifficulty: int = Form(1),
+    bankTags: str = Form(""),
+    bankDescription: str = Form(""),
 ):
+    admin = request.session.get("admin") if request.session else None
+    tags = [t.strip() for t in bankTags.split(",") if t.strip()]
+    bank_id = question_bank_service.create_bank(
+        title=bankTitle.strip(),
+        difficulty=int(bankDifficulty),
+        tags=tags,
+        description=bankDescription.strip() or None,
+        created_by=(admin or {}).get("uid"),
+    )
     scoring_payload = {"maxScore": int(maxScore), "passingScore": int(passingScore)}
     activity_id = activity_service.create_activity(
         course_id,
@@ -474,10 +481,11 @@ async def activity_create(
         type=type,
         order=order,
         scoring=scoring_payload,
-        config={"questionBankId": questionBankId, "embedQuestions": embedQuestions},
-        question_bank_id=questionBankId,
-        question_ids=questionIds,
-        embed_questions=embedQuestions,
+        config={},
+        question_bank_id=bank_id,
+        question_ids=[],
+        embed_questions=False,
+        created_by=(admin or {}).get("uid"),
     )
     return RedirectResponse(
         url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=activity-created",

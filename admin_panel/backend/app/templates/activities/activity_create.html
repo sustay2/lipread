@@ -26,33 +26,45 @@
           <input class="form-control" type="number" name="order" value="{{ next_order }}" min="0">
         </div>
       </div>
-
       <div class="row g-3 mt-3">
-        <div class="col-md-4">
-          <label class="form-label">Question bank</label>
-          <select class="form-select" id="bankSelect" name="questionBankId">
-            {% for bank in banks %}
-            <option value="{{ bank.id }}">{{ bank.title }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-md-4">
-          <label class="form-label">Scoring</label>
-          <div class="input-group">
-            <span class="input-group-text">Max</span>
-            <input class="form-control" type="number" name="maxScore" value="100" min="0">
-            <span class="input-group-text">Pass</span>
-            <input class="form-control" type="number" name="passingScore" value="60" min="0">
+        <div class="col-md-6">
+          <div class="card h-100">
+            <div class="card-body">
+              <h6 class="card-title">New Question Bank</h6>
+              <div class="mb-3">
+                <label class="form-label">Title</label>
+                <input class="form-control" name="bankTitle" placeholder="e.g. Unit 1 Quiz Bank" required>
+              </div>
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <label class="form-label">Difficulty</label>
+                  <input class="form-control" type="number" name="bankDifficulty" value="1" min="1" max="5" required>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">Tags (comma separated)</label>
+                  <input class="form-control" name="bankTags" placeholder="listening,phonetics">
+                </div>
+              </div>
+              <div class="mt-3">
+                <label class="form-label">Description <span class="text-muted small">(optional)</span></label>
+                <textarea class="form-control" name="bankDescription" rows="3" placeholder="Describe this question bank"></textarea>
+              </div>
+            </div>
           </div>
-          <div class="form-check mt-2">
-            <input class="form-check-input" type="checkbox" value="true" id="embedQuestions" name="embedQuestions">
-            <label class="form-check-label" for="embedQuestions">Embed question content into activity</label>
-          </div>
         </div>
-        <div class="col-md-4">
-          <label class="form-label">Question selection</label>
-          <p class="text-muted small mb-1">Choose one or more questions to attach.</p>
-          <div id="questionList" class="border rounded p-2 bg-light" style="max-height: 240px; overflow:auto;"></div>
+        <div class="col-md-6">
+          <div class="card h-100">
+            <div class="card-body">
+              <h6 class="card-title">Scoring</h6>
+              <div class="input-group mb-3">
+                <span class="input-group-text">Max</span>
+                <input class="form-control" type="number" name="maxScore" value="100" min="0">
+                <span class="input-group-text">Pass</span>
+                <input class="form-control" type="number" name="passingScore" value="60" min="0">
+              </div>
+              <p class="text-muted mb-0 small">A fresh question bank will be created when this activity is saved.</p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -62,38 +74,4 @@
     </form>
   </div>
 </div>
-<script>
-  const questionsByBank = {{ questions_by_bank | tojson }};
-  const listEl = document.getElementById('questionList');
-  const bankSelect = document.getElementById('bankSelect');
-
-  function renderQuestions(bankId) {
-    if (!listEl) return;
-    listEl.innerHTML = '';
-    const questions = questionsByBank[bankId] || [];
-    if (!questions.length) {
-      listEl.innerHTML = '<p class="text-muted small mb-0">No questions in this bank.</p>';
-      return;
-    }
-    questions.forEach((q, index) => {
-      const wrapper = document.createElement('div');
-      wrapper.className = 'form-check mb-1';
-      wrapper.innerHTML = `
-        <input class="form-check-input" type="checkbox" value="${q.id}" id="q-${bankId}-${index}" name="questionIds">
-        <label class="form-check-label" for="q-${bankId}-${index}">
-          <span class="fw-semibold">${q.stem || 'Untitled question'}</span>
-          <span class="text-muted small ms-1">(${q.type})</span>
-        </label>
-      `;
-      listEl.appendChild(wrapper);
-    });
-  }
-
-  if (bankSelect) {
-    bankSelect.addEventListener('change', (e) => renderQuestions(e.target.value));
-    renderQuestions(bankSelect.value);
-  } else {
-    renderQuestions('');
-  }
-</script>
 {% endblock %}
