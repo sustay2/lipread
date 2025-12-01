@@ -1,11 +1,12 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../common/theme/app_colors.dart';
-import '../../services/home_metrics_service.dart';
 import '../../common/utils/media_utils.dart';
+import '../../models/content_models.dart';
+import '../../services/content_api_service.dart';
+import '../../services/home_metrics_service.dart';
 
 class QuizActivityArgs {
   final String courseId;
@@ -40,6 +41,7 @@ class QuizActivityPage extends StatefulWidget {
 }
 
 class _QuizActivityPageState extends State<QuizActivityPage> {
+  final ContentApiService _contentApi = ContentApiService();
   bool _loading = true;
   String? _error;
 
@@ -57,69 +59,14 @@ class _QuizActivityPageState extends State<QuizActivityPage> {
 
   Future<void> _loadQuiz() async {
     try {
-      final activityRef = FirebaseFirestore.instance
-          .collection('courses')
-          .doc(widget.courseId)
-          .collection('modules')
-          .doc(widget.moduleId)
-          .collection('lessons')
-          .doc(widget.lessonId)
-          .collection('activities')
-          .doc(widget.activityId);
+      final detail = await _contentApi.fetchActivityDetail(
+        widget.courseId,
+        widget.moduleId,
+        widget.lessonId,
+        widget.activityId,
+      );
 
-      final activitySnap = await activityRef.get();
-      if (!activitySnap.exists) {
-        setState(() {
-          _error = 'Activity not found.';
-          _loading = false;
-        });
-        return;
-      }
-
-      final actData = activitySnap.data()!;
-      final config =
-          (actData['config'] as Map<String, dynamic>?) ?? <String, dynamic>{};
-
-      String? extractIdFromRef(dynamic v) {
-        if (v is String && v.isNotEmpty) {
-          final parts = v.split('/');
-          return parts.isNotEmpty ? parts.last : null;
-        }
-        return null;
-      }
-
-      String? bankId;
-      if (config['questionBankId'] is String) {
-        bankId = config['questionBankId'] as String;
-      } else if (actData['questionBankId'] is String) {
-        bankId = actData['questionBankId'] as String;
-      } else if (config['bankId'] is String) {
-        bankId = config['bankId'] as String;
-      } else if (actData['bankId'] is String) {
-        bankId = actData['bankId'] as String;
-      }
-      bankId ??= extractIdFromRef(config['questionBankRef']);
-      bankId ??= extractIdFromRef(actData['questionBankRef']);
-      bankId ??= extractIdFromRef(config['bankRef']);
-
-      if (bankId == null || bankId.isEmpty) {
-        setState(() {
-          _error =
-          'No question bank configured for this quiz.\nExpected config.questionBankId / bankId.';
-          _loading = false;
-        });
-        return;
-      }
-
-      final numQuestions = (config['numQuestions'] as num?)?.toInt() ?? 5;
-
-      final qSnap = await FirebaseFirestore.instance
-          .collection('question_banks')
-          .doc(bankId)
-          .collection('questions')
-          .get();
-
-      if (qSnap.docs.isEmpty) {
+      if (detail.questions.isEmpty) {
         setState(() {
           _error = 'No questions available in this quiz.';
           _loading = false;
@@ -127,12 +74,13 @@ class _QuizActivityPageState extends State<QuizActivityPage> {
         return;
       }
 
-      final futures = qSnap.docs.map((d) async {
-        return await _QuizQuestion.fromDoc(d.id, d.data());
-      }).toList();
+      final numQuestions = (detail.config['numQuestions'] as num?)?.toInt() ??
+          (detail.itemCount > 0 ? detail.itemCount : detail.questions.length);
 
-      final all =
-      (await Future.wait(futures)).where((q) => q.options.isNotEmpty).toList();
+      final all = detail.questions
+          .map(_QuizQuestion.fromActivityQuestion)
+          .where((q) => q.options.isNotEmpty)
+          .toList();
 
       if (all.isEmpty) {
         setState(() {
@@ -525,7 +473,7 @@ class _QuizQuestion {
   final String id;
   final String stem;
   final List<String> options;
-  final String? answer; // text or numeric string index
+  final List<String> answers;
   final String? explanation;
   final String? imageUrl;
   final String? videoUrl;
@@ -534,130 +482,88 @@ class _QuizQuestion {
     required this.id,
     required this.stem,
     required this.options,
-    this.answer,
+    this.answers = const [],
     this.explanation,
     this.imageUrl,
     this.videoUrl,
   });
 
-  static Future<_QuizQuestion> fromDoc(String id, Map<String, dynamic> map) async {
-    final stem = (map['stem'] as String?) ?? 'Question';
-    final options = (map['options'] as List?)
-        ?.map((e) => e.toString())
-        .toList()
-        .cast<String>() ??
+  static _QuizQuestion fromActivityQuestion(ActivityQuestion aq) {
+    final data = aq.effectiveQuestion;
+    final stem = (data['stem'] as String?) ?? 'Question';
+    final options = (data['options'] as List?)
+            ?.map((e) => e.toString())
+            .toList()
+            .cast<String>() ??
         const <String>[];
 
-    final answer = (map['answer'] as String?) ??
-        (map['correct'] as String?) ??
-        (map['correctAnswer'] as String?);
+    final answers = ((data['answers'] as List?) ?? [])
+        .map((e) => e.toString())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    final singleAnswer = (data['answer'] ?? data['correct'] ?? data['correctAnswer']);
+    if (singleAnswer != null) {
+      answers.add(singleAnswer.toString());
+    }
 
-    final explanation = map['explanation'] as String?;
+    final explanation = data['explanation'] as String?;
 
-    String? imageUrl;
-    String? videoUrl;
+    String? imageUrl = publicMediaUrl(data['imageUrl'] as String?,
+        path: data['imagePath'] as String?);
+    String? videoUrl = publicMediaUrl(data['videoUrl'] as String?,
+        path: data['videoPath'] as String?);
 
-    imageUrl = (map['imageUrl'] as String?) ?? (map['mediaImage'] as String?);
-    videoUrl = (map['videoUrl'] as String?) ?? (map['mediaVideo'] as String?);
+    final media = data['media'] as Map<String, dynamic>?;
+    final mediaId = data['mediaId'] as String?;
+    String? mediaUrl = publicMediaUrl(
+      media?['url'] as String?,
+      path: media?['path'] as String? ?? media?['storagePath'] as String?,
+    );
+    mediaUrl ??= publicMediaUrl(null, path: mediaId);
 
+    bool looksVideo(String? url) {
+      if (url == null) return false;
+      final lower = url.toLowerCase();
+      return lower.endsWith('.mp4') ||
+          lower.endsWith('.mov') ||
+          lower.endsWith('.webm') ||
+          lower.endsWith('.mkv') ||
+          lower.contains('/videos/');
+    }
+
+    if ((videoUrl == null || videoUrl.isEmpty) && looksVideo(mediaUrl)) {
+      videoUrl = mediaUrl;
+    }
     if ((imageUrl == null || imageUrl.isEmpty) &&
-        (videoUrl == null || videoUrl.isEmpty) &&
-        map['media'] is Map<String, dynamic>) {
-      final media = map['media'] as Map<String, dynamic>;
-      final url = media['url'] as String?;
-      final kind = (media['kind'] as String?)?.toLowerCase();
-      final ct = media['contentType'] as String?;
-      if (url != null && url.isNotEmpty) {
-        final lower = url.toLowerCase();
-        final isImg = (ct?.startsWith('image/') ?? false) ||
-            kind == 'image' ||
-            lower.endsWith('.png') ||
-            lower.endsWith('.jpg') ||
-            lower.endsWith('.jpeg') ||
-            lower.endsWith('.gif') ||
-            lower.endsWith('.webp');
-        final isVid = (ct?.startsWith('video/') ?? false) ||
-            kind == 'video' ||
-            lower.endsWith('.mp4') ||
-            lower.endsWith('.mov') ||
-            lower.endsWith('.webm') ||
-            lower.endsWith('.mkv') ||
-            lower.contains('/videos/');
-        if (isImg) imageUrl = url;
-        if (isVid) videoUrl = url;
-      }
+        mediaUrl != null &&
+        !looksVideo(mediaUrl)) {
+      imageUrl = mediaUrl;
     }
-
-    String? mediaId = (map['mediaId'] as String?);
-    if ((mediaId == null || mediaId.isEmpty) && map['answers'] is List) {
-      final ans = map['answers'] as List;
-      if (ans.isNotEmpty && ans.first is Map<String, dynamic>) {
-        mediaId = (ans.first as Map<String, dynamic>)['mediaId'] as String?;
-      }
-    }
-
-    if ((imageUrl == null || imageUrl.isEmpty) &&
-        (videoUrl == null || videoUrl.isEmpty) &&
-        mediaId != null &&
-        mediaId.isNotEmpty) {
-      try {
-        final mSnap =
-        await FirebaseFirestore.instance.collection('media').doc(mediaId).get();
-        if (mSnap.exists) {
-          final m = mSnap.data() ?? {};
-          final url = m['url'] as String?;
-          final ct = m['contentType'] as String?;
-          final kind = (m['kind'] as String?)?.toLowerCase();
-          if (url != null && url.isNotEmpty) {
-            final lower = url.toLowerCase();
-            final isImg = (ct?.startsWith('image/') ?? false) ||
-                kind == 'image' ||
-                lower.endsWith('.png') ||
-                lower.endsWith('.jpg') ||
-                lower.endsWith('.jpeg') ||
-                lower.endsWith('.gif') ||
-                lower.endsWith('.webp');
-            final isVid = (ct?.startsWith('video/') ?? false) ||
-                kind == 'video' ||
-                lower.endsWith('.mp4') ||
-                lower.endsWith('.mov') ||
-                lower.endsWith('.webm') ||
-                lower.endsWith('.mkv') ||
-                lower.contains('/videos/');
-            if (isImg) imageUrl = url;
-            if (isVid) videoUrl = url;
-            if (imageUrl == null && videoUrl == null) {
-              imageUrl = url; // fallback
-            }
-          }
-        }
-      } catch (_) {}
-    }
-
-    imageUrl = normalizeMediaUrl(imageUrl);
-    videoUrl = normalizeMediaUrl(videoUrl);
 
     return _QuizQuestion(
-      id: id,
+      id: aq.id,
       stem: stem,
       options: options,
-      answer: answer,
+      answers: answers,
       explanation: explanation,
-      imageUrl: imageUrl,
-      videoUrl: videoUrl,
+      imageUrl: normalizeMediaUrl(imageUrl),
+      videoUrl: normalizeMediaUrl(videoUrl),
     );
   }
 
   bool isCorrect(int optionIndex) {
-    if (answer == null) return false;
-
-    final numeric = int.tryParse(answer!.trim());
-    if (numeric != null) {
-      return numeric == optionIndex;
-    }
-
+    if (answers.isEmpty) return false;
     if (optionIndex < 0 || optionIndex >= options.length) return false;
-    return options[optionIndex].trim() == answer!.trim();
+
+    final selected = options[optionIndex].trim().toLowerCase();
+    return answers.any((a) {
+      final normalized = a.trim().toLowerCase();
+      final numeric = int.tryParse(normalized);
+      if (numeric != null) {
+        return numeric == optionIndex;
+      }
+      return normalized == selected;
+    });
   }
 }
 

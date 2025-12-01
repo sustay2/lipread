@@ -1,12 +1,13 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../common/theme/app_colors.dart';
-import '../../services/router.dart';
+import '../../common/utils/media_utils.dart';
+import '../../models/content_models.dart';
+import '../../services/content_api_service.dart';
 import '../../services/home_metrics_service.dart';
-import '../../common/utils/media_utils.dart'; // normalizeMediaUrl
+import '../../services/router.dart';
 
 class LessonListScreen extends StatefulWidget {
   const LessonListScreen({super.key});
@@ -17,8 +18,17 @@ class LessonListScreen extends StatefulWidget {
 
 class _LessonListScreenState extends State<LessonListScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
+  final ContentApiService _contentApi = ContentApiService();
+
+  Future<List<Course>>? _coursesFuture;
   String _searchQuery = '';
   String _levelFilter = 'all'; // all / beginner / intermediate / advanced
+
+  @override
+  void initState() {
+    super.initState();
+    _coursesFuture = _contentApi.fetchCourses();
+  }
 
   @override
   void dispose() {
@@ -26,15 +36,10 @@ class _LessonListScreenState extends State<LessonListScreen> {
     super.dispose();
   }
 
-  /// Courses stream with optional difficulty filter
-  Stream<QuerySnapshot<Map<String, dynamic>>> _coursesStream() {
-    Query<Map<String, dynamic>> query =
-    FirebaseFirestore.instance.collection('courses');
-
-    if (_levelFilter != 'all') {
-      query = query.where('difficulty', isEqualTo: _levelFilter);
-    }
-    return query.snapshots();
+  Future<void> _refresh() async {
+    final future = _contentApi.fetchCourses();
+    setState(() => _coursesFuture = future);
+    await future;
   }
 
   void _onLessonTap({
@@ -86,7 +91,6 @@ class _LessonListScreenState extends State<LessonListScreen> {
       ),
       body: Column(
         children: [
-          // Search + filter bar
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: Column(
@@ -103,21 +107,18 @@ class _LessonListScreenState extends State<LessonListScreen> {
                     filled: true,
                     fillColor: Colors.white,
                     contentPadding:
-                    const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                        const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide:
-                      const BorderSide(color: AppColors.border, width: 1),
+                      borderSide: const BorderSide(color: AppColors.border, width: 1),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide:
-                      const BorderSide(color: AppColors.border, width: 1),
+                      borderSide: const BorderSide(color: AppColors.border, width: 1),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide:
-                      const BorderSide(color: AppColors.primary, width: 1.2),
+                      borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
                     ),
                   ),
                   onChanged: (v) => setState(() => _searchQuery = v.trim()),
@@ -163,88 +164,72 @@ class _LessonListScreenState extends State<LessonListScreen> {
           ),
           const SizedBox(height: 4),
           Expanded(
-            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: _coursesStream(),
-              builder: (context, courseSnap) {
-                if (courseSnap.hasError) {
-                  return const Center(
-                    child: Text(
-                      'Failed to load courses.',
-                      style: TextStyle(color: AppColors.error),
-                    ),
-                  );
-                }
-
-                if (courseSnap.connectionState == ConnectionState.waiting &&
-                    !courseSnap.hasData) {
-                  return const _CourseSkeletonList();
-                }
-
-                final docs = (courseSnap.data?.docs ?? []).where((doc) {
-                  final d = doc.data();
-                  if (!_isPublished(d)) return false;
-
-                  final difficulty = d['difficulty'] as String?;
-                  if (!_matchesLevel(difficulty)) return false;
-
-                  final title = (d['title'] as String?) ?? 'Untitled course';
-                  final description = (d['description'] as String?) ?? '';
-                  if (!_matchesSearch(title) && !_matchesSearch(description)) {
-                    return false;
-                  }
-                  return true;
-                }).toList();
-
-                docs.sort((a, b) {
-                  final aTs = a.data()['createdAt'];
-                  final bTs = b.data()['createdAt'];
-                  if (aTs is Timestamp && bTs is Timestamp) {
-                    return bTs.compareTo(aTs);
-                  }
-                  return 0;
-                });
-
-                if (docs.isEmpty) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
+            child: RefreshIndicator(
+              onRefresh: _refresh,
+              child: FutureBuilder<List<Course>>(
+                future: _coursesFuture,
+                builder: (context, courseSnap) {
+                  if (courseSnap.hasError) {
+                    return const Center(
                       child: Text(
-                        'No lessons found.\nTry a different keyword or filter.',
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: AppColors.textSecondary,
+                        'Failed to load courses.',
+                        style: TextStyle(color: AppColors.error),
+                      ),
+                    );
+                  }
+
+                  if (courseSnap.connectionState == ConnectionState.waiting) {
+                    return const _CourseSkeletonList();
+                  }
+
+                  final docs = (courseSnap.data ?? [])
+                      .where((c) => _isPublished(c))
+                      .where((c) => _matchesLevel(c.level))
+                      .where((c) {
+                        final title = c.title ?? 'Untitled course';
+                        final description = c.description ?? '';
+                        return _matchesSearch(title) || _matchesSearch(description);
+                      })
+                      .toList();
+
+                  if (docs.isEmpty) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          'No lessons found.\nTry a different keyword or filter.',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                }
-
-                return ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  itemCount: docs.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    final doc = docs[index];
-                    final data = doc.data();
-                    final courseId = doc.id;
-                    final title = (data['title'] as String?) ?? 'Untitled course';
-                    final desc =
-                        (data['description'] as String?) ?? 'No description.';
-                    final difficulty =
-                        (data['difficulty'] as String?) ?? 'beginner';
-
-                    return _CourseExpansionCard(
-                      courseId: courseId,
-                      title: title,
-                      description: desc,
-                      level: difficulty,
-                      courseData: data,
-                      searchQuery: _searchQuery,
-                      onLessonTap: _onLessonTap,
                     );
-                  },
-                );
-              },
+                  }
+
+                  return ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    itemCount: docs.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final course = docs[index];
+                      final title = course.title ?? 'Untitled course';
+                      final desc = course.description ?? 'No description.';
+                      final difficulty = course.level ?? 'beginner';
+
+                      return _CourseExpansionCard(
+                        course: course,
+                        title: title,
+                        description: desc,
+                        level: difficulty,
+                        searchQuery: _searchQuery,
+                        contentApi: _contentApi,
+                        onLessonTap: _onLessonTap,
+                      );
+                    },
+                  );
+                },
+              ),
             ),
           ),
         ],
@@ -252,18 +237,8 @@ class _LessonListScreenState extends State<LessonListScreen> {
     );
   }
 
-  static bool _isPublished(Map<String, dynamic> d) {
-    final p = d['published'];
-    final ip = d['isPublished'];
-    if (p is bool) return p;
-    if (ip is bool) return ip;
-    return true;
-  }
+  static bool _isPublished(Course c) => c.published;
 }
-
-//
-// Level filter chip
-//
 
 class _LevelChip extends StatelessWidget {
   final String label;
@@ -314,30 +289,26 @@ class _LevelChip extends StatelessWidget {
   }
 }
 
-//
-// Course -> Modules -> Lessons Expansion
-//
-
 class _CourseExpansionCard extends StatefulWidget {
-  final String courseId;
+  final Course course;
   final String title;
   final String description;
-  final String level; // difficulty label
+  final String level;
   final String searchQuery;
-  final Map<String, dynamic> courseData;
+  final ContentApiService contentApi;
   final void Function({
-  required String courseId,
-  required String moduleId,
-  required String lessonId,
+    required String courseId,
+    required String moduleId,
+    required String lessonId,
   }) onLessonTap;
 
   const _CourseExpansionCard({
-    required this.courseId,
+    required this.course,
     required this.title,
     required this.description,
     required this.level,
     required this.searchQuery,
-    required this.courseData,
+    required this.contentApi,
     required this.onLessonTap,
   });
 
@@ -347,14 +318,10 @@ class _CourseExpansionCard extends StatefulWidget {
 
 class _CourseExpansionCardState extends State<_CourseExpansionCard> {
   bool _expanded = false;
+  Future<List<Module>>? _modulesFuture;
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> _modulesStream() {
-    return FirebaseFirestore.instance
-        .collection('courses')
-        .doc(widget.courseId)
-        .collection('modules')
-        .orderBy('order', descending: false)
-        .snapshots();
+  void _ensureModules() {
+    _modulesFuture ??= widget.contentApi.fetchModules(widget.course.id);
   }
 
   @override
@@ -365,15 +332,16 @@ class _CourseExpansionCardState extends State<_CourseExpansionCard> {
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           initiallyExpanded: false,
-          onExpansionChanged: (v) => setState(() => _expanded = v),
+          onExpansionChanged: (v) {
+            setState(() => _expanded = v);
+            if (v) _ensureModules();
+          },
           tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
-          // 🧩 REMOVE the manual trailing icon here!
           title: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Course media thumbnail
-              _CourseMediaThumb(data: widget.courseData, height: 72),
+              _CourseMediaThumb(url: widget.course.thumbnailUrl, height: 72),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -423,34 +391,175 @@ class _CourseExpansionCardState extends State<_CourseExpansionCard> {
             ],
           ),
           children: [
-            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: _modulesStream(),
-              builder: (context, moduleSnap) {
-                if (moduleSnap.hasError) {
-                  return const Padding(
-                    padding: EdgeInsets.all(8.0),
-                    child: Text(
-                      'Failed to load modules.',
-                      style: TextStyle(
-                        color: AppColors.error,
-                        fontSize: 12,
+            if (_modulesFuture == null && !_expanded)
+              const SizedBox.shrink()
+            else
+              FutureBuilder<List<Module>>(
+                future: _modulesFuture,
+                builder: (context, moduleSnap) {
+                  if (moduleSnap.hasError) {
+                    return const Padding(
+                      padding: EdgeInsets.all(8.0),
+                      child: Text(
+                        'Failed to load modules.',
+                        style: TextStyle(
+                          color: AppColors.error,
+                          fontSize: 12,
+                        ),
                       ),
+                    );
+                  }
+
+                  if (moduleSnap.connectionState == ConnectionState.waiting) {
+                    return const _ModuleSkeletonList();
+                  }
+
+                  final moduleDocs = moduleSnap.data ?? [];
+
+                  if (moduleDocs.isEmpty) {
+                    return const Padding(
+                      padding: EdgeInsets.all(8.0),
+                      child: Text(
+                        'No modules yet.',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    );
+                  }
+
+                  return Column(
+                    children: moduleDocs.map((m) {
+                      final moduleTitle = m.title ?? 'Module';
+                      final summary = m.summary ?? '';
+
+                      return _ModuleTile(
+                        courseId: widget.course.id,
+                        module: m,
+                        title: moduleTitle,
+                        summary: summary,
+                        searchQuery: widget.searchQuery,
+                        contentApi: widget.contentApi,
+                        onLessonTap: widget.onLessonTap,
+                      );
+                    }).toList(),
+                  );
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ModuleTile extends StatelessWidget {
+  final String courseId;
+  final Module module;
+  final String title;
+  final String summary;
+  final String searchQuery;
+  final ContentApiService contentApi;
+  final void Function({
+    required String courseId,
+    required String moduleId,
+    required String lessonId,
+  }) onLessonTap;
+
+  const _ModuleTile({
+    required this.courseId,
+    required this.module,
+    required this.title,
+    required this.summary,
+    required this.searchQuery,
+    required this.contentApi,
+    required this.onLessonTap,
+  });
+
+  bool _matchesSearch(String text) {
+    if (searchQuery.trim().isEmpty) return true;
+    return text.toLowerCase().contains(searchQuery.toLowerCase());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  const Icon(Icons.view_module_outlined,
+                      color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        if (summary.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4.0),
+                            child: Text(
+                              summary,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: AppColors.border),
+            FutureBuilder<List<Lesson>>(
+              future: contentApi.fetchLessons(courseId, module.id),
+              builder: (context, lessonSnap) {
+                if (lessonSnap.hasError) {
+                  return const Padding(
+                    padding: EdgeInsets.all(12.0),
+                    child: Text(
+                      'Failed to load lessons.',
+                      style: TextStyle(color: AppColors.error, fontSize: 12),
                     ),
                   );
                 }
 
-                final moduleDocs = moduleSnap.data?.docs ?? [];
-
-                if (moduleSnap.connectionState == ConnectionState.waiting &&
-                    moduleDocs.isEmpty) {
-                  return const _ModuleSkeletonList();
+                if (lessonSnap.connectionState == ConnectionState.waiting) {
+                  return const _LessonSkeletonList();
                 }
 
-                if (moduleDocs.isEmpty) {
+                final lessonDocs = (lessonSnap.data ?? [])
+                    .where((l) => _matchesSearch(l.title ?? ''))
+                    .toList();
+
+                if (lessonDocs.isEmpty) {
                   return const Padding(
-                    padding: EdgeInsets.all(8.0),
+                    padding: EdgeInsets.all(12.0),
                     child: Text(
-                      'No modules yet.',
+                      'No lessons yet.',
                       style: TextStyle(
                         color: AppColors.textSecondary,
                         fontSize: 12,
@@ -460,19 +569,50 @@ class _CourseExpansionCardState extends State<_CourseExpansionCard> {
                 }
 
                 return Column(
-                  children: moduleDocs.map((m) {
-                    final moduleId = m.id;
-                    final md = m.data();
-                    final moduleTitle = (md['title'] as String?) ?? 'Module';
-                    final summary = (md['summary'] as String?) ?? '';
-
-                    return _ModuleTile(
-                      courseId: widget.courseId,
-                      moduleId: moduleId,
-                      title: moduleTitle,
-                      summary: summary,
-                      searchQuery: widget.searchQuery,
-                      onLessonTap: widget.onLessonTap,
+                  children: lessonDocs.map((l) {
+                    final label = l.title ?? 'Lesson';
+                    return InkWell(
+                      onTap: () => onLessonTap(
+                        courseId: courseId,
+                        moduleId: module.id,
+                        lessonId: l.id,
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.menu_book_outlined,
+                                size: 18, color: AppColors.primary),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    label,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${l.estimatedMin} mins · ${l.objectives.isNotEmpty ? l.objectives.first : 'Lipreading practice'}',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.chevron_right_rounded,
+                                color: AppColors.textSecondary),
+                          ],
+                        ),
+                      ),
                     );
                   }).toList(),
                 );
@@ -485,254 +625,17 @@ class _CourseExpansionCardState extends State<_CourseExpansionCard> {
   }
 }
 
-//
-// Module + Lesson list (with more spacious lesson rows)
-//
-
-class _ModuleTile extends StatelessWidget {
-  final String courseId;
-  final String moduleId;
-  final String title;
-  final String summary;
-  final String searchQuery;
-  final void Function({
-  required String courseId,
-  required String moduleId,
-  required String lessonId,
-  }) onLessonTap;
-
-  const _ModuleTile({
-    required this.courseId,
-    required this.moduleId,
-    required this.title,
-    required this.summary,
-    required this.searchQuery,
-    required this.onLessonTap,
-  });
-
-  Stream<QuerySnapshot<Map<String, dynamic>>> _lessonsStream() {
-    return FirebaseFirestore.instance
-        .collection('courses')
-        .doc(courseId)
-        .collection('modules')
-        .doc(moduleId)
-        .collection('lessons')
-        .orderBy('order', descending: false)
-        .snapshots();
-  }
-
-  bool _matches(String text) {
-    if (searchQuery.trim().isEmpty) return true;
-    return text.toLowerCase().contains(searchQuery.toLowerCase());
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 4, right: 4, bottom: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Module header
-          Row(
-            children: [
-              const Icon(
-                Icons.folder_open_rounded,
-                size: 18,
-                color: AppColors.primaryVariant,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          if (summary.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(left: 26, top: 4, bottom: 8),
-              child: Text(
-                summary,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ),
-          // Lessons list (spacious)
-          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _lessonsStream(),
-            builder: (context, lessonSnap) {
-              final lessonDocs = lessonSnap.data?.docs ?? [];
-
-              if (lessonSnap.connectionState == ConnectionState.waiting &&
-                  lessonDocs.isEmpty) {
-                return const _LessonSkeletonList();
-              }
-
-              final filtered = lessonDocs.where((l) {
-                final ld = l.data();
-                final lt = (ld['title'] as String?) ?? 'Lesson';
-                if (!_matches(lt)) return false;
-                return true;
-              }).toList();
-
-              if (filtered.isEmpty) {
-                return const SizedBox.shrink();
-              }
-
-              return Column(
-                children: [
-                  for (final l in filtered) ...[
-                    _SpaciousLessonRow(
-                      courseId: courseId,
-                      moduleId: moduleId,
-                      lessonDoc: l,
-                      onTap: (lessonId) => onLessonTap(
-                        courseId: courseId,
-                        moduleId: moduleId,
-                        lessonId: lessonId,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                ],
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
+class _ResolvedMedia {
+  final String? url;
+  final bool isVideo;
+  const _ResolvedMedia({this.url, this.isVideo = false});
 }
-
-class _SpaciousLessonRow extends StatelessWidget {
-  final String courseId;
-  final String moduleId;
-  final QueryDocumentSnapshot<Map<String, dynamic>> lessonDoc;
-  final void Function(String lessonId) onTap;
-
-  const _SpaciousLessonRow({
-    required this.courseId,
-    required this.moduleId,
-    required this.lessonDoc,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final ld = lessonDoc.data();
-    final title = (ld['title'] as String?) ?? 'Lesson';
-    final est = (ld['estimatedMin'] as num?)?.toInt();
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: () => onTap(lessonDoc.id),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Row(
-          children: [
-            const Icon(
-              Icons.play_circle_outline_rounded,
-              size: 22,
-              color: AppColors.primary,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-            ),
-            if (est != null) ...[
-              const SizedBox(width: 10),
-              Text(
-                '${est}m',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-//
-// Course media thumbnail (image/video) – non-interactive, letterboxed 16:9
-//
 
 class _CourseMediaThumb extends StatelessWidget {
-  final Map<String, dynamic> data;
-  final double height; // e.g. 72
+  final String? url;
+  final double height;
 
-  const _CourseMediaThumb({required this.data, required this.height});
-
-  Future<_ResolvedMedia?> _resolveMedia() async {
-    // 1) Direct string field
-    final direct = (data['thumbnailUrl'] as String?);
-    if (direct != null && direct.isNotEmpty) {
-      final url = normalizeMediaUrl(direct);
-      return _ResolvedMedia(url: url, isVideo: _looksVideo(url));
-    }
-
-    // 2) Map with `url`
-    if (data['thumbnail'] is Map<String, dynamic>) {
-      final m = data['thumbnail'] as Map<String, dynamic>;
-      final url = normalizeMediaUrl(m['url'] as String?);
-      final ct = (m['contentType'] as String?)?.toLowerCase();
-      final kind = (m['kind'] as String?)?.toLowerCase();
-      if (url != null && url.isNotEmpty) {
-        final isVid =
-            (ct?.startsWith('video/') ?? false) || kind == 'video' || _looksVideo(url);
-        return _ResolvedMedia(url: url, isVideo: isVid);
-      }
-    }
-
-    // 3) Media doc reference
-    final mediaId = (data['mediaId'] as String?);
-    if (mediaId != null && mediaId.isNotEmpty) {
-      try {
-        final snap =
-        await FirebaseFirestore.instance.collection('media').doc(mediaId).get();
-        if (snap.exists) {
-          final m = snap.data() ?? {};
-          final url = normalizeMediaUrl(m['url'] as String?);
-          final ct = (m['contentType'] as String?)?.toLowerCase();
-          final kind = (m['kind'] as String?)?.toLowerCase();
-          if (url != null && url.isNotEmpty) {
-            final isVid =
-                (ct?.startsWith('video/') ?? false) || kind == 'video' || _looksVideo(url);
-            return _ResolvedMedia(url: url, isVideo: isVid);
-          }
-        }
-      } catch (_) {/* ignore */}
-    }
-
-    return null;
-  }
+  const _CourseMediaThumb({required this.url, required this.height});
 
   static bool _looksVideo(String? url) {
     if (url == null) return false;
@@ -747,37 +650,29 @@ class _CourseMediaThumb extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final width = height * (16 / 9);
+    final resolved = url != null && url!.isNotEmpty
+        ? _ResolvedMedia(url: normalizeMediaUrl(url), isVideo: _looksVideo(url))
+        : const _ResolvedMedia();
 
-    return FutureBuilder<_ResolvedMedia?>(
-      future: _resolveMedia(),
-      builder: (context, snap) {
-        final media = snap.data;
+    if (resolved.url == null || resolved.url!.isEmpty) {
+      return _frame(
+        width,
+        height,
+        const Center(
+          child: Icon(Icons.play_circle_outline_rounded,
+              color: AppColors.muted, size: 28),
+        ),
+      );
+    }
 
-        if (snap.connectionState == ConnectionState.waiting && media == null) {
-          return _frame(width, height, const SizedBox());
-        }
+    if (resolved.isVideo) {
+      return _CourseVideoThumb(url: resolved.url!, height: height, width: width);
+    }
 
-        if (media == null || media.url == null || media.url!.isEmpty) {
-          return _frame(
-            width,
-            height,
-            const Center(
-              child: Icon(Icons.play_circle_outline_rounded,
-                  color: AppColors.muted, size: 28),
-            ),
-          );
-        }
-
-        if (media.isVideo) {
-          return _CourseVideoThumb(url: media.url!, height: height, width: width);
-        } else {
-          return _frame(
-            width,
-            height,
-            Image.network(media.url!, fit: BoxFit.cover),
-          );
-        }
-      },
+    return _frame(
+      width,
+      height,
+      Image.network(resolved.url!, fit: BoxFit.cover),
     );
   }
 
@@ -802,6 +697,7 @@ class _CourseVideoThumb extends StatefulWidget {
   final String url;
   final double height;
   final double width;
+
   const _CourseVideoThumb({
     required this.url,
     required this.height,
@@ -812,10 +708,9 @@ class _CourseVideoThumb extends StatefulWidget {
   State<_CourseVideoThumb> createState() => _CourseVideoThumbState();
 }
 
-/// Non-interactive: shows first frame, letterboxed; keeps play glyph visible.
 class _CourseVideoThumbState extends State<_CourseVideoThumb> {
   VideoPlayerController? _ctrl;
-  bool _err = false;
+  bool _error = false;
 
   @override
   void initState() {
@@ -825,17 +720,15 @@ class _CourseVideoThumbState extends State<_CourseVideoThumb> {
 
   Future<void> _init() async {
     try {
-      final c = VideoPlayerController.networkUrl(
-        Uri.parse(widget.url),
-        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
-      );
-      _ctrl = c;
+      final c = VideoPlayerController.networkUrl(Uri.parse(widget.url));
       await c.initialize();
+      await c.setLooping(true);
+      c.setVolume(0);
+      c.play();
       if (!mounted) return;
-      await c.setLooping(false);
-      setState(() {});
+      setState(() => _ctrl = c);
     } catch (_) {
-      if (mounted) setState(() => _err = true);
+      if (mounted) setState(() => _error = true);
     }
   }
 
@@ -847,86 +740,21 @@ class _CourseVideoThumbState extends State<_CourseVideoThumb> {
 
   @override
   Widget build(BuildContext context) {
-    if (_err) {
+    if (_error || _ctrl == null || !_ctrl!.value.isInitialized) {
       return _CourseMediaThumb._frame(
         widget.width,
         widget.height,
-        const Center(
-          child: Text('Video failed',
-              style: TextStyle(fontSize: 10, color: AppColors.error)),
-        ),
+        const SizedBox(),
       );
     }
 
-    final c = _ctrl;
-    if (c == null || !c.value.isInitialized) {
-      return _CourseMediaThumb._frame(
-        widget.width,
-        widget.height,
-        const Center(
-          child: SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        ),
-      );
-    }
-
-    final ar = (c.value.aspectRatio.isFinite && c.value.aspectRatio > 0)
-        ? c.value.aspectRatio
-        : 16 / 9;
-
-    return Container(
-      width: widget.width,
-      height: widget.height,
-      decoration: BoxDecoration(
-        color: AppColors.background,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Stack(
-          children: [
-            // Center the real AR inside the fixed 16:9 frame (letterbox)
-            Positioned.fill(
-              child: Center(
-                child: FittedBox(
-                  fit: BoxFit.contain,
-                  alignment: Alignment.center,
-                  child: SizedBox(
-                    height: widget.height,
-                    width: widget.height * ar,
-                    child: VideoPlayer(c),
-                  ),
-                ),
-              ),
-            ),
-            // keep play glyph (non-interactive thumbnail)
-            const IgnorePointer(
-              ignoring: true,
-              child: Center(
-                child: Icon(Icons.play_circle_fill_rounded,
-                    size: 28, color: Colors.white),
-              ),
-            ),
-          ],
-        ),
-      ),
+    return _CourseMediaThumb._frame(
+      widget.width,
+      widget.height,
+      VideoPlayer(_ctrl!),
     );
   }
 }
-
-class _ResolvedMedia {
-  final String? url;
-  final bool isVideo;
-  const _ResolvedMedia({required this.url, required this.isVideo});
-}
-
-//
-// Skeletons + shared decor
-//
 
 class _CourseSkeletonList extends StatelessWidget {
   const _CourseSkeletonList();
@@ -934,34 +762,15 @@ class _CourseSkeletonList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       itemCount: 3,
       separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (_, __) => Container(
         height: 96,
-        decoration: _cardDecor(radius: 18),
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            Container(
-              width: 128,
-              decoration: BoxDecoration(
-                color: const Color(0xFFE9EEF7),
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(height: 16, width: 160, decoration: _shimmerBox()),
-                  const SizedBox(height: 8),
-                  Container(height: 12, width: 220, decoration: _shimmerBox()),
-                ],
-              ),
-            ),
-          ],
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.border),
         ),
       ),
     );
@@ -974,13 +783,19 @@ class _ModuleSkeletonList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      children: List.generate(
-        2,
-            (i) => Padding(
-          padding: const EdgeInsets.only(left: 26, right: 8, top: 4, bottom: 4),
-          child: Container(height: 14, decoration: _shimmerBox()),
-        ),
-      ),
+      children: List.generate(2, (i) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8.0),
+          child: Container(
+            height: 88,
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border),
+            ),
+          ),
+        );
+      }),
     );
   }
 }
@@ -991,13 +806,20 @@ class _LessonSkeletonList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      children: List.generate(
-        2,
-            (i) => Padding(
-          padding: const EdgeInsets.only(left: 26, right: 8, top: 6, bottom: 6),
-          child: Container(height: 14, decoration: _shimmerBox()),
-        ),
-      ),
+      children: List.generate(3, (i) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          alignment: Alignment.centerLeft,
+          child: Container(
+            height: 14,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
+      }),
     );
   }
 }
@@ -1009,16 +831,9 @@ BoxDecoration _cardDecor({double radius = 16}) {
     boxShadow: [
       BoxShadow(
         color: AppColors.softShadow,
-        blurRadius: 16,
-        offset: const Offset(0, 6),
+        blurRadius: 18,
+        offset: const Offset(0, 8),
       ),
     ],
-  );
-}
-
-BoxDecoration _shimmerBox() {
-  return BoxDecoration(
-    color: const Color(0xFFE9EEF7),
-    borderRadius: BorderRadius.circular(8),
   );
 }
