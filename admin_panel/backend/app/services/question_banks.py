@@ -179,6 +179,65 @@ class QuestionBankService:
         doc_ref.set(payload)
         return doc_ref.id
 
+    def update_bank(
+        self,
+        bank_id: str,
+        *,
+        title: str,
+        difficulty: int,
+        tags: Optional[List[str]] = None,
+        description: Optional[str] = None,
+    ) -> None:
+        now = datetime.now(timezone.utc)
+        doc_ref = self._bank_doc(bank_id)
+        if not doc_ref.get().exists:
+            self.create_bank(title=title, difficulty=difficulty, tags=tags, description=description)
+            return
+        doc_ref.update(
+            {
+                "title": title or "Untitled bank",
+                "difficulty": int(difficulty) if difficulty is not None else 1,
+                "tags": list(tags or []),
+                "description": description or None,
+                "updatedAt": now,
+            }
+        )
+
+    def upsert_questions(self, bank_id: str, questions: List[Dict[str, Any]]) -> List[str]:
+        col = self._question_collection(bank_id)
+        existing: Dict[str, Dict[str, Any]] = {}
+        for doc in col.stream():
+            existing[doc.id] = doc.to_dict() or {}
+        now = datetime.now(timezone.utc)
+        keep_ids: List[str] = []
+        for q in questions:
+            qid = q.get("id") or None
+            payload = {
+                "type": q.get("type", "mcq"),
+                "stem": q.get("stem", ""),
+                "options": list(q.get("options") or []),
+                "answers": list(q.get("answers") or []),
+                "answerPattern": q.get("answerPattern"),
+                "explanation": q.get("explanation"),
+                "tags": list(q.get("tags") or []),
+                "difficulty": int(q.get("difficulty") or 1),
+                "mediaId": q.get("mediaId"),
+                "createdAt": existing.get(qid, {}).get("createdAt") if qid in existing else now,
+                "updatedAt": now,
+            }
+            if qid and qid in existing:
+                col.document(qid).set(payload)
+            else:
+                new_ref = col.document()
+                new_ref.set(payload)
+                qid = new_ref.id
+            keep_ids.append(qid)
+
+        for existing_id in list(existing.keys()):
+            if existing_id not in keep_ids:
+                col.document(existing_id).delete()
+        return keep_ids
+
     def list_questions(self, bank_id: str, limit: int = 500, as_dict: bool = False) -> List[Any]:
         questions: List[Any] = []
         for doc in self._question_collection(bank_id).limit(limit).stream():
