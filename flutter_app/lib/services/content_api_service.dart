@@ -357,7 +357,7 @@ class ContentApiService {
   Future<int> _safeCount(Query<Map<String, dynamic>> query) async {
     try {
       final agg = await query.count().get();
-      return agg.count;
+      return agg.count ?? 0;
     } catch (_) {
       try {
         final snap = await query.get();
