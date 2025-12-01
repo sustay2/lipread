@@ -461,10 +461,17 @@ async def activity_create(
     course_id: str,
     module_id: str,
     lesson_id: str,
-    payload: str = Form(...),
 ):
     admin = request.session.get("admin") if request.session else None
-    data: Dict[str, Any] = json.loads(payload)
+    form = await request.form()
+    payload_raw = form.get("payload")
+    if not payload_raw:
+        return RedirectResponse(
+            url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities?message=missing-payload",
+            status_code=303,
+        )
+
+    data: Dict[str, Any] = json.loads(payload_raw)
     activity_type = (data.get("type") or "").strip()
     if not activity_type:
         return RedirectResponse(
@@ -478,83 +485,114 @@ async def activity_create(
     config = data.get("config") or {}
     embed_questions = bool(config.get("embedQuestions"))
 
-    if activity_type == "dictation":
-        dict_items = data.get("dictationItems") or []
-        scoring_payload = _validate_scoring(scoring, default_max=len(dict_items) or 100)
-        activity_id = activity_service.create_activity(
-            course_id,
-            module_id,
-            lesson_id,
-            title=title,
-            type=activity_type,
-            order=order,
-            scoring=scoring_payload,
-            config=config,
-            dictation_items=dict_items,
-            created_by=(admin or {}).get("uid"),
-        )
-    elif activity_type == "practice_lip":
-        practice_items = data.get("practiceItems") or []
-        scoring_payload = _validate_scoring(scoring, default_max=len(practice_items) or 100)
-        activity_id = activity_service.create_activity(
-            course_id,
-            module_id,
-            lesson_id,
-            title=title,
-            type=activity_type,
-            order=order,
-            scoring=scoring_payload,
-            config=config,
-            practice_items=practice_items,
-            created_by=(admin or {}).get("uid"),
-        )
-    else:
-        bank_data = data.get("questionBank") or {}
-        bank_title = (bank_data.get("title") or "").strip()
-        if not bank_title:
-            return RedirectResponse(
-                url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities?message=missing-bank-title",
-                status_code=303,
-            )
-        bank_tags = bank_data.get("tags") or []
-        bank_id = question_bank_service.create_bank(
-            title=bank_title,
-            difficulty=int(bank_data.get("difficulty") or 1),
-            tags=bank_tags,
-            description=(bank_data.get("description") or "").strip() or None,
-            created_by=(admin or {}).get("uid"),
-        )
+    uploads: Dict[str, UploadFile] = {
+        key: val for key, val in form.multi_items() if isinstance(val, UploadFile)
+    }
 
-        created_questions: List[str] = []
-        for q in data.get("questions") or []:
-            qid = question_bank_service.create_question(
-                bank_id,
-                stem=q.get("stem", ""),
-                options=q.get("options") or [],
-                answers=q.get("answers") or [],
-                answer_pattern=q.get("answerPattern"),
-                explanation=q.get("explanation"),
-                tags=q.get("tags") or [],
-                difficulty=int(q.get("difficulty") or 1),
-                media_id=q.get("mediaId"),
-                question_type=q.get("type", "mcq"),
-            )
-            created_questions.append(qid)
+    def _resolve_media(field_name: Optional[str], required: bool = False) -> Optional[str]:
+        if not field_name:
+            if required:
+                raise ValueError("Missing required video upload")
+            return None
+        upload = uploads.get(field_name)
+        if upload and upload.filename:
+            media = save_media_file(upload, media_type="videos")
+            return media.get("id")
+        if required:
+            raise ValueError(f"Missing upload for {field_name}")
+        return None
 
-        scoring_payload = _validate_scoring(scoring)
-        activity_id = activity_service.create_activity(
-            course_id,
-            module_id,
-            lesson_id,
-            title=title,
-            type=activity_type,
-            order=order,
-            scoring=scoring_payload,
-            config=config,
-            question_bank_id=bank_id,
-            question_ids=created_questions,
-            embed_questions=embed_questions,
-            created_by=(admin or {}).get("uid"),
+    try:
+        if activity_type == "dictation":
+            dict_items = data.get("dictationItems") or []
+            for item in dict_items:
+                item["mediaId"] = _resolve_media(item.get("mediaField"), required=True)
+                item.pop("mediaField", None)
+            scoring_payload = _validate_scoring(scoring, default_max=len(dict_items) or 100)
+            activity_id = activity_service.create_activity(
+                course_id,
+                module_id,
+                lesson_id,
+                title=title,
+                type=activity_type,
+                order=order,
+                scoring=scoring_payload,
+                config=config,
+                dictation_items=dict_items,
+                created_by=(admin or {}).get("uid"),
+            )
+        elif activity_type == "practice_lip":
+            practice_items = data.get("practiceItems") or []
+            for item in practice_items:
+                item["mediaId"] = _resolve_media(item.get("mediaField"), required=True)
+                item.pop("mediaField", None)
+            scoring_payload = _validate_scoring(scoring, default_max=len(practice_items) or 100)
+            activity_id = activity_service.create_activity(
+                course_id,
+                module_id,
+                lesson_id,
+                title=title,
+                type=activity_type,
+                order=order,
+                scoring=scoring_payload,
+                config=config,
+                practice_items=practice_items,
+                created_by=(admin or {}).get("uid"),
+            )
+        else:
+            bank_data = data.get("questionBank") or {}
+            bank_title = (bank_data.get("title") or "").strip()
+            if not bank_title:
+                return RedirectResponse(
+                    url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities?message=missing-bank-title",
+                    status_code=303,
+                )
+            bank_tags = bank_data.get("tags") or []
+            bank_id = question_bank_service.create_bank(
+                title=bank_title,
+                difficulty=int(bank_data.get("difficulty") or 1),
+                tags=bank_tags,
+                description=(bank_data.get("description") or "").strip() or None,
+                created_by=(admin or {}).get("uid"),
+            )
+
+            created_questions: List[str] = []
+            for q in data.get("questions") or []:
+                q["mediaId"] = _resolve_media(q.get("mediaField"), required=False)
+                q.pop("mediaField", None)
+                qid = question_bank_service.create_question(
+                    bank_id,
+                    stem=q.get("stem", ""),
+                    options=q.get("options") or [],
+                    answers=q.get("answers") or [],
+                    answer_pattern=q.get("answerPattern"),
+                    explanation=q.get("explanation"),
+                    tags=q.get("tags") or [],
+                    difficulty=int(q.get("difficulty") or 1),
+                    media_id=q.get("mediaId"),
+                    question_type=q.get("type", "mcq"),
+                )
+                created_questions.append(qid)
+
+            scoring_payload = _validate_scoring(scoring)
+            activity_id = activity_service.create_activity(
+                course_id,
+                module_id,
+                lesson_id,
+                title=title,
+                type=activity_type,
+                order=order,
+                scoring=scoring_payload,
+                config=config,
+                question_bank_id=bank_id,
+                question_ids=created_questions,
+                embed_questions=embed_questions,
+                created_by=(admin or {}).get("uid"),
+            )
+    except ValueError:
+        return RedirectResponse(
+            url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities?message=missing-video",
+            status_code=303,
         )
     return RedirectResponse(
         url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=activity-created",
