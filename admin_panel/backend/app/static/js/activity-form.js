@@ -376,21 +376,22 @@
 
     const form = document.getElementById('activityForm');
     form?.addEventListener('submit', (e) => {
-      const type = typeSelect.value;
-      const selectedDifficulty = document.getElementById('activityDifficulty')?.value || 'beginner';
+      const formData = new FormData(form);
+      const type = formData.get('type') || typeSelect.value;
+      const selectedDifficulty = formData.get('difficultyLevel') || document.getElementById('activityDifficulty')?.value || 'beginner';
       const payload = {
-        title: document.getElementById('activityTitle').value.trim(),
+        title: (formData.get('title') || document.getElementById('activityTitle')?.value || '').toString().trim(),
         type,
-        order: parseInt(document.getElementById('activityOrder').value || '0', 10),
+        order: parseInt(formData.get('order') || document.getElementById('activityOrder')?.value || '0', 10),
         difficultyLevel: selectedDifficulty,
         scoring: {
-          maxScore: parseInt(document.getElementById('maxScore').value || '100', 10),
-          passingScore: parseInt(document.getElementById('passingScore').value || '60', 10),
+          maxScore: parseInt(formData.get('maxScore') || document.getElementById('maxScore')?.value || '100', 10),
+          passingScore: parseInt(formData.get('passingScore') || document.getElementById('passingScore')?.value || '60', 10),
         },
       };
 
       if (type === 'quiz') {
-        const bankTitle = document.getElementById('bankTitle').value.trim();
+        const bankTitle = (formData.get('bankTitle') || document.getElementById('bankTitle')?.value || '').toString().trim();
         if (!bankTitle) {
           e.preventDefault();
           alert('Question bank title is required for MCQ activities.');
@@ -405,7 +406,7 @@
             .value.split(',')
             .map((t) => t.trim())
             .filter(Boolean),
-          description: document.getElementById('bankDescription').value.trim(),
+          description: (formData.get('bankDescription') || document.getElementById('bankDescription')?.value || '').toString().trim(),
         };
         const mcqResult = collectMcqQuestions();
         if (mcqResult.issues.length) {

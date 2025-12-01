@@ -13,11 +13,11 @@
       <div class="row g-3">
         <div class="col-md-5">
           <label class="form-label">Title</label>
-          <input class="form-control" id="activityTitle" placeholder="e.g. Mid-lesson quiz">
+          <input class="form-control" id="activityTitle" name="title" placeholder="e.g. Mid-lesson quiz">
         </div>
         <div class="col-md-3">
           <label class="form-label">Type</label>
-          <select class="form-select" id="activityType" required>
+          <select class="form-select" id="activityType" name="type" required>
             <option value="quiz" selected>MCQ Quiz</option>
             <option value="dictation">Dictation</option>
             <option value="practice_lip">Practice</option>
@@ -25,7 +25,7 @@
         </div>
         <div class="col-md-2">
           <label class="form-label">Difficulty</label>
-          <select class="form-select" id="activityDifficulty">
+          <select class="form-select" id="activityDifficulty" name="difficultyLevel">
             <option value="beginner">Beginner</option>
             <option value="intermediate">Intermediate</option>
             <option value="advanced">Advanced</option>
@@ -33,7 +33,7 @@
         </div>
         <div class="col-md-2">
           <label class="form-label">Order</label>
-          <input class="form-control" type="number" id="activityOrder" value="{{ next_order }}" min="0">
+          <input class="form-control" type="number" id="activityOrder" name="order" value="{{ next_order }}" min="0">
         </div>
       </div>
 
@@ -44,9 +44,9 @@
               <h6 class="card-title">Scoring (activity level)</h6>
               <div class="input-group mb-2">
                 <span class="input-group-text">Max</span>
-                <input class="form-control" type="number" id="maxScore" value="100" min="0">
+                <input class="form-control" type="number" id="maxScore" name="maxScore" value="100" min="0">
                 <span class="input-group-text">Pass</span>
-                <input class="form-control" type="number" id="passingScore" value="60" min="0">
+                <input class="form-control" type="number" id="passingScore" name="passingScore" value="60" min="0">
               </div>
               <p class="text-muted small mb-0">Scoring is per activity, not per question.</p>
             </div>
@@ -72,16 +72,16 @@
             <div class="row g-3">
               <div class="col-md-6">
                 <label class="form-label">Bank title</label>
-                <input class="form-control" id="bankTitle" placeholder="e.g. Unit 1 Quiz Bank">
+                <input class="form-control" id="bankTitle" name="bankTitle" placeholder="e.g. Unit 1 Quiz Bank">
               </div>
               <div class="col-md-6">
                 <label class="form-label">Tags (comma separated)</label>
-                <input class="form-control" id="bankTags" placeholder="listening,phonetics">
+                <input class="form-control" id="bankTags" name="bankTags" placeholder="listening,phonetics">
               </div>
             </div>
             <div class="mt-3">
               <label class="form-label">Description <span class="text-muted small">(optional)</span></label>
-              <textarea class="form-control" id="bankDescription" rows="3" placeholder="Describe this question bank"></textarea>
+              <textarea class="form-control" id="bankDescription" name="bankDescription" rows="3" placeholder="Describe this question bank"></textarea>
             </div>
           </div>
         </div>
