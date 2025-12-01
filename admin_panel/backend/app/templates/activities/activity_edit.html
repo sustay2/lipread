@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Edit Activity | LipRead Admin{% endblock %}
+{% block header %}Edit Activity{% endblock %}
+{% block content %}
+<div class="mb-3">
+  <a class="text-decoration-none" href="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities/{{ activity.id }}">&larr; Back to detail</a>
+</div>
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" action="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities/{{ activity.id }}/update">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Title</label>
+          <input class="form-control" name="title" value="{{ activity.title }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Type</label>
+          <select class="form-select" name="type" required>
+            <option value="quiz" {% if activity.type == 'quiz' %}selected{% endif %}>Quiz</option>
+            <option value="practice_lip" {% if activity.type == 'practice_lip' %}selected{% endif %}>Practice Lip</option>
+            <option value="dictation" {% if activity.type == 'dictation' %}selected{% endif %}>Dictation</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Order</label>
+          <input class="form-control" type="number" name="order" value="{{ activity.order }}" min="0">
+        </div>
+      </div>
+
+      <div class="row g-3 mt-3">
+        <div class="col-md-4">
+          <label class="form-label">Question bank</label>
+          <select class="form-select" id="bankSelect" name="questionBankId">
+            {% set selected_bank = activity.config.questionBankId or (activity.questions[0].bankId if activity.questions) %}
+            {% for bank in banks %}
+            <option value="{{ bank.id }}" {% if bank.id == selected_bank %}selected{% endif %}>{{ bank.title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Scoring</label>
+          <div class="input-group">
+            <span class="input-group-text">Max</span>
+            <input class="form-control" type="number" name="maxScore" value="{{ activity.scoring.maxScore or 0 }}" min="0">
+            <span class="input-group-text">Pass</span>
+            <input class="form-control" type="number" name="passingScore" value="{{ activity.scoring.passingScore or 0 }}" min="0">
+          </div>
+          {% set embed_flag = activity.config.embedQuestions %}
+          <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" value="true" id="embedQuestions" name="embedQuestions" {% if embed_flag %}checked{% endif %}>
+            <label class="form-check-label" for="embedQuestions">Embed question content into activity</label>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Question selection</label>
+          <p class="text-muted small mb-1">Update the questions attached to this activity.</p>
+          <div id="questionList" class="border rounded p-2 bg-light" style="max-height: 240px; overflow:auto;"></div>
+        </div>
+      </div>
+
+      <div class="mt-3 d-flex justify-content-between align-items-center">
+        <button class="btn btn-primary" type="submit">Save changes</button>
+        <a class="btn btn-outline-secondary" href="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities/{{ activity.id }}">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+  const questionsByBank = {{ questions_by_bank | tojson }};
+  const selectedQuestions = new Set({{ activity.questions | map(attribute='questionId') | list | tojson }});
+  const listEl = document.getElementById('questionList');
+  const bankSelect = document.getElementById('bankSelect');
+
+  function renderQuestions(bankId) {
+    if (!listEl) return;
+    listEl.innerHTML = '';
+    const questions = questionsByBank[bankId] || [];
+    if (!questions.length) {
+      listEl.innerHTML = '<p class="text-muted small mb-0">No questions in this bank.</p>';
+      return;
+    }
+    questions.forEach((q, index) => {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'form-check mb-1';
+      const checked = selectedQuestions.has(q.id) ? 'checked' : '';
+      wrapper.innerHTML = `
+        <input class="form-check-input" type="checkbox" value="${q.id}" id="q-${bankId}-${index}" name="questionIds" ${checked}>
+        <label class="form-check-label" for="q-${bankId}-${index}">
+          <span class="fw-semibold">${q.stem || 'Untitled question'}</span>
+          <span class="text-muted small ms-1">(${q.type})</span>
+        </label>
+      `;
+      listEl.appendChild(wrapper);
+    });
+  }
+
+  if (bankSelect) {
+    bankSelect.addEventListener('change', (e) => renderQuestions(e.target.value));
+    renderQuestions(bankSelect.value);
+  } else {
+    renderQuestions('');
+  }
+</script>
+{% endblock %}
