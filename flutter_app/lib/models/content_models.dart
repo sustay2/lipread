@@ -13,6 +13,9 @@ class Course {
   final String? thumbnailUrl;
   final Map<String, dynamic>? thumbnail;
   final String? mediaId;
+  final int modulesCount;
+  final int lessonsCount;
+  final int? order;
   final bool published;
   final int? version;
   final dynamic createdAt;
@@ -29,6 +32,9 @@ class Course {
     this.thumbnailUrl,
     this.thumbnail,
     this.mediaId,
+    this.modulesCount = 0,
+    this.lessonsCount = 0,
+    this.order,
     this.published = false,
     this.version,
     this.createdAt,
@@ -41,8 +47,8 @@ class Course {
       id: json['id'] as String,
       title: json['title'] as String?,
       slug: json['slug'] as String?,
-      level: json['level'] as String?,
-      description: json['description'] as String?,
+      level: (json['level'] as String?) ?? json['difficulty'] as String?,
+      description: json['description'] as String? ?? json['summary'] as String?,
       tags: (json['tags'] as List?)?.cast<String>() ?? const [],
       thumbnailPath: json['thumbnailPath'] as String?,
       thumbnailUrl: json['thumbnailUrl'] as String?,
@@ -50,6 +56,9 @@ class Course {
           ? json['thumbnail'] as Map<String, dynamic>
           : null,
       mediaId: json['mediaId'] as String?,
+      modulesCount: (json['modulesCount'] as num?)?.toInt() ?? 0,
+      lessonsCount: (json['lessonsCount'] as num?)?.toInt() ?? 0,
+      order: (json['order'] as num?)?.toInt(),
       published: publishedRaw is bool ? publishedRaw : true,
       version: (json['version'] as num?)?.toInt(),
       createdAt: json['createdAt'],

@@ -978,7 +978,7 @@ class _CourseCard extends StatelessWidget {
 
   Future<_ResolvedMedia?> _resolveMedia() async {
     // 1) Direct string field
-    final direct = (data['thumbnailUrl'] as String?);
+    final direct = (data['thumbnailUrl'] as String?) ?? (data['thumbUrl'] as String?) ?? (data['coverImageUrl'] as String?);
     if (direct != null && direct.isNotEmpty) {
       final url = normalizeMediaUrl(direct);
       return _ResolvedMedia(url: url, isVideo: _looksVideo(url));
@@ -999,7 +999,7 @@ class _CourseCard extends StatelessWidget {
     }
 
     // 3) Media doc reference
-    final mediaId = (data['mediaId'] as String?);
+    final mediaId = (data['mediaId'] as String?) ?? (data['coverImageId'] as String?);
     if (mediaId != null && mediaId.isNotEmpty) {
       try {
         final snap = await FirebaseFirestore.instance
