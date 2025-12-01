@@ -8,7 +8,7 @@
 
 <div class="card shadow-sm">
   <div class="card-body">
-    <form id="activityForm" method="post" action="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities">
+    <form id="activityForm" method="post" enctype="multipart/form-data" action="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities">
       <input type="hidden" name="payload" id="activityPayload">
       <div class="row g-3">
         <div class="col-md-6">
@@ -145,8 +145,8 @@
           <input class="form-control question-answers" placeholder="Option A, Option C">
         </div>
         <div class="col-md-4">
-          <label class="form-label">Media ID <span class="text-muted small">(optional)</span></label>
-          <input class="form-control question-media" placeholder="media_123">
+          <label class="form-label">Question video <span class="text-muted small">(MP4, MOV, etc.)</span></label>
+          <input class="form-control question-media" type="file" name="questionMedia" accept="video/*" required>
         </div>
       </div>
       <div class="mt-2">
@@ -170,8 +170,8 @@
       </div>
       <div class="row g-3">
         <div class="col-md-6">
-          <label class="form-label">Media / Video ID</label>
-          <input class="form-control dictation-media" placeholder="media_123" required>
+          <label class="form-label">Dictation video</label>
+          <input class="form-control dictation-media" type="file" name="dictationMedia" accept="video/*" required>
         </div>
         <div class="col-md-6">
           <label class="form-label">Hints <span class="text-muted small">(optional)</span></label>
@@ -199,8 +199,8 @@
           <input class="form-control practice-target" placeholder="e.g. Lip reading">
         </div>
         <div class="col-md-6">
-          <label class="form-label">Media / Video ID</label>
-          <input class="form-control practice-media" placeholder="media_456" required>
+          <label class="form-label">Practice video</label>
+          <input class="form-control practice-media" type="file" name="practiceMedia" accept="video/*" required>
         </div>
       </div>
     </div>
@@ -216,6 +216,16 @@
       practice_lip: document.getElementById('practiceSection'),
     };
 
+    function toggleRequired(selector, enabled) {
+      document.querySelectorAll(selector).forEach((el) => {
+        if (enabled) {
+          el.setAttribute('required', 'required');
+        } else {
+          el.removeAttribute('required');
+        }
+      });
+    }
+
     const questionList = document.getElementById('questionList');
     const dictationList = document.getElementById('dictationList');
     const practiceList = document.getElementById('practiceList');
@@ -226,6 +236,9 @@
         if (!el) return;
         el.classList.toggle('d-none', key !== type);
       });
+      toggleRequired('.question-media, .question-stem, .question-options, .question-answers', type === 'quiz');
+      toggleRequired('.dictation-media, .dictation-correct', type === 'dictation');
+      toggleRequired('.practice-media, .practice-description', type === 'practice_lip');
     }
 
     function addMcqQuestion() {
@@ -236,6 +249,7 @@
         renumber();
       });
       questionList.appendChild(clone);
+      updateVisibility();
       renumber();
     }
 
@@ -247,6 +261,7 @@
         renumber();
       });
       dictationList.appendChild(clone);
+      updateVisibility();
       renumber();
     }
 
@@ -258,6 +273,7 @@
         renumber();
       });
       practiceList.appendChild(clone);
+      updateVisibility();
       renumber();
     }
 
@@ -273,7 +289,10 @@
         const stem = card.querySelector('.question-stem').value.trim();
         const options = card.querySelector('.question-options').value.split('\n').map(o => o.trim()).filter(Boolean);
         const answers = card.querySelector('.question-answers').value.split(',').map(a => a.trim()).filter(Boolean);
-        const mediaId = card.querySelector('.question-media').value.trim() || null;
+        const mediaFile = card.querySelector('.question-media').files[0];
+        if (!mediaFile) {
+          return;
+        }
         const explanation = card.querySelector('.question-explanation').value.trim();
         if (stem) {
           questions.push({
@@ -281,7 +300,6 @@
             options,
             answers,
             explanation: explanation || undefined,
-            mediaId: mediaId || undefined,
             type: 'mcq',
           });
         }
@@ -293,10 +311,10 @@
       const items = [];
       document.querySelectorAll('#dictationList .dictation-item').forEach((card) => {
         const correctText = card.querySelector('.dictation-correct').value.trim();
-        const mediaId = card.querySelector('.dictation-media').value.trim();
+        const mediaId = card.querySelector('.dictation-media').files[0];
         const hints = card.querySelector('.dictation-hints').value.trim();
         if (correctText && mediaId) {
-          items.push({ correctText, mediaId, hints: hints || undefined });
+          items.push({ correctText, hints: hints || undefined });
         }
       });
       return items;
@@ -307,9 +325,9 @@
       document.querySelectorAll('#practiceList .practice-item').forEach((card) => {
         const description = card.querySelector('.practice-description').value.trim();
         const targetWord = card.querySelector('.practice-target').value.trim();
-        const mediaId = card.querySelector('.practice-media').value.trim();
+        const mediaId = card.querySelector('.practice-media').files[0];
         if (description && mediaId) {
-          items.push({ description, targetWord: targetWord || undefined, mediaId });
+          items.push({ description, targetWord: targetWord || undefined });
         }
       });
       return items;

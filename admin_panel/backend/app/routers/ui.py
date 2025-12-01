@@ -462,6 +462,9 @@ async def activity_create(
     module_id: str,
     lesson_id: str,
     payload: str = Form(...),
+    questionMedia: List[UploadFile] = File([]),
+    dictationMedia: List[UploadFile] = File([]),
+    practiceMedia: List[UploadFile] = File([]),
 ):
     admin = request.session.get("admin") if request.session else None
     data: Dict[str, Any] = json.loads(payload)
@@ -478,9 +481,36 @@ async def activity_create(
     config = data.get("config") or {}
     embed_questions = bool(config.get("embedQuestions"))
 
+    def _save_video(file: UploadFile, error_code: str) -> Optional[str]:
+        if not file or not file.filename:
+            return None
+        if not (file.content_type or "").startswith("video/"):
+            raise ValueError(error_code)
+        media = save_media_file(file, media_type="videos")
+        return media.get("id")
+
     if activity_type == "dictation":
         dict_items = data.get("dictationItems") or []
+        if len(dict_items) != len(dictationMedia):
+            return RedirectResponse(
+                url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities?message=dictation-media-mismatch",
+                status_code=303,
+            )
         scoring_payload = _validate_scoring(scoring, default_max=len(dict_items) or 100)
+        for idx, item in enumerate(dict_items):
+            try:
+                media_id = _save_video(dictationMedia[idx], "dictation-media-invalid")
+            except ValueError:
+                return RedirectResponse(
+                    url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities?message=dictation-media-invalid",
+                    status_code=303,
+                )
+            if not media_id:
+                return RedirectResponse(
+                    url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities?message=dictation-media-missing",
+                    status_code=303,
+                )
+            item["mediaId"] = media_id
         activity_id = activity_service.create_activity(
             course_id,
             module_id,
@@ -495,7 +525,26 @@ async def activity_create(
         )
     elif activity_type == "practice_lip":
         practice_items = data.get("practiceItems") or []
+        if len(practice_items) != len(practiceMedia):
+            return RedirectResponse(
+                url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities?message=practice-media-mismatch",
+                status_code=303,
+            )
         scoring_payload = _validate_scoring(scoring, default_max=len(practice_items) or 100)
+        for idx, item in enumerate(practice_items):
+            try:
+                media_id = _save_video(practiceMedia[idx], "practice-media-invalid")
+            except ValueError:
+                return RedirectResponse(
+                    url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities?message=practice-media-invalid",
+                    status_code=303,
+                )
+            if not media_id:
+                return RedirectResponse(
+                    url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities?message=practice-media-missing",
+                    status_code=303,
+                )
+            item["mediaId"] = media_id
         activity_id = activity_service.create_activity(
             course_id,
             module_id,
@@ -525,8 +574,27 @@ async def activity_create(
             created_by=(admin or {}).get("uid"),
         )
 
+        questions = data.get("questions") or []
+        if len(questions) != len(questionMedia):
+            return RedirectResponse(
+                url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities?message=question-media-mismatch",
+                status_code=303,
+            )
+
         created_questions: List[str] = []
-        for q in data.get("questions") or []:
+        for idx, q in enumerate(questions):
+            try:
+                media_id = _save_video(questionMedia[idx], "question-media-invalid")
+            except ValueError:
+                return RedirectResponse(
+                    url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities?message=question-media-invalid",
+                    status_code=303,
+                )
+            if not media_id:
+                return RedirectResponse(
+                    url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities?message=question-media-missing",
+                    status_code=303,
+                )
             qid = question_bank_service.create_question(
                 bank_id,
                 stem=q.get("stem", ""),
@@ -536,7 +604,7 @@ async def activity_create(
                 explanation=q.get("explanation"),
                 tags=q.get("tags") or [],
                 difficulty=int(q.get("difficulty") or 1),
-                media_id=q.get("mediaId"),
+                media_id=media_id,
                 question_type=q.get("type", "mcq"),
             )
             created_questions.append(qid)
