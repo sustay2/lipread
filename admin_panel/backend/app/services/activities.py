@@ -148,7 +148,7 @@ class ActivityService:
             "config": dict(data.get("config") or {}),
             "scoring": dict(data.get("scoring") or {}),
             "questionBankId": data.get("questionBankId"),
-            "questions": questions,
+            "questions": [q.__dict__ for q in questions],
             "dictationItems": [item.__dict__ for item in dictation_items],
             "practiceItems": [item.__dict__ for item in practice_items],
             "createdAt": data.get("createdAt"),

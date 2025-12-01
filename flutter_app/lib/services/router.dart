@@ -66,6 +66,8 @@ class Routes {
   static const mirrorPractice  = '/app/activity/mirror-practice';
   static const quiz            = '/app/activity/quiz';
   static const quizActivity    = '/activity/quiz';
+  static const dictationActivity = '/activity/dictation';
+  static const practiceActivity  = '/activity/practice';
 
 
 }
@@ -164,6 +166,16 @@ class AppNavigator {
           moduleId: args.moduleId,
           lessonId: args.lessonId,
           activityId: args.activityId,
+        ));
+
+      case Routes.dictationActivity:
+        return _material(DictationActivityScreen(
+          activityRef: settings.arguments as String,
+        ));
+
+      case Routes.practiceActivity:
+        return _material(PracticeActivityScreen(
+          activityRef: settings.arguments as String,
         ));
 
       default:
