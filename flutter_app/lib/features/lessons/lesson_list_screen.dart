@@ -341,7 +341,7 @@ class _CourseExpansionCardState extends State<_CourseExpansionCard> {
           title: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _CourseMediaThumb(url: widget.course.thumbnailUrl, height: 72),
+              _CourseMediaThumb(url: widget.course.resolvedThumbnailUrl, height: 72),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(

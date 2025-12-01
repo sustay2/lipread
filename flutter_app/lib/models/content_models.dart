@@ -10,8 +10,13 @@ class Course {
   final String? description;
   final List<String> tags;
   final String? thumbnailPath;
+  final String? thumbnailUrl;
+  final Map<String, dynamic>? thumbnail;
+  final String? mediaId;
   final bool published;
   final int? version;
+  final dynamic createdAt;
+  final dynamic updatedAt;
 
   Course({
     required this.id,
@@ -21,8 +26,13 @@ class Course {
     this.description,
     this.tags = const [],
     this.thumbnailPath,
+    this.thumbnailUrl,
+    this.thumbnail,
+    this.mediaId,
     this.published = false,
     this.version,
+    this.createdAt,
+    this.updatedAt,
   });
 
   factory Course.fromJson(Map<String, dynamic> json) {
@@ -35,12 +45,32 @@ class Course {
       description: json['description'] as String?,
       tags: (json['tags'] as List?)?.cast<String>() ?? const [],
       thumbnailPath: json['thumbnailPath'] as String?,
+      thumbnailUrl: json['thumbnailUrl'] as String?,
+      thumbnail: json['thumbnail'] is Map<String, dynamic>
+          ? json['thumbnail'] as Map<String, dynamic>
+          : null,
+      mediaId: json['mediaId'] as String?,
       published: publishedRaw is bool ? publishedRaw : true,
       version: (json['version'] as num?)?.toInt(),
+      createdAt: json['createdAt'],
+      updatedAt: json['updatedAt'],
     );
   }
 
-  String? get thumbnailUrl => publicMediaUrl(null, path: thumbnailPath);
+  String? get resolvedThumbnailUrl {
+    // 1) Direct URLs from Firestore/FastAPI
+    final direct = thumbnailUrl ?? (thumbnail?['url'] as String?);
+    final normalized = publicMediaUrl(direct);
+    if (normalized != null) return normalized;
+
+    // 2) Relative path fields
+    final path = thumbnailPath ?? (thumbnail?['path'] as String?);
+    final fromPath = publicMediaUrl(null, path: path);
+    if (fromPath != null) return fromPath;
+
+    // 3) mediaId is carried through so the app can resolve elsewhere if needed
+    return null;
+  }
 }
 
 class Module {
@@ -50,6 +80,8 @@ class Module {
   final String? summary;
   final int order;
   final bool isArchived;
+  final dynamic createdAt;
+  final dynamic updatedAt;
 
   Module({
     required this.id,
@@ -58,6 +90,8 @@ class Module {
     required this.summary,
     required this.order,
     this.isArchived = false,
+    this.createdAt,
+    this.updatedAt,
   });
 
   factory Module.fromJson(Map<String, dynamic> json) {
@@ -68,6 +102,8 @@ class Module {
       summary: json['summary'] as String?,
       order: (json['order'] as num?)?.toInt() ?? 0,
       isArchived: json['isArchived'] == true,
+      createdAt: json['createdAt'],
+      updatedAt: json['updatedAt'],
     );
   }
 }
@@ -81,6 +117,8 @@ class Lesson {
   final List<String> objectives;
   final int estimatedMin;
   final bool isArchived;
+  final dynamic createdAt;
+  final dynamic updatedAt;
 
   Lesson({
     required this.id,
@@ -91,6 +129,8 @@ class Lesson {
     required this.objectives,
     required this.estimatedMin,
     this.isArchived = false,
+    this.createdAt,
+    this.updatedAt,
   });
 
   factory Lesson.fromJson(Map<String, dynamic> json) {
@@ -103,6 +143,8 @@ class Lesson {
       objectives: (json['objectives'] as List?)?.cast<String>() ?? const [],
       estimatedMin: (json['estimatedMin'] as num?)?.toInt() ?? 5,
       isArchived: json['isArchived'] == true,
+      createdAt: json['createdAt'],
+      updatedAt: json['updatedAt'],
     );
   }
 }
@@ -116,6 +158,8 @@ class ActivitySummary {
   final Map<String, dynamic> scoring;
   final int itemCount;
   final String? questionBankId;
+  final dynamic createdAt;
+  final dynamic updatedAt;
 
   ActivitySummary({
     required this.id,
@@ -126,6 +170,8 @@ class ActivitySummary {
     required this.scoring,
     required this.itemCount,
     this.questionBankId,
+    this.createdAt,
+    this.updatedAt,
   });
 
   factory ActivitySummary.fromJson(Map<String, dynamic> json) {
@@ -134,10 +180,16 @@ class ActivitySummary {
       title: json['title'] as String?,
       type: (json['type'] as String?) ?? 'activity',
       order: (json['order'] as num?)?.toInt() ?? 0,
-      config: (json['config'] as Map<String, dynamic>?) ?? <String, dynamic>{},
-      scoring: (json['scoring'] as Map<String, dynamic>?) ?? <String, dynamic>{},
+      config: (json['config'] is Map)
+          ? Map<String, dynamic>.from(json['config'] as Map)
+          : <String, dynamic>{},
+      scoring: (json['scoring'] is Map)
+          ? Map<String, dynamic>.from(json['scoring'] as Map)
+          : <String, dynamic>{},
       itemCount: (json['itemCount'] as num?)?.toInt() ?? 0,
       questionBankId: json['questionBankId'] as String?,
+      createdAt: json['createdAt'],
+      updatedAt: json['updatedAt'],
     );
   }
 }
@@ -244,6 +296,8 @@ class ActivityDetail extends ActivitySummary {
     required super.scoring,
     required super.itemCount,
     super.questionBankId,
+    super.createdAt,
+    super.updatedAt,
     this.questions = const [],
     this.dictationItems = const [],
     this.practiceItems = const [],
@@ -255,10 +309,16 @@ class ActivityDetail extends ActivitySummary {
       title: json['title'] as String?,
       type: (json['type'] as String?) ?? 'activity',
       order: (json['order'] as num?)?.toInt() ?? 0,
-      config: (json['config'] as Map<String, dynamic>?) ?? <String, dynamic>{},
-      scoring: (json['scoring'] as Map<String, dynamic>?) ?? <String, dynamic>{},
+      config: (json['config'] is Map)
+          ? Map<String, dynamic>.from(json['config'] as Map)
+          : <String, dynamic>{},
+      scoring: (json['scoring'] is Map)
+          ? Map<String, dynamic>.from(json['scoring'] as Map)
+          : <String, dynamic>{},
       itemCount: (json['itemCount'] as num?)?.toInt() ?? 0,
       questionBankId: json['questionBankId'] as String?,
+      createdAt: json['createdAt'],
+      updatedAt: json['updatedAt'],
       questions: (json['questions'] as List?)
               ?.map((q) => ActivityQuestion.fromJson(q as Map<String, dynamic>))
               .toList() ??

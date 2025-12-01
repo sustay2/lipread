@@ -23,10 +23,19 @@ class ContentApiService {
     final items = (decoded is Map && decoded['items'] is List)
         ? decoded['items'] as List
         : (decoded as List? ?? []);
-    return items
+    final courses = items
         .whereType<Map<String, dynamic>>()
         .map(Course.fromJson)
         .toList();
+
+    courses.sort((a, b) {
+      final aTs = a.createdAt;
+      final bTs = b.createdAt;
+      if (aTs == null || bTs == null) return 0;
+      return bTs.toString().compareTo(aTs.toString());
+    });
+
+    return courses;
   }
 
   Future<Course?> fetchCourseById(String courseId) async {
@@ -43,7 +52,9 @@ class ContentApiService {
     final res = await _get(uri);
     final decoded = jsonDecode(res.body);
     final list = decoded is List ? decoded : <dynamic>[];
-    return list.whereType<Map<String, dynamic>>().map(Module.fromJson).toList();
+    final modules = list.whereType<Map<String, dynamic>>().map(Module.fromJson).toList();
+    modules.sort((a, b) => a.order.compareTo(b.order));
+    return modules;
   }
 
   Future<Module?> fetchModuleById(String courseId, String moduleId) async {
@@ -60,7 +71,9 @@ class ContentApiService {
     final res = await _get(uri);
     final decoded = jsonDecode(res.body);
     final list = decoded is List ? decoded : <dynamic>[];
-    return list.whereType<Map<String, dynamic>>().map(Lesson.fromJson).toList();
+    final lessons = list.whereType<Map<String, dynamic>>().map(Lesson.fromJson).toList();
+    lessons.sort((a, b) => a.order.compareTo(b.order));
+    return lessons;
   }
 
   Future<Lesson?> fetchLessonById(
@@ -87,10 +100,12 @@ class ContentApiService {
     final items = (decoded is Map && decoded['items'] is List)
         ? decoded['items'] as List
         : (decoded as List? ?? []);
-    return items
+    final activities = items
         .whereType<Map<String, dynamic>>()
         .map(ActivitySummary.fromJson)
         .toList();
+    activities.sort((a, b) => a.order.compareTo(b.order));
+    return activities;
   }
 
   Future<ActivityDetail> fetchActivityDetail(

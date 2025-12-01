@@ -20,6 +20,9 @@ def _course_payload(doc_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         "description": data.get("description"),
         "tags": data.get("tags", []),
         "thumbnailPath": data.get("thumbnailPath"),
+        "thumbnailUrl": data.get("thumbnailUrl"),
+        "thumbnail": data.get("thumbnail"),
+        "mediaId": data.get("mediaId"),
         "published": data.get("published", False),
         "version": data.get("version", 1),
         "createdBy": data.get("createdBy"),
@@ -79,6 +82,8 @@ async def api_list_courses(
                 continue
         items.append(payload)
 
+    # Sort newest first to mirror the admin and Home screen ordering
+    items.sort(key=lambda i: i.get("createdAt") or 0, reverse=True)
     return {"items": items, "next_cursor": None}
 
 
@@ -195,7 +200,7 @@ async def api_get_activity(
 
     if not (course_id and module_id and lesson_id):
         # Fallback: attempt to resolve via lessons collection if lessonId is known
-        if lesson_id and not course_id or not module_id:
+        if lesson_id and (not course_id or not module_id):
             lesson_snap = db.collection("lessons").document(lesson_id).get()
             if lesson_snap.exists:
                 lesson_data = lesson_snap.to_dict() or {}
@@ -208,4 +213,6 @@ async def api_get_activity(
     activity = activity_service.get_activity(course_id, module_id, lesson_id, activityId)
     if not activity:
         raise HTTPException(404, "Activity not found")
-    return activity
+    # Ensure dataclasses are serialized
+    questions = [q.__dict__ for q in activity.get("questions", [])]
+    return {**activity, "questions": questions}
