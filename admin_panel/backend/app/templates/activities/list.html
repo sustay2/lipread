@@ -1,217 +1,61 @@
 {% extends "base.html" %}
 {% block title %}Activities | LipRead Admin{% endblock %}
-{% block header %}Activities for {{ lesson.title }}{% endblock %}
+{% block header %}Activities for {{ lesson.title if lesson else 'Lesson' }}{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
     <h5 class="mb-1">Activities</h5>
-    <p class="text-muted mb-0">Create quizzes and lip-reading interactions.</p>
+    <p class="text-muted mb-0">Attach question bank items with activity-level scoring only.</p>
   </div>
-  <a class="btn btn-outline-secondary" href="/courses/{{ course.id }}/modules/{{ module.id }}/lessons">Back to lessons</a>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="/courses/{{ course.id }}/modules/{{ module.id }}/lessons">Back to lessons</a>
+    <a class="btn btn-primary" href="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities/new">New activity</a>
+  </div>
 </div>
 {% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
-<div class="row g-3">
-  <div class="col-lg-4">
-    <div class="card shadow-sm h-100">
-      <div class="card-body">
-        <h6 class="fw-semibold">Add Activity</h6>
-        <form method="post" enctype="multipart/form-data" action="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities" id="create-activity-form">
-          <div class="mb-2">
-            <label class="form-label">Title</label>
-            <input class="form-control" name="title" placeholder="Prompt or question">
-          </div>
-          <div class="row g-2">
-            <div class="col-7">
-              <label class="form-label">Type</label>
-              <select class="form-select activity-type" name="type" required>
-                <option value="mcq">Multiple Choice</option>
-                <option value="fill_in_blank">Fill in the blank</option>
-              </select>
-            </div>
-            <div class="col-5">
-              <label class="form-label">Order</label>
-              <input class="form-control" type="number" name="order" value="{{ next_order }}" readonly>
-            </div>
-          </div>
-          <div class="mb-2 mt-2">
-            <label class="form-label">Video Upload</label>
-            <input class="form-control" type="file" accept="video/*" name="video">
-            <div class="form-text">Only one video is accepted.</div>
-          </div>
-          <div class="mb-3" data-config-container>
-            <label class="form-label">Configuration</label>
-            <div class="config-mcq">
-              <div id="mcq-choices" class="d-flex flex-column gap-2"></div>
-              <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="addChoice('mcq-choices')">Add choice</button>
-            </div>
-            <div class="config-fill" style="display:none;">
-              <input class="form-control mb-2" name="answer_text" placeholder="Correct answer">
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" name="case_sensitive" id="caseSensitive">
-                <label class="form-check-label" for="caseSensitive">Case sensitive</label>
+<div class="card shadow-sm">
+  <div class="card-body">
+    {% if activities %}
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>Type</th>
+            <th class="text-center">Order</th>
+            <th class="text-center">Questions</th>
+            <th>Scoring</th>
+            <th class="text-end">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for activity in activities %}
+          <tr>
+            <td class="fw-semibold">{{ activity.title }}</td>
+            <td class="text-capitalize">{{ activity.type|replace('_',' ') }}</td>
+            <td class="text-center">{{ activity.order }}</td>
+            <td class="text-center">{{ activity.questionCount }}</td>
+            <td>
+              <div class="small text-muted">Max: {{ activity.scoring.maxScore or 0 }}</div>
+              <div class="small text-muted">Pass: {{ activity.scoring.passingScore or 0 }}</div>
+            </td>
+            <td class="text-end">
+              <div class="btn-group">
+                <a class="btn btn-sm btn-outline-primary" href="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities/{{ activity.id }}">View</a>
+                <a class="btn btn-sm btn-outline-secondary" href="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities/{{ activity.id }}/edit">Edit</a>
+                <form method="post" action="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities/{{ activity.id }}/delete" onsubmit="return confirm('Delete activity?')">
+                  <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                </form>
               </div>
-            </div>
-          </div>
-          <div class="row g-2 mb-3">
-            <div class="col-6">
-              <label class="form-label">Max Score</label>
-              <input class="form-control" type="number" name="maxScore" value="100">
-            </div>
-            <div class="col-6">
-              <label class="form-label">Passing Score</label>
-              <input class="form-control" type="number" name="passingScore" value="60">
-            </div>
-          </div>
-          <button class="btn btn-primary w-100" type="submit">Create Activity</button>
-        </form>
-      </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
-  </div>
-  <div class="col-lg-8">
-    <div class="accordion" id="activityAccordion">
-      {% for activity in activities %}
-      <div class="accordion-item shadow-sm mb-2">
-        <h2 class="accordion-header" id="heading-{{ activity.id }}">
-          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ activity.id }}" aria-expanded="false" aria-controls="collapse-{{ activity.id }}">
-            <div class="d-flex flex-column">
-              <span class="fw-semibold">{{ activity.title }}</span>
-              <small class="text-muted">{{ activity.type|replace('_',' ')|capitalize }} • Order {{ activity.order }}</small>
-            </div>
-          </button>
-        </h2>
-        <div id="collapse-{{ activity.id }}" class="accordion-collapse collapse" aria-labelledby="heading-{{ activity.id }}" data-bs-parent="#activityAccordion">
-          <div class="accordion-body">
-            <form method="post" enctype="multipart/form-data" action="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities/{{ activity.id }}/update" class="activity-form" data-activity-type="{{ activity.type }}" data-activity-id="{{ activity.id }}">
-              <div class="mb-2">
-                <label class="form-label">Title</label>
-                <input class="form-control" name="title" value="{{ activity.title }}">
-              </div>
-              <div class="row g-2">
-                <div class="col-md-6">
-                  <label class="form-label">Type</label>
-                  <select class="form-select activity-type" name="type">
-                    <option value="mcq" {% if activity.type == 'mcq' %}selected{% endif %}>Multiple Choice</option>
-                    <option value="fill_in_blank" {% if activity.type == 'fill_in_blank' %}selected{% endif %}>Fill in the blank</option>
-                  </select>
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label">Order</label>
-                  <input class="form-control" type="number" name="order" value="{{ activity.order }}">
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label">Replace video</label>
-                  <input class="form-control" type="file" accept="video/*" name="video">
-                </div>
-              </div>
-              <div class="mt-3" data-config-container>
-                <label class="form-label">Configuration</label>
-                <div class="config-mcq" {% if activity.type != 'mcq' %}style="display:none;"{% endif %}>
-                  <div id="mcq-choices-{{ activity.id }}" class="d-flex flex-column gap-2">
-                    {% set choices = activity.config.choices or [] %}
-                    {% for choice in choices %}
-                    <div class="input-group">
-                      <div class="input-group-text">
-                        <input class="form-check-input mt-0" type="radio" name="correct_choice" value="{{ loop.index0 }}" {% if activity.config.answer == loop.index0 %}checked{% endif %}>
-                      </div>
-                      <input class="form-control" name="choices" value="{{ choice }}">
-                    </div>
-                    {% endfor %}
-                  </div>
-                  <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="addChoice('mcq-choices-{{ activity.id }}')">Add choice</button>
-                </div>
-                <div class="config-fill" {% if activity.type != 'fill_in_blank' %}style="display:none;"{% endif %}>
-                  <input class="form-control mb-2" name="answer_text" value="{{ activity.config.answer }}" placeholder="Correct answer">
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" name="case_sensitive" id="caseSensitive-{{ activity.id }}" {% if activity.config.caseSensitive %}checked{% endif %}>
-                    <label class="form-check-label" for="caseSensitive-{{ activity.id }}">Case sensitive</label>
-                  </div>
-                </div>
-              </div>
-              <div class="row g-2 mt-3">
-                <div class="col-md-6">
-                  <label class="form-label">Max Score</label>
-                  <input class="form-control" type="number" name="maxScore" value="{{ activity.scoring.maxScore or 100 }}">
-                </div>
-                <div class="col-md-6">
-                  <label class="form-label">Passing Score</label>
-                  <input class="form-control" type="number" name="passingScore" value="{{ activity.scoring.passingScore or 60 }}">
-                </div>
-              </div>
-              {% if activity.videoUrl %}
-              <div class="mt-3">
-                <label class="form-label">Current video</label>
-                <video class="w-100 rounded" controls src="{{ activity.videoUrl }}"></video>
-              </div>
-              {% endif %}
-              <div class="d-flex justify-content-between align-items-center mt-3">
-                <button class="btn btn-outline-primary" type="submit">Save</button>
-                {% if activity.videoUrl %}
-                <a class="btn btn-outline-secondary" href="{{ activity.videoUrl }}" target="_blank">Open media</a>
-                {% else %}
-                <span class="text-muted small">No media uploaded</span>
-                {% endif %}
-              </div>
-            </form>
-            <form class="mt-2" method="post" action="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities/{{ activity.id }}/delete" onsubmit="return confirm('Delete activity?')">
-              <button class="btn btn-outline-danger" type="submit">Delete</button>
-            </form>
-          </div>
-        </div>
-      </div>
-      {% else %}
-      <p class="text-muted">No activities yet.</p>
-      {% endfor %}
-    </div>
+    {% else %}
+    <p class="text-muted mb-0">No activities yet. Create one to start attaching questions.</p>
+    {% endif %}
   </div>
 </div>
-<script>
-  function addChoice(containerId) {
-    const container = document.getElementById(containerId);
-    const index = container.children.length;
-    const wrapper = document.createElement('div');
-    wrapper.className = 'input-group';
-    wrapper.innerHTML = `
-      <div class="input-group-text">
-        <input class="form-check-input mt-0" type="radio" name="correct_choice" value="${index}">
-      </div>
-      <input class="form-control" name="choices" placeholder="Choice ${index + 1}">
-    `;
-    container.appendChild(wrapper);
-  }
-
-  function toggleConfig(form) {
-    const typeSelect = form.querySelector('.activity-type');
-    const configMcq = form.querySelector('.config-mcq');
-    const configFill = form.querySelector('.config-fill');
-    if (!typeSelect || !configMcq || !configFill) return;
-    if (typeSelect.value === 'mcq') {
-      configMcq.style.display = 'block';
-      configFill.style.display = 'none';
-    } else {
-      configMcq.style.display = 'none';
-      configFill.style.display = 'block';
-    }
-  }
-
-  document.querySelectorAll('form.activity-form').forEach(form => {
-    toggleConfig(form);
-    form.querySelector('.activity-type').addEventListener('change', () => toggleConfig(form));
-    form.querySelectorAll('[id^="mcq-choices"]').forEach(container => {
-      if (container.children.length === 0) {
-        addChoice(container.id);
-        addChoice(container.id);
-      }
-    });
-  });
-
-  const createForm = document.getElementById('create-activity-form');
-  if (createForm) {
-    const selector = createForm.querySelector('.activity-type');
-    selector.addEventListener('change', () => toggleConfig(createForm));
-    toggleConfig(createForm);
-    // seed at least two choices
-    addChoice('mcq-choices');
-    addChoice('mcq-choices');
-  }
-</script>
 {% endblock %}
