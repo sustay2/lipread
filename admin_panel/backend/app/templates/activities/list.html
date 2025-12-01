@@ -23,7 +23,7 @@
             <th>Title</th>
             <th>Type</th>
             <th class="text-center">Order</th>
-            <th class="text-center">Questions</th>
+            <th class="text-center">Items</th>
             <th>Scoring</th>
             <th class="text-end">Actions</th>
           </tr>
@@ -34,7 +34,7 @@
             <td class="fw-semibold">{{ activity.title }}</td>
             <td class="text-capitalize">{{ activity.type|replace('_',' ') }}</td>
             <td class="text-center">{{ activity.order }}</td>
-            <td class="text-center">{{ activity.questionCount }}</td>
+            <td class="text-center">{{ activity.itemCount }}</td>
             <td>
               <div class="small text-muted">Max: {{ activity.scoring.maxScore or 0 }}</div>
               <div class="small text-muted">Pass: {{ activity.scoring.passingScore or 0 }}</div>

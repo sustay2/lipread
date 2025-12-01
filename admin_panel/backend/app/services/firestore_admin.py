@@ -590,7 +590,7 @@ def list_activities(course_id: str, module_id: str, lesson_id: str) -> List[Dict
             "order": item.order,
             "config": item.config,
             "scoring": item.scoring,
-            "questionCount": item.questionCount,
+            "itemCount": item.itemCount,
             "createdAt": item.createdAt,
             "updatedAt": item.updatedAt,
         }
