@@ -38,7 +38,32 @@
     const cfg = config || {};
     const initial = cfg.initialData || {};
 
-    const typeSelect = document.getElementById('activityType');
+    const form = document.getElementById('activityForm');
+    const payloadInput = document.getElementById('activityPayload');
+
+    const findField = (name) => {
+      if (!form) return null;
+      return form.querySelector(`[data-field="${name}"]`) || form.elements?.[name] || null;
+    };
+
+    const readString = (name, fallback = '') => {
+      const el = findField(name);
+      const val = (el && el.value) || '';
+      return (typeof val === 'string' ? val : `${val || ''}`).trim() || fallback;
+    };
+
+    const readNumber = (name, fallback = 0) => {
+      const parsed = parseInt(readString(name, ''), 10);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    };
+
+    const setValue = (name, value) => {
+      const el = findField(name);
+      if (el) el.value = value ?? '';
+    };
+
+    const typeSelect = findField('type');
+    const difficultySelect = findField('difficultyLevel');
     const sections = {
       quiz: document.getElementById('mcqSection'),
       dictation: document.getElementById('dictationSection'),
@@ -60,7 +85,7 @@
     }
 
     function enforceMediaRequirements() {
-      const type = typeSelect.value;
+      const type = typeSelect?.value || 'quiz';
       if (type === 'quiz') {
         document.querySelectorAll('#questionList .mcq-question').forEach((card) => {
           const input = card.querySelector('.question-media');
@@ -86,7 +111,7 @@
     }
 
     function updateVisibility() {
-      const type = typeSelect.value;
+      const type = typeSelect?.value || 'quiz';
       Object.entries(sections).forEach(([key, el]) => {
         if (!el) return;
         el.classList.toggle('d-none', key !== type);
@@ -134,6 +159,8 @@
       const input = document.createElement('input');
       input.type = 'text';
       input.className = 'form-control option-text';
+      input.name = 'mcqOption';
+      input.dataset.field = 'optionText';
       input.placeholder = 'Option text';
       if (value) input.value = value;
       const removeBtn = document.createElement('button');
@@ -170,9 +197,11 @@
     function populateQuestionCard(card, data) {
       const stem = data?.stem || '';
       const explanation = data?.explanation || '';
-      if (stem) card.querySelector('.question-stem').value = stem;
+      const stemEl = card.querySelector('[data-field="stem"]') || card.querySelector('.question-stem');
+      if (stem && stemEl) stemEl.value = stem;
       populateOptions(card, data?.options || [], data?.answers || []);
-      if (explanation) card.querySelector('.question-explanation').value = explanation;
+      const explanationEl = card.querySelector('[data-field="explanation"]') || card.querySelector('.question-explanation');
+      if (explanation && explanationEl) explanationEl.value = explanation;
       if (data?.mediaId) {
         card.dataset.existingMedia = data.mediaId;
         createExistingMediaNote(card.querySelector('.question-media'), data.mediaId);
@@ -183,8 +212,10 @@
     }
 
     function populateDictationCard(card, data) {
-      if (data?.correctText) card.querySelector('.dictation-correct').value = data.correctText;
-      if (data?.hints) card.querySelector('.dictation-hints').value = data.hints;
+      const correctEl = card.querySelector('[data-field="dictationCorrect"]') || card.querySelector('.dictation-correct');
+      const hintsEl = card.querySelector('[data-field="dictationHints"]') || card.querySelector('.dictation-hints');
+      if (data?.correctText && correctEl) correctEl.value = data.correctText;
+      if (data?.hints && hintsEl) hintsEl.value = data.hints;
       if (data?.mediaId) {
         card.dataset.existingMedia = data.mediaId;
         createExistingMediaNote(card.querySelector('.dictation-media'), data.mediaId);
@@ -193,8 +224,10 @@
     }
 
     function populatePracticeCard(card, data) {
-      if (data?.description) card.querySelector('.practice-description').value = data.description;
-      if (data?.targetWord) card.querySelector('.practice-target').value = data.targetWord;
+      const descEl = card.querySelector('[data-field="practiceDescription"]') || card.querySelector('.practice-description');
+      const targetEl = card.querySelector('[data-field="practiceTarget"]') || card.querySelector('.practice-target');
+      if (data?.description && descEl) descEl.value = data.description;
+      if (data?.targetWord && targetEl) targetEl.value = data.targetWord;
       if (data?.mediaId) {
         card.dataset.existingMedia = data.mediaId;
         createExistingMediaNote(card.querySelector('.practice-media'), data.mediaId);
@@ -248,7 +281,8 @@
       const questions = [];
       const issues = [];
       document.querySelectorAll('#questionList .mcq-question').forEach((card, idx) => {
-        const stem = card.querySelector('.question-stem').value.trim();
+        const stemEl = card.querySelector('[data-field="stem"]') || card.querySelector('.question-stem');
+        const stem = (stemEl?.value || '').trim();
         const optionRows = Array.from(card.querySelectorAll('.option-row'));
         const options = [];
         let correctAnswer = null;
@@ -271,7 +305,8 @@
           issues.push(`Please select the correct option for question ${idx + 1}.`);
           return;
         }
-        const explanation = card.querySelector('.question-explanation').value.trim();
+        const explanationEl = card.querySelector('[data-field="explanation"]') || card.querySelector('.question-explanation');
+        const explanation = (explanationEl?.value || '').trim();
         const mediaInput = card.querySelector('.question-media');
         const mediaFile = mediaInput.files[0];
         const existingMedia = card.dataset.existingMedia || null;
@@ -283,7 +318,9 @@
           explanation: explanation || undefined,
           type: 'mcq',
           mediaId: existingMedia || undefined,
+          existingMediaId: existingMedia || undefined,
           needsUpload: Boolean(mediaFile),
+          mediaField: mediaInput?.getAttribute('name') || 'questionMedia',
         });
       });
       return { questions, issues };
@@ -292,8 +329,10 @@
     function collectDictationItems() {
       const items = [];
       document.querySelectorAll('#dictationList .dictation-item').forEach((card) => {
-        const correctText = card.querySelector('.dictation-correct').value.trim();
-        const hints = card.querySelector('.dictation-hints').value.trim();
+        const correctTextEl = card.querySelector('[data-field="dictationCorrect"]') || card.querySelector('.dictation-correct');
+        const hintsEl = card.querySelector('[data-field="dictationHints"]') || card.querySelector('.dictation-hints');
+        const correctText = (correctTextEl?.value || '').trim();
+        const hints = (hintsEl?.value || '').trim();
         const mediaInput = card.querySelector('.dictation-media');
         const mediaFile = mediaInput.files[0];
         const existingMedia = card.dataset.existingMedia || null;
@@ -303,7 +342,9 @@
           correctText,
           hints: hints || undefined,
           mediaId: existingMedia || undefined,
+          existingMediaId: existingMedia || undefined,
           needsUpload: Boolean(mediaFile),
+          mediaField: mediaInput?.getAttribute('name') || 'dictationMedia',
         });
       });
       return items;
@@ -312,8 +353,10 @@
     function collectPracticeItems() {
       const items = [];
       document.querySelectorAll('#practiceList .practice-item').forEach((card) => {
-        const description = card.querySelector('.practice-description').value.trim();
-        const targetWord = card.querySelector('.practice-target').value.trim();
+        const descriptionEl = card.querySelector('[data-field="practiceDescription"]') || card.querySelector('.practice-description');
+        const targetEl = card.querySelector('[data-field="practiceTarget"]') || card.querySelector('.practice-target');
+        const description = (descriptionEl?.value || '').trim();
+        const targetWord = (targetEl?.value || '').trim();
         const mediaInput = card.querySelector('.practice-media');
         const mediaFile = mediaInput.files[0];
         const existingMedia = card.dataset.existingMedia || null;
@@ -323,7 +366,9 @@
           description,
           targetWord: targetWord || undefined,
           mediaId: existingMedia || undefined,
+          existingMediaId: existingMedia || undefined,
           needsUpload: Boolean(mediaFile),
+          mediaField: mediaInput?.getAttribute('name') || 'practiceMedia',
         });
       });
       return items;
@@ -331,22 +376,21 @@
 
     function renderInitialState() {
       const scoring = initial.scoring || {};
-      const difficultySelect = document.getElementById('activityDifficulty');
       const difficultyValue = difficultyFromValue(initial.difficultyLevel ?? initial.questionBank?.difficulty ?? 1);
-      document.getElementById('activityTitle').value = initial.title || '';
-      document.getElementById('activityType').value = initial.type || 'quiz';
-      document.getElementById('activityOrder').value = initial.order ?? 0;
+      setValue('title', initial.title || '');
+      setValue('type', initial.type || 'quiz');
+      setValue('order', initial.order ?? 0);
       if (difficultySelect) {
         const selected = Object.entries(difficultyToNumber).find(([, num]) => num === difficultyValue);
         difficultySelect.value = (selected && selected[0]) || 'beginner';
       }
-      document.getElementById('maxScore').value = scoring.maxScore ?? 100;
-      document.getElementById('passingScore').value = scoring.passingScore ?? 60;
+      setValue('maxScore', scoring.maxScore ?? 100);
+      setValue('passingScore', scoring.passingScore ?? 60);
 
       if (initial.questionBank) {
-        document.getElementById('bankTitle').value = initial.questionBank.title || '';
-        document.getElementById('bankTags').value = safeArray(initial.questionBank.tags || []).join(',');
-        document.getElementById('bankDescription').value = initial.questionBank.description || '';
+        setValue('bankTitle', initial.questionBank.title || '');
+        setValue('bankTags', safeArray(initial.questionBank.tags || []).join(','));
+        setValue('bankDescription', initial.questionBank.description || '');
       }
 
       const existingQuestions = initial.questions || [];
@@ -374,23 +418,22 @@
 
     renderInitialState();
 
-    const form = document.getElementById('activityForm');
     form?.addEventListener('submit', (e) => {
-      const type = typeSelect.value;
-      const selectedDifficulty = document.getElementById('activityDifficulty')?.value || 'beginner';
+      const type = typeSelect?.value || 'quiz';
+      const selectedDifficulty = difficultySelect?.value || 'beginner';
       const payload = {
-        title: document.getElementById('activityTitle').value.trim(),
+        title: readString('title'),
         type,
-        order: parseInt(document.getElementById('activityOrder').value || '0', 10),
+        order: readNumber('order', 0),
         difficultyLevel: selectedDifficulty,
         scoring: {
-          maxScore: parseInt(document.getElementById('maxScore').value || '100', 10),
-          passingScore: parseInt(document.getElementById('passingScore').value || '60', 10),
+          maxScore: readNumber('maxScore', 100),
+          passingScore: readNumber('passingScore', 60),
         },
       };
 
       if (type === 'quiz') {
-        const bankTitle = document.getElementById('bankTitle').value.trim();
+        const bankTitle = readString('bankTitle');
         if (!bankTitle) {
           e.preventDefault();
           alert('Question bank title is required for MCQ activities.');
@@ -400,12 +443,11 @@
           id: initial.questionBank?.id,
           title: bankTitle,
           difficulty: difficultyFromValue(selectedDifficulty),
-          tags: document
-            .getElementById('bankTags')
-            .value.split(',')
+          tags: readString('bankTags')
+            .split(',')
             .map((t) => t.trim())
             .filter(Boolean),
-          description: document.getElementById('bankDescription').value.trim(),
+          description: readString('bankDescription'),
         };
         const mcqResult = collectMcqQuestions();
         if (mcqResult.issues.length) {
@@ -453,7 +495,7 @@
         }
       }
 
-      document.getElementById('activityPayload').value = JSON.stringify(payload);
+      if (payloadInput) payloadInput.value = JSON.stringify(payload);
     });
   }
 
