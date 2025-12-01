@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from app.services.firebase_client import get_firestore_client
@@ -15,6 +16,10 @@ class QuestionBank:
     tags: List[str]
     ownerId: Optional[str]
     isArchive: bool
+    description: Optional[str] = None
+    createdBy: Optional[str] = None
+    createdAt: Any = None
+    updatedAt: Any = None
 
 
 @dataclass
@@ -62,7 +67,7 @@ class BankQuestion:
 
 
 class QuestionBankService:
-    """Read-only helpers for question banks used by admin activities."""
+    """CRUD helpers for question banks used by admin activities."""
 
     def __init__(self) -> None:
         self.db = get_firestore_client()
@@ -89,6 +94,10 @@ class QuestionBankService:
                     tags=list(data.get("tags") or []),
                     ownerId=data.get("ownerId"),
                     isArchive=bool(data.get("isArchive", False)),
+                    description=data.get("description"),
+                    createdBy=data.get("createdBy"),
+                    createdAt=data.get("createdAt"),
+                    updatedAt=data.get("updatedAt"),
                 )
             )
         banks.sort(key=lambda b: b.title.lower())
@@ -107,7 +116,34 @@ class QuestionBankService:
             tags=list(data.get("tags") or []),
             ownerId=data.get("ownerId"),
             isArchive=bool(data.get("isArchive", False)),
+            description=data.get("description"),
+            createdBy=data.get("createdBy"),
+            createdAt=data.get("createdAt"),
+            updatedAt=data.get("updatedAt"),
         )
+
+    def create_bank(
+        self,
+        *,
+        title: str,
+        difficulty: int,
+        tags: Optional[List[str]] = None,
+        description: Optional[str] = None,
+        created_by: Optional[str] = None,
+    ) -> str:
+        doc_ref = self._bank_collection().document()
+        now = datetime.now(timezone.utc)
+        payload = {
+            "title": title or "Untitled bank",
+            "difficulty": int(difficulty) if difficulty is not None else 1,
+            "tags": list(tags or []),
+            "description": description or None,
+            "createdBy": created_by,
+            "createdAt": now,
+            "updatedAt": now,
+        }
+        doc_ref.set(payload)
+        return doc_ref.id
 
     def list_questions(self, bank_id: str, limit: int = 500, as_dict: bool = False) -> List[Any]:
         questions: List[Any] = []
