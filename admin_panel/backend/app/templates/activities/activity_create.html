@@ -11,7 +11,7 @@
     <form id="activityForm" method="post" enctype="multipart/form-data" action="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities">
       <input type="hidden" name="payload" id="activityPayload">
       <div class="row g-3">
-        <div class="col-md-6">
+        <div class="col-md-5">
           <label class="form-label">Title</label>
           <input class="form-control" id="activityTitle" placeholder="e.g. Mid-lesson quiz">
         </div>
@@ -23,7 +23,15 @@
             <option value="practice_lip">Practice</option>
           </select>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-2">
+          <label class="form-label">Difficulty</label>
+          <select class="form-select" id="activityDifficulty">
+            <option value="beginner">Beginner</option>
+            <option value="intermediate">Intermediate</option>
+            <option value="advanced">Advanced</option>
+          </select>
+        </div>
+        <div class="col-md-2">
           <label class="form-label">Order</label>
           <input class="form-control" type="number" id="activityOrder" value="{{ next_order }}" min="0">
         </div>
@@ -66,11 +74,7 @@
                 <label class="form-label">Bank title</label>
                 <input class="form-control" id="bankTitle" placeholder="e.g. Unit 1 Quiz Bank">
               </div>
-              <div class="col-md-3">
-                <label class="form-label">Difficulty</label>
-                <input class="form-control" type="number" id="bankDifficulty" value="1" min="1" max="5">
-              </div>
-              <div class="col-md-3">
+              <div class="col-md-6">
                 <label class="form-label">Tags (comma separated)</label>
                 <input class="form-control" id="bankTags" placeholder="listening,phonetics">
               </div>
@@ -136,15 +140,13 @@
         <textarea class="form-control question-stem" rows="2" placeholder="Enter the question"></textarea>
       </div>
       <div class="mb-2">
-        <label class="form-label">Options <span class="text-muted small">(one per line)</span></label>
-        <textarea class="form-control question-options" rows="3" placeholder="Option A\nOption B\nOption C"></textarea>
+        <label class="form-label">Options</label>
+        <div class="option-list"></div>
+        <button class="btn btn-sm btn-outline-secondary mt-2 add-option" type="button">Add another option</button>
+        <div class="form-text">Use the radio selector to mark the correct option.</div>
       </div>
       <div class="row g-3">
         <div class="col-md-8">
-          <label class="form-label">Correct answers <span class="text-muted small">(comma separated)</span></label>
-          <input class="form-control question-answers" placeholder="Option A, Option C">
-        </div>
-        <div class="col-md-4">
           <label class="form-label">Question video <span class="text-muted small">(MP4, MOV, etc.)</span></label>
           <input class="form-control question-media" type="file" name="questionMedia" accept="video/*" required>
         </div>
@@ -213,6 +215,7 @@
       title: '',
       type: 'quiz',
       order: {{ next_order }},
+      difficultyLevel: 'beginner',
       scoring: { maxScore: 100, passingScore: 60 },
       questionBank: { title: '', difficulty: 1, tags: [], description: '' },
       questions: [],
