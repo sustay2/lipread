@@ -284,16 +284,29 @@ class ContentApiService {
         .orderBy('order')
         .get();
 
-    return snap.docs.map((doc) {
+    final mapped = <Map<String, dynamic>>[];
+    for (final doc in snap.docs) {
       final data = doc.data();
-      final embedded = data['data'];
-      return {
+      final embedded = _asMap(data['data']);
+      final resolved = embedded ?? _asMap(data['resolvedQuestion']);
+
+      Map<String, dynamic>? bankQuestion;
+      final bankId = data['bankId'] as String?;
+      final questionId = data['questionId'] as String?;
+      if (resolved == null && bankId != null && questionId != null) {
+        bankQuestion = await _fetchQuestionFromBank(bankId, questionId);
+      }
+
+      mapped.add({
         ...data,
         'id': doc.id,
         'order': data['order'] ?? 0,
-        'resolvedQuestion': embedded is Map<String, dynamic> ? embedded : data['resolvedQuestion'],
-      };
-    }).toList();
+        'data': embedded ?? bankQuestion ?? resolved,
+        'resolvedQuestion': resolved ?? bankQuestion ?? embedded,
+      });
+    }
+
+    return mapped;
   }
 
   Future<List<Map<String, dynamic>>> _loadDictationItems(
@@ -389,5 +402,30 @@ class ContentApiService {
       }
     }
     return null;
+  }
+
+  Map<String, dynamic>? _asMap(Object? value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> _fetchQuestionFromBank(
+    String bankId,
+    String questionId,
+  ) async {
+    try {
+      final doc = await _db
+          .collection('question_banks')
+          .doc(bankId)
+          .collection('questions')
+          .doc(questionId)
+          .get();
+      if (!doc.exists) return null;
+      return doc.data();
+    } catch (e) {
+      debugPrint('Failed to fetch bank question: $e');
+      return null;
+    }
   }
 }

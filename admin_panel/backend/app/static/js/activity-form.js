@@ -729,11 +729,21 @@
       const selectedDifficulty =
         difficultySelect?.value || "beginner";
 
+      const config = {
+        ...(initial.config || {}),
+        difficultyLevel: selectedDifficulty,
+      };
+
+      if (type === "quiz") {
+        config.embedQuestions = true;
+      }
+
       const payload = {
         title: readStr("title"),
         type,
         order: readNum("order", 0),
         difficultyLevel: selectedDifficulty,
+        config,
         scoring: {
           maxScore: readNum("maxScore", 100),
           passingScore: readNum("passingScore", 60),
