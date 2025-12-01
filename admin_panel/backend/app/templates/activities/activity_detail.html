@@ -27,6 +27,59 @@
   </div>
 </div>
 
+{% if activity.type == 'dictation' %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="fw-semibold mb-0">Dictation items</h6>
+      <span class="badge bg-secondary">{{ activity.dictationItems | length }} total</span>
+    </div>
+    {% if activity.dictationItems %}
+    <div class="list-group list-group-flush">
+      {% for item in activity.dictationItems %}
+      <div class="list-group-item">
+        <div class="d-flex justify-content-between">
+          <div>
+            <div class="fw-semibold">{{ item.correctText }}</div>
+            <div class="text-muted small">Media: {{ item.mediaId }}{% if item.hints %} • Hints: {{ item.hints }}{% endif %}</div>
+          </div>
+          <div class="text-muted small">Order {{ item.order }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-muted mb-0">No dictation items attached.</p>
+    {% endif %}
+  </div>
+</div>
+{% elif activity.type == 'practice_lip' %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="fw-semibold mb-0">Practice items</h6>
+      <span class="badge bg-secondary">{{ activity.practiceItems | length }} total</span>
+    </div>
+    {% if activity.practiceItems %}
+    <div class="list-group list-group-flush">
+      {% for item in activity.practiceItems %}
+      <div class="list-group-item">
+        <div class="d-flex justify-content-between">
+          <div>
+            <div class="fw-semibold">{{ item.description }}</div>
+            <div class="text-muted small">Media: {{ item.mediaId }}{% if item.targetWord %} • Target: {{ item.targetWord }}{% endif %}</div>
+          </div>
+          <div class="text-muted small">Order {{ item.order }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-muted mb-0">No practice items attached.</p>
+    {% endif %}
+  </div>
+</div>
+{% else %}
 <div class="card shadow-sm">
   <div class="card-body">
     <div class="d-flex justify-content-between align-items-center mb-3">
@@ -65,4 +118,5 @@
     {% endif %}
   </div>
 </div>
+{% endif %}
 {% endblock %}
