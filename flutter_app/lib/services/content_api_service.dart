@@ -13,7 +13,7 @@ class ContentApiService {
   final http.Client _client;
 
   Future<List<Course>> fetchCourses({String? query}) async {
-    final uri = Uri.parse('$kApiBase/admin/courses').replace(
+    final uri = Uri.parse('$kApiBase/api/courses').replace(
       queryParameters: {
         if (query != null && query.isNotEmpty) 'q': query,
       },
@@ -39,9 +39,7 @@ class ContentApiService {
   }
 
   Future<List<Module>> fetchModules(String courseId) async {
-    final uri = Uri.parse('$kApiBase/admin/modules').replace(
-      queryParameters: {'courseId': courseId},
-    );
+    final uri = Uri.parse('$kApiBase/api/courses/$courseId/modules');
     final res = await _get(uri);
     final decoded = jsonDecode(res.body);
     final list = decoded is List ? decoded : <dynamic>[];
@@ -58,9 +56,7 @@ class ContentApiService {
   }
 
   Future<List<Lesson>> fetchLessons(String courseId, String moduleId) async {
-    final uri = Uri.parse('$kApiBase/admin/lessons').replace(
-      queryParameters: {'courseId': courseId, 'moduleId': moduleId},
-    );
+    final uri = Uri.parse('$kApiBase/api/modules/$moduleId/lessons');
     final res = await _get(uri);
     final decoded = jsonDecode(res.body);
     final list = decoded is List ? decoded : <dynamic>[];
@@ -85,13 +81,7 @@ class ContentApiService {
     String moduleId,
     String lessonId,
   ) async {
-    final uri = Uri.parse('$kApiBase/admin/activities').replace(
-      queryParameters: {
-        'courseId': courseId,
-        'moduleId': moduleId,
-        'lessonId': lessonId,
-      },
-    );
+    final uri = Uri.parse('$kApiBase/api/lessons/$lessonId/activities');
     final res = await _get(uri);
     final decoded = jsonDecode(res.body);
     final items = (decoded is Map && decoded['items'] is List)
@@ -109,7 +99,7 @@ class ContentApiService {
     String lessonId,
     String activityId,
   ) async {
-    final uri = Uri.parse('$kApiBase/admin/activities/$activityId').replace(
+    final uri = Uri.parse('$kApiBase/api/activities/$activityId').replace(
       queryParameters: {
         'courseId': courseId,
         'moduleId': moduleId,

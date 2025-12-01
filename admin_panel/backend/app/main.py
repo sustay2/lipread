@@ -24,6 +24,7 @@ from app.routers import (
     ui,
     admin_auth,
     admin_profile,
+    public_api,
 )
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -73,6 +74,9 @@ app.include_router(admin_profile.router, tags=["admin-profile"])
 
 # Public/health
 app.include_router(health.router, prefix="/health", tags=["health"])
+
+# Public/mobile API
+app.include_router(public_api.router, prefix="/api", tags=["public-api"])
 
 
 # Admin routers
