@@ -25,6 +25,7 @@ from app.routers import (
     admin_auth,
     admin_profile,
     public_api,
+    billing,
 )
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -77,6 +78,7 @@ app.include_router(health.router, prefix="/health", tags=["health"])
 
 # Public/mobile API
 app.include_router(public_api.router, prefix="/api", tags=["public-api"])
+app.include_router(billing.router, tags=["billing"])
 
 
 # Admin routers
