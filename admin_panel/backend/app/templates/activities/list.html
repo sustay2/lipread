@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Activities | LipRead Admin{% endblock %}
+{% block header %}Activities for {{ lesson.title if lesson else 'Lesson' }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h5 class="mb-1">Activities</h5>
+    <p class="text-muted mb-0">Attach question bank items with activity-level scoring only.</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="/courses/{{ course.id }}/modules/{{ module.id }}/lessons">Back to lessons</a>
+    <a class="btn btn-primary" href="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities/new">New activity</a>
+  </div>
+</div>
+{% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    {% if activities %}
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>Type</th>
+            <th class="text-center">Order</th>
+            <th class="text-center">Items</th>
+            <th>Scoring</th>
+            <th class="text-end">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for activity in activities %}
+          <tr>
+            <td class="fw-semibold">{{ activity.title }}</td>
+            <td class="text-capitalize">{{ activity.type|replace('_',' ') }}</td>
+            <td class="text-center">{{ activity.order }}</td>
+            <td class="text-center">{{ activity.itemCount }}</td>
+            <td>
+              <div class="small text-muted">Max: {{ activity.scoring.maxScore or 0 }}</div>
+              <div class="small text-muted">Pass: {{ activity.scoring.passingScore or 0 }}</div>
+            </td>
+            <td class="text-end">
+              <div class="btn-group">
+                <a class="btn btn-sm btn-outline-primary" href="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities/{{ activity.id }}">View</a>
+                <a class="btn btn-sm btn-outline-secondary" href="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities/{{ activity.id }}/edit">Edit</a>
+                <form method="post" action="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities/{{ activity.id }}/delete" onsubmit="return confirm('Delete activity?')">
+                  <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-muted mb-0">No activities yet. Create one to start attaching questions.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

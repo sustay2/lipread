@@ -1,44 +1,30 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Dict, Any, List, Optional
-from firebase_admin import firestore as admin_fs
-from google.cloud.firestore_v1 import SERVER_TIMESTAMP
+from typing import Any, Dict, List, Optional
 
-from app.deps.auth import require_roles, get_current_user
-from app.core.config import settings
+from fastapi import APIRouter, Depends, HTTPException, Query
+from app.deps.auth import get_current_user, require_roles
+from app.services.activities import activity_service
+from app.services.question_banks import question_bank_service
 
 router = APIRouter()
-db = admin_fs.client()
-
-def activity_doc_to_payload(doc_snap) -> Dict[str, Any]:
-    data = doc_snap.to_dict() or {}
-    data_out = {
-        "id": doc_snap.id,
-        "type": data.get("type"),
-        "title": data.get("title"),
-        "order": data.get("order", 0),
-        "abVariant": data.get("abVariant"),
-        "config": data.get("config", {}),
-        "scoring": data.get("scoring", {}),
-        "createdAt": data.get("createdAt"),
-        "updatedAt": data.get("updatedAt"),
-    }
-    return data_out
 
 
-def _lesson_activities_collection(
-    course_id: str,
-    module_id: str,
-    lesson_id: str,
-):
-    return (
-        db.collection("courses")
-          .document(course_id)
-          .collection("modules")
-          .document(module_id)
-          .collection("lessons")
-          .document(lesson_id)
-          .collection("activities")
-    )
+def _validate_scoring(scoring: Dict[str, Any], default_max: int = 100) -> Dict[str, Any]:
+    base_max = default_max if default_max is not None else 100
+    max_score = int(scoring.get("maxScore", base_max)) if scoring is not None else base_max
+    passing = int(scoring.get("passingScore", max_score))
+    weights = scoring.get("weights") or {"score": 1.0}
+    return {"maxScore": max_score, "passingScore": passing, "weights": weights}
+
+
+def _ensure_questions(bank_id: Optional[str], question_ids: List[str]):
+    if not bank_id:
+        raise HTTPException(400, "questionBankId is required when attaching questions")
+    missing: List[str] = []
+    for qid in question_ids:
+        if not question_bank_service.get_question(bank_id, qid):
+            missing.append(qid)
+    if missing:
+        raise HTTPException(404, f"Questions not found in bank {bank_id}: {', '.join(missing)}")
 
 
 @router.get(
@@ -52,11 +38,42 @@ async def list_activities(
     limit: int = Query(100, ge=1, le=500),
     user=Depends(get_current_user),
 ):
-    col_ref = _lesson_activities_collection(courseId, moduleId, lessonId)
-    snaps = list(col_ref.order_by("order").limit(limit).stream())
+    items = activity_service.list_activities(courseId, moduleId, lessonId)
+    items = sorted(items, key=lambda a: a.order)[:limit]
+    return {
+        "items": [
+            {
+                "id": a.id,
+                "title": a.title,
+                "type": a.type,
+                "order": a.order,
+                "config": a.config,
+                "scoring": a.scoring,
+                "itemCount": a.itemCount,
+                "createdAt": a.createdAt,
+                "updatedAt": a.updatedAt,
+            }
+            for a in items
+        ],
+        "next_cursor": None,
+    }
 
-    items = [activity_doc_to_payload(s) for s in snaps]
-    return {"items": items, "next_cursor": None}
+
+@router.get(
+    "/{activityId}",
+    dependencies=[Depends(require_roles(["admin", "content_editor"]))],
+)
+async def get_activity(
+    activityId: str,
+    courseId: str = Query(...),
+    moduleId: str = Query(...),
+    lessonId: str = Query(...),
+    user=Depends(get_current_user),
+):
+    activity = activity_service.get_activity(courseId, moduleId, lessonId, activityId)
+    if not activity:
+        raise HTTPException(404, "Activity not found")
+    return activity
 
 
 @router.post(
@@ -70,83 +87,205 @@ async def create_activity(
     lessonId: str = Query(..., description="lessonId (required)"),
     user=Depends(get_current_user),
 ):
-    activity_type = body.get("type")
+    activity_type = (body.get("type") or "").strip()
     if not activity_type:
         raise HTTPException(400, "Missing field 'type'.")
 
-    title = body.get("title", "").strip()
-    order_val = body.get("order", 0)
-    ab_variant = body.get("abVariant")
-    config = body.get("config", {})
-    scoring = body.get("scoring", {})
+    title = (body.get("title") or activity_type).strip()
+    order_val = (
+        int(body.get("order"))
+        if body.get("order") is not None
+        else activity_service.next_order(courseId, moduleId, lessonId)
+    )
+    config = dict(body.get("config") or {})
+    if body.get("difficultyLevel"):
+        config["difficultyLevel"] = body.get("difficultyLevel")
+    embed_questions = bool(config.get("embedQuestions") or body.get("embedQuestions", False))
 
-    if activity_type == "quiz":
-        if "bankId" not in config:
-            raise HTTPException(400, "Quiz activity requires config.bankId")
-        if "numQuestions" not in config:
-            raise HTTPException(400, "Quiz activity requires config.numQuestions")
+    activity_id: Optional[str] = None
 
-    doc_ref = _lesson_activities_collection(courseId, moduleId, lessonId).document()
+    if activity_type == "dictation":
+        dict_items = body.get("dictationItems") or []
+        scoring = _validate_scoring(body.get("scoring") or {}, default_max=len(dict_items) or 100)
+        activity_id = activity_service.create_activity(
+            courseId,
+            moduleId,
+            lessonId,
+            title=title,
+            type=activity_type,
+            order=order_val,
+            scoring=scoring,
+            config=config,
+            dictation_items=dict_items,
+            ab_variant=body.get("abVariant"),
+            created_by=user["uid"],
+        )
+    elif activity_type == "practice_lip":
+        practice_items = body.get("practiceItems") or []
+        scoring = _validate_scoring(body.get("scoring") or {}, default_max=len(practice_items) or 100)
+        activity_id = activity_service.create_activity(
+            courseId,
+            moduleId,
+            lessonId,
+            title=title,
+            type=activity_type,
+            order=order_val,
+            scoring=scoring,
+            config=config,
+            practice_items=practice_items,
+            ab_variant=body.get("abVariant"),
+            created_by=user["uid"],
+        )
+    else:
+        bank_payload = body.get("questionBank") or {}
+        bank_title = (bank_payload.get("title") or body.get("questionBankTitle") or "").strip()
+        if not bank_title:
+            raise HTTPException(400, "Missing field 'questionBank.title'.")
+        bank_difficulty = int(bank_payload.get("difficulty") or body.get("questionBankDifficulty") or 1)
+        bank_tags = bank_payload.get("tags") or body.get("questionBankTags") or []
+        if isinstance(bank_tags, str):
+            bank_tags = [t.strip() for t in bank_tags.split(",") if t.strip()]
+        bank_description = (bank_payload.get("description") or body.get("questionBankDescription") or "").strip()
 
-    new_doc = {
-        "type": activity_type,
-        "title": title or None,
-        "order": int(order_val),
-        "abVariant": ab_variant or None,
-        "config": config,
-        "scoring": scoring,
-        "createdAt": SERVER_TIMESTAMP,
-        "updatedAt": SERVER_TIMESTAMP,
-        "lessonRef": {
-            "courseId": courseId,
-            "moduleId": moduleId,
-            "lessonId": lessonId,
-        },
-        "createdBy": user["uid"],
-    }
+        bank_id = question_bank_service.create_bank(
+            title=bank_title,
+            difficulty=bank_difficulty,
+            tags=bank_tags,
+            description=bank_description or None,
+            created_by=user["uid"],
+        )
+        config.pop("questionBankId", None)
+        created_questions = []
+        for q in body.get("questions") or []:
+            qid = question_bank_service.create_question(
+                bank_id,
+                stem=q.get("stem", ""),
+                options=q.get("options") or [],
+                answers=q.get("answers") or [],
+                answer_pattern=q.get("answerPattern"),
+                explanation=q.get("explanation"),
+                tags=q.get("tags") or [],
+                difficulty=int(q.get("difficulty") or 1),
+                media_id=q.get("mediaId"),
+                question_type=q.get("type", "mcq"),
+            )
+            created_questions.append(qid)
 
-    doc_ref.set(new_doc)
+        scoring = _validate_scoring(body.get("scoring") or {})
+        activity_id = activity_service.create_activity(
+            courseId,
+            moduleId,
+            lessonId,
+            title=title,
+            type=activity_type,
+            order=order_val,
+            scoring=scoring,
+            config=config,
+            question_bank_id=bank_id,
+            question_ids=created_questions,
+            embed_questions=embed_questions,
+            ab_variant=body.get("abVariant"),
+            created_by=user["uid"],
+        )
 
-    snap = doc_ref.get()
-    return activity_doc_to_payload(snap)
+    return activity_service.get_activity(courseId, moduleId, lessonId, activity_id)
 
-SUPPORTED_TYPES = {"quiz", "practice_lip", "dictation", "video_drill", "viseme_match", "mirror_practice"}
 
-def _validate_activity_payload(body: dict):
-    atype = (body.get("type") or "").lower()
-    if atype not in SUPPORTED_TYPES:
-        raise HTTPException(400, f"Unsupported activity type: {atype}")
+@router.put(
+    "/{activityId}",
+    dependencies=[Depends(require_roles(["admin", "content_editor"]))],
+)
+async def update_activity(
+    activityId: str,
+    body: Dict[str, Any],
+    courseId: str = Query(..., description="courseId (required)"),
+    moduleId: str = Query(..., description="moduleId (required)"),
+    lessonId: str = Query(..., description="lessonId (required)"),
+    user=Depends(get_current_user),
+):
+    activity_type = (body.get("type") or "").strip()
+    if not activity_type:
+        raise HTTPException(400, "Missing field 'type'.")
 
-    cfg = body.get("config") or {}
-    scoring = body.get("scoring") or {}
+    title = (body.get("title") or activity_type).strip()
+    order_val = int(body.get("order") or 0)
+    config = body.get("config") or {}
+    if body.get("difficultyLevel"):
+        config["difficultyLevel"] = body.get("difficultyLevel")
+    embed_questions = bool(config.get("embedQuestions") or body.get("embedQuestions", False))
 
-    if atype == "quiz":
-        bank_id = cfg.get("bankId") or cfg.get("questionBankId")
-        if not bank_id:
-            raise HTTPException(400, "quiz.config.bankId (or questionBankId) is required")
-        if int(cfg.get("numQuestions", 0)) <= 0:
-            raise HTTPException(400, "quiz.config.numQuestions must be > 0")
+    updated = False
+    if activity_type == "dictation":
+        dict_items = body.get("dictationItems") or []
+        scoring = _validate_scoring(body.get("scoring") or {}, default_max=len(dict_items) or 100)
+        updated = activity_service.update_activity(
+            courseId,
+            moduleId,
+            lessonId,
+            activityId,
+            title=title,
+            type=activity_type,
+            order=order_val,
+            scoring=scoring,
+            config=config,
+            dictation_items=dict_items,
+            ab_variant=body.get("abVariant"),
+        )
+    elif activity_type == "practice_lip":
+        practice_items = body.get("practiceItems") or []
+        scoring = _validate_scoring(body.get("scoring") or {}, default_max=len(practice_items) or 100)
+        updated = activity_service.update_activity(
+            courseId,
+            moduleId,
+            lessonId,
+            activityId,
+            title=title,
+            type=activity_type,
+            order=order_val,
+            scoring=scoring,
+            config=config,
+            practice_items=practice_items,
+            ab_variant=body.get("abVariant"),
+        )
+    else:
+        bank_id = config.get("questionBankId") or body.get("questionBankId")
+        question_ids = body.get("questionIds") or []
+        if question_ids:
+            _ensure_questions(bank_id, question_ids)
+        scoring = _validate_scoring(body.get("scoring") or {})
+        updated = activity_service.update_activity(
+            courseId,
+            moduleId,
+            lessonId,
+            activityId,
+            title=title,
+            type=activity_type,
+            order=order_val,
+            scoring=scoring,
+            config=config,
+            question_bank_id=bank_id,
+            question_ids=question_ids,
+            embed_questions=embed_questions,
+            ab_variant=body.get("abVariant"),
+        )
+    if not updated:
+        raise HTTPException(404, "Activity not found")
 
-    elif atype == "practice_lip":
-        if not (cfg.get("videoId") or cfg.get("mediaPath")):
-            raise HTTPException(400, "practice_lip.config.videoId or mediaPath is required")
-        if not (cfg.get("expected") or cfg.get("expectedPhones")):
-            raise HTTPException(400, "practice_lip.config.expected (text) or expectedPhones is required")
-        th = cfg.get("thresholds") or {}
-        cfg["thresholds"] = {
-            "cerMax": float(th.get("cerMax", 0.35)),
-            "werMax": float(th.get("werMax", 0.45)),
-            "visemeScoreMin": float(th.get("visemeScoreMin", 0.55)),
-        }
-        body["config"] = cfg
+    return activity_service.get_activity(courseId, moduleId, lessonId, activityId)
 
-    elif atype == "dictation":
-        if not (cfg.get("videoId") or cfg.get("mediaPath")):
-            raise HTTPException(400, "dictation.config.videoId or mediaPath is required")
-        if not cfg.get("answers") and not cfg.get("answerPattern"):
-            raise HTTPException(400, "dictation.config.answers[] or answerPattern is required")
-        cfg["maxChars"] = int(cfg.get("maxChars", 80))
-        body["config"] = cfg
 
-    weights = (scoring.get("weights") or {}) or {"score": 1.0}
-    body["scoring"] = {"weights": weights, **({k: v for k, v in scoring.items() if k != "weights"})}
+@router.delete(
+    "/{activityId}",
+    dependencies=[Depends(require_roles(["admin", "content_editor"]))],
+)
+async def delete_activity(
+    activityId: str,
+    courseId: str = Query(..., description="courseId (required)"),
+    moduleId: str = Query(..., description="moduleId (required)"),
+    lessonId: str = Query(..., description="lessonId (required)"),
+    user=Depends(get_current_user),
+):
+    ok = activity_service.delete_activity(courseId, moduleId, lessonId, activityId)
+    if not ok:
+        raise HTTPException(404, "Activity not found")
+    return {"status": "deleted"}

@@ -1,5 +1,6 @@
+from typing import Any, Dict, List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Dict, Any, List, Optional
 from firebase_admin import firestore as admin_fs
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
@@ -20,6 +21,9 @@ def _course_payload(doc_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         "description": data.get("description"),
         "tags": data.get("tags", []),
         "thumbnailPath": data.get("thumbnailPath"),
+        "thumbnailUrl": data.get("thumbnailUrl"),
+        "thumbnail": data.get("thumbnail"),
+        "mediaId": data.get("mediaId"),
         "published": data.get("published", False),
         "version": data.get("version", 1),
         "createdBy": data.get("createdBy"),

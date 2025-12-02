@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block title %}Dashboard | LipRead Admin{% endblock %}
+{% block header %}General Dashboard{% endblock %}
+{% block content %}
+<div class="row g-4">
+    <div class="col-xl-3 col-md-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-muted">Total Users</span>
+                    <i class="bi bi-people fs-4 text-primary"></i>
+                </div>
+                <h3 class="fw-bold">{{ kpis.total_users }}</h3>
+                <div class="progress mt-3" style="height:6px;">
+                    <div class="progress-bar bg-primary" role="progressbar" style="width: 75%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-muted">Published Courses</span>
+                    <i class="bi bi-journal-text fs-4 text-success"></i>
+                </div>
+                <h3 class="fw-bold">{{ kpis.total_courses }}</h3>
+                <p class="text-muted small mb-0">Modules: {{ kpis.total_modules }}</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-muted">Content Library</span>
+                    <i class="bi bi-collection-play fs-4 text-warning"></i>
+                </div>
+                <h3 class="fw-bold">{{ kpis.total_videos }}</h3>
+                <p class="text-muted small mb-0">Videos available</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-muted">Daily Active Users</span>
+                    <i class="bi bi-graph-up-arrow fs-4 text-danger"></i>
+                </div>
+                <h3 class="fw-bold">{{ engagement.daily_active }}</h3>
+                <div class="progress mt-3" style="height:6px;">
+                    <div class="progress-bar bg-danger" role="progressbar" style="width: 55%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mt-3">
+    <div class="col-lg-8">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">Engagement Overview</h6>
+                <span class="badge bg-primary-soft text-primary">Week {{ engagement.weekly_start }}</span>
+            </div>
+            <div class="card-body">
+                <div class="row text-center mb-4">
+                    <div class="col">
+                        <p class="text-muted mb-1">Avg Completion</p>
+                        <h4 class="fw-bold">{{ engagement.avg_completion }}%</h4>
+                    </div>
+                    <div class="col">
+                        <p class="text-muted mb-1">Avg Quiz Score</p>
+                        <h4 class="fw-bold">{{ engagement.avg_quiz_score }}%</h4>
+                    </div>
+                    <div class="col">
+                        <p class="text-muted mb-1">Avg Streak</p>
+                        <h4 class="fw-bold">{{ engagement.avg_streak }} days</h4>
+                    </div>
+                </div>
+                <canvas id="engagementChart" height="140"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">Recent Users</h6>
+                <a href="/users" class="text-primary small">View all</a>
+            </div>
+            <div class="card-body">
+                {% for user in recent_users %}
+                <div class="d-flex align-items-center mb-3">
+                    <div class="avatar bg-primary text-white me-3">{{ user.displayName[:1] if user.displayName else 'U' }}</div>
+                    <div>
+                        <div class="fw-semibold">{{ user.displayName or 'Unknown' }}</div>
+                        <div class="text-muted small">{{ user.email }}</div>
+                    </div>
+                    <span class="badge bg-soft-primary text-primary ms-auto">{{ user.role|capitalize }}</span>
+                </div>
+                {% else %}
+                <p class="text-muted small mb-0">No users found.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mt-3">
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">Courses Snapshot</h6>
+                <a href="/courses" class="btn btn-sm btn-outline-primary">Manage Courses</a>
+            </div>
+            <div class="card-body">
+                <div class="row g-4">
+                    {% for course in courses %}
+                    <div class="col-xl-3 col-md-6">
+                        <div class="card h-100 border-0 shadow-sm">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <h6 class="fw-semibold mb-0">{{ course.title }}</h6>
+                                    {% if course.published %}
+                                        <span class="badge bg-success">Published</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">Draft</span>
+                                    {% endif %}
+                                </div>
+                                <p class="text-muted small">{{ course.description }}</p>
+                                <div class="d-flex justify-content-between text-muted small">
+                                    <span>{{ course.modules|length }} modules</span>
+                                    <span>{{ course.lesson_count }} lessons</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <p class="text-muted">No courses available.</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+    const chartCtx = document.getElementById('engagementChart');
+    if (chartCtx) {
+        const chartData = {{ chart | tojson }};
+        new Chart(chartCtx, {
+            type: 'bar',
+            data: {
+                labels: chartData.labels,
+                datasets: [
+                    {
+                        type: 'line',
+                        label: 'Daily Active Users',
+                        data: chartData.dau,
+                        borderColor: '#0d6efd',
+                        backgroundColor: 'rgba(13,110,253,0.2)',
+                        borderWidth: 2,
+                        yAxisID: 'y',
+                    },
+                    {
+                        type: 'bar',
+                        label: 'Course Completions',
+                        data: chartData.completions,
+                        backgroundColor: 'rgba(25, 135, 84, 0.4)',
+                        borderColor: '#198754',
+                        borderWidth: 1,
+                        yAxisID: 'y1',
+                    },
+                    {
+                        type: 'line',
+                        label: 'Quiz Accuracy %',
+                        data: chartData.quiz_accuracy,
+                        borderColor: '#6f42c1',
+                        backgroundColor: 'rgba(111,66,193,0.15)',
+                        yAxisID: 'y2',
+                        borderWidth: 2,
+                        tension: 0.3,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                interaction: { mode: 'index', intersect: false },
+                stacked: false,
+                scales: {
+                    y: { type: 'linear', position: 'left', title: { display: true, text: 'Users' }, grid: { drawOnChartArea: false } },
+                    y1: { type: 'linear', position: 'right', title: { display: true, text: 'Completions' }, grid: { drawOnChartArea: false } },
+                    y2: { type: 'linear', position: 'right', display: false }
+                }
+            }
+        });
+    }
+</script>
+{% endblock %}

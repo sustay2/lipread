@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if course else 'Create' }} Course | LipRead Admin{% endblock %}
+{% block header %}{{ 'Edit' if course else 'Create' }} Course{% endblock %}
+{% block content %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" enctype="multipart/form-data" action="{% if course %}/courses/{{ course.id }}/update{% else %}/courses{% endif %}">
+      <div class="row g-3">
+        <div class="col-md-8">
+          <label class="form-label">Title</label>
+          <input type="text" name="title" value="{{ course.title if course else '' }}" class="form-control" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Difficulty</label>
+          <select name="difficulty" class="form-select">
+            {% set current = course.difficulty if course else 'beginner' %}
+            <option value="beginner" {% if current == 'beginner' %}selected{% endif %}>Beginner</option>
+            <option value="intermediate" {% if current == 'intermediate' %}selected{% endif %}>Intermediate</option>
+            <option value="advanced" {% if current == 'advanced' %}selected{% endif %}>Advanced</option>
+          </select>
+        </div>
+        <div class="col-12">
+          <label class="form-label">Description</label>
+          <textarea name="description" class="form-control" rows="3">{{ course.description if course else '' }}</textarea>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Tags (comma separated)</label>
+          <input type="text" name="tags" class="form-control" value="{{ course.tags|join(', ') if course else '' }}">
+        </div>
+        <div class="col-md-3 d-flex align-items-center">
+          <div class="form-check form-switch mt-4">
+            <input class="form-check-input" type="checkbox" role="switch" name="published" value="1" {% if course and course.published %}checked{% endif %}>
+            <label class="form-check-label">Published</label>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Thumbnail (image)</label>
+          <input type="file" accept="image/*" name="thumbnail" class="form-control" {% if course and course.mediaId %}{% else %}{% endif %}>
+          {% if thumbnail %}
+          <div class="mt-2">
+            <p class="text-muted small mb-1">Current thumbnail</p>
+            <img src="{{ thumbnail.url }}" class="img-fluid rounded" alt="Course thumbnail">
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      <div class="mt-4 d-flex gap-2">
+        <button class="btn btn-primary" type="submit">Save</button>
+        <a class="btn btn-outline-secondary" href="/courses">Back</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

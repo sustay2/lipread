@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Activity Detail | LipRead Admin{% endblock %}
+{% block header %}Activity Detail{% endblock %}
+{% block content %}
+<div class="mb-3 d-flex justify-content-between align-items-center">
+  <a class="text-decoration-none" href="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities">&larr; Back to activities</a>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities/{{ activity.id }}/edit">Edit</a>
+    <form method="post" action="/courses/{{ course.id }}/modules/{{ module.id }}/lessons/{{ lesson.id }}/activities/{{ activity.id }}/delete" onsubmit="return confirm('Delete activity?')">
+      <button class="btn btn-outline-danger" type="submit">Delete</button>
+    </form>
+  </div>
+</div>
+{% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <div class="d-flex justify-content-between">
+      <div>
+        <h5 class="fw-semibold mb-1">{{ activity.title }}</h5>
+        <p class="text-muted mb-0">Type: {{ activity.type }} • Order {{ activity.order }}</p>
+      </div>
+      <div class="text-end">
+        <div class="small text-muted">Max score: {{ activity.scoring.maxScore or 0 }}</div>
+        <div class="small text-muted">Passing score: {{ activity.scoring.passingScore or 0 }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if activity.type == 'dictation' %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="fw-semibold mb-0">Dictation items</h6>
+      <span class="badge bg-secondary">{{ activity.dictationItems | length }} total</span>
+    </div>
+    {% if activity.dictationItems %}
+    <div class="list-group list-group-flush">
+      {% for item in activity.dictationItems %}
+      <div class="list-group-item">
+        <div class="d-flex justify-content-between">
+          <div>
+            <div class="fw-semibold">{{ item.correctText }}</div>
+            <div class="text-muted small">Media: {{ item.mediaId }}{% if item.hints %} • Hints: {{ item.hints }}{% endif %}</div>
+          </div>
+          <div class="text-muted small">Order {{ item.order }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-muted mb-0">No dictation items attached.</p>
+    {% endif %}
+  </div>
+</div>
+{% elif activity.type == 'practice_lip' %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="fw-semibold mb-0">Practice items</h6>
+      <span class="badge bg-secondary">{{ activity.practiceItems | length }} total</span>
+    </div>
+    {% if activity.practiceItems %}
+    <div class="list-group list-group-flush">
+      {% for item in activity.practiceItems %}
+      <div class="list-group-item">
+        <div class="d-flex justify-content-between">
+          <div>
+            <div class="fw-semibold">{{ item.description }}</div>
+            <div class="text-muted small">Media: {{ item.mediaId }}{% if item.targetWord %} • Target: {{ item.targetWord }}{% endif %}</div>
+          </div>
+          <div class="text-muted small">Order {{ item.order }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-muted mb-0">No practice items attached.</p>
+    {% endif %}
+  </div>
+</div>
+{% else %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="fw-semibold mb-0">Attached questions</h6>
+      <span class="badge bg-secondary">{{ activity.questions | length }} total</span>
+    </div>
+    {% if activity.questions %}
+    <div class="list-group list-group-flush">
+      {% for q in activity.questions %}
+      {% set resolved = q.resolvedQuestion or q.data %}
+      <div class="list-group-item">
+        <div class="d-flex justify-content-between">
+          <div>
+            <div class="fw-semibold">{{ resolved.stem if resolved else 'Unknown question' }}</div>
+            <div class="text-muted small">Type: {{ resolved.type if resolved else 'unknown' }} • Bank: {{ q.bankId }} • Mode: {{ q.mode }}</div>
+          </div>
+          <div class="text-muted small">Order {{ q.order }}</div>
+        </div>
+        {% if resolved and resolved.options %}
+        <ul class="mt-2 mb-0">
+          {% for opt in resolved.options %}
+          <li class="small">{{ opt }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+        {% if resolved and resolved.answers %}
+        <div class="small text-success mt-1">Answers: {{ resolved.answers|join(', ') }}</div>
+        {% elif resolved and resolved.answerPattern %}
+        <div class="small text-success mt-1">Pattern: {{ resolved.answerPattern }}</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-muted mb-0">No questions attached. Edit this activity to select questions from a bank.</p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../common/theme/app_colors.dart';
+import '../../models/content_models.dart';
+import '../../services/content_api_service.dart';
 import '../../services/home_metrics_service.dart';
 // IMPORTANT: use the same URL normalizer you use elsewhere
 import '../../common/utils/media_utils.dart'; // normalizeMediaUrl
@@ -24,6 +26,390 @@ class _ActivityIds {
     final parts = ref.split('|');
     if (parts.length != 4) return null;
     return _ActivityIds(parts[0], parts[1], parts[2], parts[3]);
+  }
+}
+
+//
+// 4) DICTATION
+//
+
+class DictationActivityScreen extends StatefulWidget {
+  final String activityRef; // courseId|moduleId|lessonId|activityId
+  const DictationActivityScreen({super.key, required this.activityRef});
+
+  @override
+  State<DictationActivityScreen> createState() => _DictationActivityScreenState();
+}
+
+class _DictationActivityScreenState extends State<DictationActivityScreen> {
+  final ContentApiService _contentApi = ContentApiService();
+  final Map<String, TextEditingController> _controllers = {};
+  bool _submitting = false;
+  String? _error;
+  late final Future<ActivityDetail> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  Future<ActivityDetail> _load() {
+    final ids = _ActivityIds.fromRef(widget.activityRef);
+    if (ids == null) throw Exception('Invalid activity reference');
+    return _contentApi.fetchActivityDetail(
+      ids.courseId,
+      ids.moduleId,
+      ids.lessonId,
+      ids.activityId,
+    );
+  }
+
+  Future<void> _submit(ActivityDetail detail) async {
+    if (_submitting) return;
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final total = detail.dictationItems.length;
+    int correct = 0;
+    for (final item in detail.dictationItems) {
+      final resp = _controllers[item.id]?.text.trim().toLowerCase() ?? '';
+      final expected = item.correctText.trim().toLowerCase();
+      if (resp.isNotEmpty && resp == expected) correct++;
+    }
+
+    final scorePct = total == 0 ? 0 : ((correct / total) * 100).round();
+
+    if (uid != null) {
+      await HomeMetricsService.onActivityCompleted(uid);
+      await HomeMetricsService.onAttemptSubmitted(uid);
+    }
+
+    if (!mounted) return;
+    setState(() => _submitting = false);
+
+    showModalBottomSheet(
+      context: context,
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Dictation submitted',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '$correct / $total correct · $scorePct%',
+              style: const TextStyle(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Back to lesson'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    for (final c in _controllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        title: const Text('Dictation'),
+        backgroundColor: AppColors.background,
+        elevation: 0,
+      ),
+      body: FutureBuilder<ActivityDetail>(
+        future: _future,
+        builder: (context, snap) {
+          if (snap.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'Failed to load activity.\n${snap.error}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppColors.error),
+                ),
+              ),
+            );
+          }
+          if (!snap.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final detail = snap.data!;
+          final items = detail.dictationItems;
+
+          if (items.isEmpty) {
+            return const Center(
+              child: Text('No dictation items configured.'),
+            );
+          }
+
+          for (final item in items) {
+            _controllers.putIfAbsent(item.id, () => TextEditingController());
+          }
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ...items.map((item) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(14),
+                    decoration: _cardDecor(),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Prompt ${item.order + 1}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        _ActivityMedia(
+                          mediaId: item.mediaId,
+                          fallbackLabel: item.mediaId,
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: _controllers[item.id],
+                          decoration: InputDecoration(
+                            labelText: 'Type what you hear',
+                            hintText: item.hints ?? 'Enter transcript',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+                if (_error != null) ...[
+                  Text(
+                    _error!,
+                    style:
+                        const TextStyle(color: AppColors.error, fontSize: 12),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: _submitting ? null : () => _submit(detail),
+                    child: _submitting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text('Submit answers'),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+//
+// 5) PRACTICE LIP
+//
+
+class PracticeActivityScreen extends StatefulWidget {
+  final String activityRef;
+  const PracticeActivityScreen({super.key, required this.activityRef});
+
+  @override
+  State<PracticeActivityScreen> createState() => _PracticeActivityScreenState();
+}
+
+class _PracticeActivityScreenState extends State<PracticeActivityScreen> {
+  final ContentApiService _contentApi = ContentApiService();
+  bool _submitting = false;
+  String? _error;
+  late final Future<ActivityDetail> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  Future<ActivityDetail> _load() {
+    final ids = _ActivityIds.fromRef(widget.activityRef);
+    if (ids == null) throw Exception('Invalid activity reference');
+    return _contentApi.fetchActivityDetail(
+      ids.courseId,
+      ids.moduleId,
+      ids.lessonId,
+      ids.activityId,
+    );
+  }
+
+  Future<void> _complete(ActivityDetail detail) async {
+    if (_submitting) return;
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      await HomeMetricsService.onActivityCompleted(uid);
+      await HomeMetricsService.onAttemptSubmitted(uid);
+    }
+
+    if (!mounted) return;
+    setState(() => _submitting = false);
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        title: const Text('Practice'),
+        backgroundColor: AppColors.background,
+        elevation: 0,
+      ),
+      body: FutureBuilder<ActivityDetail>(
+        future: _future,
+        builder: (context, snap) {
+          if (snap.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'Failed to load activity.\n${snap.error}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppColors.error),
+                ),
+              ),
+            );
+          }
+          if (!snap.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final detail = snap.data!;
+          final items = detail.practiceItems;
+
+          if (items.isEmpty) {
+            return const Center(child: Text('No practice items configured.'));
+          }
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ...items.map((item) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(14),
+                    decoration: _cardDecor(),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.targetWord?.isNotEmpty == true
+                              ? item.targetWord!
+                              : 'Practice item ${item.order + 1}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          item.description,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        _ActivityMedia(
+                          mediaId: item.mediaId,
+                          fallbackLabel: item.mediaId,
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+                if (_error != null) ...[
+                  Text(
+                    _error!,
+                    style:
+                        const TextStyle(color: AppColors.error, fontSize: 12),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: _submitting ? null : () => _complete(detail),
+                    child: _submitting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text('I’ve practiced'),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 }
 

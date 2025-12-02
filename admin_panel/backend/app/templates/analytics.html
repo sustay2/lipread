@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Analytics | LipRead Admin{% endblock %}
+{% block header %}Analytics Dashboard{% endblock %}
+{% block content %}
+<div class="row g-4 mb-3">
+    <div class="col-md-3">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <p class="text-muted mb-1">Total Users</p>
+                <h4 class="fw-bold">{{ kpis.total_users }}</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <p class="text-muted mb-1">Daily Active</p>
+                <h4 class="fw-bold">{{ engagement.daily_active }}</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <p class="text-muted mb-1">Avg Completion</p>
+                <h4 class="fw-bold">{{ engagement.avg_completion }}%</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <p class="text-muted mb-1">Avg Quiz Score</p>
+                <h4 class="fw-bold">{{ engagement.avg_quiz_score }}%</h4>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white border-0">
+        <h6 class="mb-0">Engagement Trends</h6>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-lg-8">
+                <canvas id="dauChart" height="140"></canvas>
+            </div>
+            <div class="col-lg-4">
+                <canvas id="quizChart" height="140"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="card shadow-sm">
+    <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">Filters</h6>
+        <button class="btn btn-sm btn-outline-primary" type="submit" form="analytics-filter">Apply Filters</button>
+    </div>
+    <div class="card-body">
+        <form class="row g-3" id="analytics-filter" method="get" action="/analytics">
+            <div class="col-md-4">
+                <label class="form-label text-muted">Date Range</label>
+                <div class="d-flex gap-2">
+                    <input type="date" class="form-control" name="start_date" value="{{ chart.labels[0] }}">
+                    <input type="date" class="form-control" name="end_date" value="{{ chart.labels[-1] }}">
+                </div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label text-muted">Course</label>
+                <input type="text" class="form-control" placeholder="Course ID or name">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label text-muted">User Type</label>
+                <select class="form-select">
+                    <option>All</option>
+                    <option>Subscribers</option>
+                    <option>Free tier</option>
+                </select>
+            </div>
+        </form>
+    </div>
+</div>
+<script>
+    const analyticsData = {{ chart | tojson }};
+    if (analyticsData && analyticsData.labels) {
+        const dauCtx = document.getElementById('dauChart');
+        new Chart(dauCtx, {
+            type: 'line',
+            data: {
+                labels: analyticsData.labels,
+                datasets: [
+                    {
+                        label: 'Daily Active Users',
+                        data: analyticsData.dau,
+                        borderColor: '#0d6efd',
+                        backgroundColor: 'rgba(13,110,253,0.15)',
+                        tension: 0.3,
+                        fill: true,
+                    },
+                    {
+                        label: 'Course Completions',
+                        data: analyticsData.completions,
+                        borderColor: '#198754',
+                        backgroundColor: 'rgba(25,135,84,0.2)',
+                        type: 'bar',
+                        borderWidth: 1,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                interaction: { mode: 'index', intersect: false },
+                plugins: { legend: { position: 'bottom' } },
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+
+        const quizCtx = document.getElementById('quizChart');
+        new Chart(quizCtx, {
+            type: 'line',
+            data: {
+                labels: analyticsData.labels,
+                datasets: [
+                    {
+                        label: 'Quiz Accuracy %',
+                        data: analyticsData.quiz_accuracy,
+                        borderColor: '#6f42c1',
+                        backgroundColor: 'rgba(111,66,193,0.15)',
+                        fill: true,
+                        tension: 0.3,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                scales: { y: { suggestedMin: 0, suggestedMax: 100 } },
+                plugins: { legend: { display: true } }
+            }
+        });
+    }
+</script>
+{% endblock %}

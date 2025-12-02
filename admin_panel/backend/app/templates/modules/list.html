@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Modules | LipRead Admin{% endblock %}
+{% block header %}Modules for {{ course.title }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h5 class="mb-1">Modules</h5>
+    <p class="text-muted mb-0">Manage modules within this course.</p>
+  </div>
+  <a class="btn btn-outline-secondary" href="/courses">Back to courses</a>
+</div>
+{% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h6 class="fw-semibold">Add Module</h6>
+        <form method="post" action="/courses/{{ course.id }}/modules">
+          <div class="mb-2">
+            <label class="form-label">Title</label>
+            <input type="text" name="title" class="form-control" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Summary</label>
+            <textarea name="summary" class="form-control" rows="2"></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Order</label>
+            <input type="number" name="order" class="form-control" value="{{ next_order }}" readonly>
+            <div class="form-text">Auto-increments from the latest module.</div>
+          </div>
+          <button class="btn btn-primary w-100" type="submit">Create Module</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-8">
+    <div class="card shadow-sm">
+      <div class="table-responsive">
+        <table class="table table-striped align-middle mb-0">
+          <thead class="table-light">
+            <tr><th>Order</th><th>Title</th><th>Summary</th><th>Actions</th></tr>
+          </thead>
+          <tbody>
+            {% for module in modules %}
+            <tr>
+              <td>{{ module.order }}</td>
+              <td>{{ module.title }}</td>
+              <td class="text-muted small">{{ module.summary }}</td>
+              <td>
+                <form method="post" action="/courses/{{ course.id }}/modules/{{ module.id }}/update" class="row g-2">
+                  <div class="col-md-4"><input class="form-control form-control-sm" name="title" value="{{ module.title }}"></div>
+                  <div class="col-md-4"><input class="form-control form-control-sm" name="summary" value="{{ module.summary }}"></div>
+                  <div class="col-md-2"><input class="form-control form-control-sm" type="number" name="order" value="{{ module.order }}"></div>
+                  <div class="col-md-2 d-flex gap-1">
+                    <button class="btn btn-outline-primary btn-sm" type="submit">Save</button>
+                    <a class="btn btn-outline-secondary btn-sm" href="/courses/{{ course.id }}/modules/{{ module.id }}/lessons">Lessons</a>
+                  </div>
+                </form>
+                <form method="post" action="/courses/{{ course.id }}/modules/{{ module.id }}/delete" class="mt-1" onsubmit="return confirm('Delete module?')">
+                  <button class="btn btn-outline-danger btn-sm">Delete</button>
+                </form>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="text-center text-muted">No modules yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

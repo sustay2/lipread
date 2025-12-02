@@ -1,13 +1,28 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_app/features/activities/quiz_activity_page.dart';
 
 import '../../common/theme/app_colors.dart';
+import '../../models/content_models.dart';
+import '../../services/content_api_service.dart';
 import '../../services/home_metrics_service.dart';
 import '../../services/router.dart';
+import '../activities/quiz_activity_page.dart';
 
-class LessonDetailScreen extends StatelessWidget {
+class _LessonBundle {
+  final Course? course;
+  final Module? module;
+  final Lesson lesson;
+  final List<ActivitySummary> activities;
+
+  _LessonBundle({
+    required this.course,
+    required this.module,
+    required this.lesson,
+    required this.activities,
+  });
+}
+
+class LessonDetailScreen extends StatefulWidget {
   final String lessonId; // encoded: courseId|moduleId|lessonId
 
   const LessonDetailScreen({
@@ -16,8 +31,49 @@ class LessonDetailScreen extends StatelessWidget {
   });
 
   @override
+  State<LessonDetailScreen> createState() => _LessonDetailScreenState();
+}
+
+class _LessonDetailScreenState extends State<LessonDetailScreen> {
+  final ContentApiService _contentApi = ContentApiService();
+
+  Future<_LessonBundle>? _bundleFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _bundleFuture = _loadBundle();
+  }
+
+  Future<_LessonBundle> _loadBundle() async {
+    final parts = widget.lessonId.split('|');
+    if (parts.length != 3) {
+      throw Exception('Invalid lesson reference');
+    }
+    final courseId = parts[0];
+    final moduleId = parts[1];
+    final lessonId = parts[2];
+
+    final lesson = await _contentApi.fetchLessonById(courseId, moduleId, lessonId);
+    if (lesson == null) {
+      throw Exception('Lesson not found');
+    }
+
+    final course = await _contentApi.fetchCourseById(courseId);
+    final module = await _contentApi.fetchModuleById(courseId, moduleId);
+    final activities = await _contentApi.fetchActivities(courseId, moduleId, lessonId);
+
+    return _LessonBundle(
+      course: course,
+      module: module,
+      lesson: lesson,
+      activities: activities,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final parts = lessonId.split('|');
+    final parts = widget.lessonId.split('|');
     if (parts.length != 3) {
       return Scaffold(
         appBar: AppBar(
@@ -34,16 +90,6 @@ class LessonDetailScreen extends StatelessWidget {
     final moduleId = parts[1];
     final realLessonId = parts[2];
 
-    final courseRef =
-    FirebaseFirestore.instance.collection('courses').doc(courseId);
-    final moduleRef = courseRef.collection('modules').doc(moduleId);
-    final lessonRef =
-    moduleRef.collection('lessons').doc(realLessonId);
-
-    final activitiesQuery = lessonRef
-        .collection('activities')
-        .orderBy('order', descending: false);
-
     final uid = FirebaseAuth.instance.currentUser?.uid;
     final hasUser = uid != null;
 
@@ -55,600 +101,206 @@ class LessonDetailScreen extends StatelessWidget {
         backgroundColor: AppColors.background,
         elevation: 0,
       ),
-      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: lessonRef.snapshots(),
-        builder: (context, lessonSnap) {
-          if (lessonSnap.hasError) {
-            return const Center(
-              child: Text(
-                'Failed to load lesson.',
-                style: TextStyle(color: AppColors.error),
+      body: FutureBuilder<_LessonBundle>(
+        future: _bundleFuture,
+        builder: (context, bundleSnap) {
+          if (bundleSnap.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'Failed to load lesson.\n${bundleSnap.error}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppColors.error),
+                ),
               ),
             );
           }
 
-          if (!lessonSnap.hasData ||
-              !lessonSnap.data!.exists ||
-              lessonSnap.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
+          if (bundleSnap.connectionState == ConnectionState.waiting ||
+              !bundleSnap.hasData) {
+            return const Center(child: CircularProgressIndicator());
           }
 
-          final data = lessonSnap.data!.data()!;
-          final lessonTitle =
-              (data['title'] as String?) ?? 'Lesson';
-          final objectives =
-              (data['objectives'] as List?)?.cast<String>() ??
-                  const <String>[];
-          final estMin =
-          (data['estimatedMin'] as num?)?.toInt();
+          final bundle = bundleSnap.data!;
+          final lesson = bundle.lesson;
+          final lessonTitle = lesson.title ?? 'Lesson';
+          final objectives = lesson.objectives;
+          final estMin = lesson.estimatedMin;
+          final courseTitle = bundle.course?.title ?? courseId;
+          final moduleTitle = bundle.module?.title ?? moduleId;
 
-          return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: activitiesQuery.snapshots(),
-            builder: (context, actSnap) {
-              final acts = actSnap.data?.docs ?? [];
-
-              return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                stream: courseRef.snapshots(),
-                builder: (context, courseSnap) {
-                  String courseTitle = courseId;
-                  if (courseSnap.hasData &&
-                      courseSnap.data!.data() != null) {
-                    courseTitle =
-                        (courseSnap.data!.data()!['title']
-                        as String?) ??
-                            courseId;
-                  }
-
-                  return StreamBuilder<
-                      DocumentSnapshot<Map<String, dynamic>>>(
-                    stream: moduleRef.snapshots(),
-                    builder: (context, moduleSnap) {
-                      String moduleTitle = moduleId;
-                      if (moduleSnap.hasData &&
-                          moduleSnap.data!.data() != null) {
-                        moduleTitle =
-                            (moduleSnap.data!.data()!['title']
-                            as String?) ??
-                                moduleId;
-                      }
-
-                      return SingleChildScrollView(
-                        padding: const EdgeInsets.fromLTRB(
-                            16, 8, 16, 24),
-                        child: Column(
-                          crossAxisAlignment:
-                          CrossAxisAlignment.start,
-                          children: [
-                            // Header card
-                            Container(
-                              padding:
-                              const EdgeInsets.all(16),
-                              decoration: _cardDecor(),
-                              child: Column(
-                                crossAxisAlignment:
-                                CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    lessonTitle,
-                                    style: const TextStyle(
-                                      fontSize: 20,
-                                      fontWeight:
-                                      FontWeight.w800,
-                                      color: AppColors
-                                          .textPrimary,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-
-                                  // Course pill (line 1)
-                                  Container(
-                                    padding: const EdgeInsets
-                                        .symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration:
-                                    BoxDecoration(
-                                      color: AppColors
-                                          .background,
-                                      borderRadius:
-                                      BorderRadius
-                                          .circular(
-                                        999,
-                                      ),
-                                    ),
-                                    child: Text(
-                                      'Course: $courseTitle',
-                                      style:
-                                      const TextStyle(
-                                        fontSize: 10,
-                                        color: AppColors
-                                            .textSecondary,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-
-                                  // Module pill (line 2)
-                                  Container(
-                                    padding: const EdgeInsets
-                                        .symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration:
-                                    BoxDecoration(
-                                      color: AppColors
-                                          .background,
-                                      borderRadius:
-                                      BorderRadius
-                                          .circular(
-                                        999,
-                                      ),
-                                    ),
-                                    child: Text(
-                                      'Module: $moduleTitle',
-                                      style:
-                                      const TextStyle(
-                                        fontSize: 10,
-                                        color: AppColors
-                                            .textSecondary,
-                                      ),
-                                    ),
-                                  ),
-
-                                  const SizedBox(height: 6),
-
-                                  // Estimated time
-                                  if (estMin != null)
-                                    Row(
-                                      children: [
-                                        const Icon(
-                                          Icons
-                                              .schedule_rounded,
-                                          size: 14,
-                                          color: AppColors
-                                              .textSecondary,
-                                        ),
-                                        const SizedBox(
-                                            width: 4),
-                                        Text(
-                                          '$estMin min',
-                                          style:
-                                          const TextStyle(
-                                            fontSize: 11,
-                                            color: AppColors
-                                                .textSecondary,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-
-                                  if (objectives.isNotEmpty)
-                                    const SizedBox(
-                                        height: 12),
-                                  if (objectives.isNotEmpty)
-                                    Column(
-                                      crossAxisAlignment:
-                                      CrossAxisAlignment
-                                          .start,
-                                      children: [
-                                        const Text(
-                                          'Objectives',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight:
-                                            FontWeight
-                                                .w600,
-                                            color: AppColors
-                                                .textPrimary,
-                                          ),
-                                        ),
-                                        const SizedBox(
-                                            height: 4),
-                                        ...objectives.map(
-                                              (o) => Row(
-                                            crossAxisAlignment:
-                                            CrossAxisAlignment
-                                                .start,
-                                            children: [
-                                              const Text(
-                                                '• ',
-                                                style:
-                                                TextStyle(
-                                                  color: AppColors
-                                                      .textSecondary,
-                                                ),
-                                              ),
-                                              Expanded(
-                                                child:
-                                                Text(
-                                                  o,
-                                                  style:
-                                                  const TextStyle(
-                                                    fontSize:
-                                                    12,
-                                                    color: AppColors
-                                                        .textSecondary,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-
-                                  const SizedBox(height: 16),
-
-                                  // Action buttons (fixed UX)
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child:
-                                        FilledButton
-                                            .icon(
-                                          onPressed:
-                                          !hasUser
-                                              ? null
-                                              : () async {
-                                            // Mark as watched / started
-                                            await HomeMetricsService
-                                                .onLessonWatched(
-                                              uid,
-                                            );
-                                            await HomeMetricsService
-                                                .updateEnrollmentProgress(
-                                              uid:
-                                              uid,
-                                              courseId:
-                                              courseId,
-                                              lastLessonId:
-                                              lessonId,
-                                              progress:
-                                              10,
-                                            );
-
-                                            // Open first activity if any
-                                            if (acts
-                                                .isNotEmpty) {
-                                              final a =
-                                                  acts.first;
-                                              _openActivity(
-                                                context,
-                                                courseId:
-                                                courseId,
-                                                moduleId:
-                                                moduleId,
-                                                lessonId:
-                                                realLessonId,
-                                                activityId:
-                                                a.id,
-                                                type: (a.data()['type'] as String?) ??
-                                                    '',
-                                              );
-                                            }
-                                          },
-                                          icon:
-                                          const Icon(
-                                            Icons
-                                                .play_arrow_rounded,
-                                          ),
-                                          label:
-                                          const Text(
-                                            'Start lesson',
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(
-                                          width: 8),
-                                      Expanded(
-                                        child:
-                                        OutlinedButton(
-                                          onPressed:
-                                          !hasUser
-                                              ? null
-                                              : () async {
-                                            await HomeMetricsService
-                                                .updateEnrollmentProgress(
-                                              uid:
-                                              uid,
-                                              courseId:
-                                              courseId,
-                                              lastLessonId:
-                                              lessonId,
-                                              progress:
-                                              5,
-                                            );
-                                            ScaffoldMessenger.of(
-                                                context)
-                                                .showSnackBar(
-                                              const SnackBar(
-                                                content:
-                                                Text(
-                                                  'Lesson saved to your progress.',
-                                                ),
-                                              ),
-                                            );
-                                          },
-                                          style:
-                                          OutlinedButton
-                                              .styleFrom(
-                                            padding:
-                                            const EdgeInsets
-                                              .symmetric(
-                                                vertical:
-                                                14,
-                                              ),
-                                          ),
-                                          child:
-                                          const Text(
-                                            'Save for later',
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                            const SizedBox(height: 18),
-
-                            // Activities header
-                            Row(
-                              children: [
-                                const Text(
-                                  'Activities',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight:
-                                    FontWeight
-                                        .w700,
-                                    color: AppColors
-                                        .textPrimary,
-                                  ),
-                                ),
-                                const SizedBox(
-                                    width: 6),
-                                if (acts.isNotEmpty)
-                                  Container(
-                                    padding:
-                                    const EdgeInsets
-                                        .symmetric(
-                                      horizontal: 8,
-                                      vertical: 3,
-                                    ),
-                                    decoration:
-                                    BoxDecoration(
-                                      color: AppColors
-                                          .background,
-                                      borderRadius:
-                                      BorderRadius
-                                          .circular(
-                                          999),
-                                    ),
-                                    child: Text(
-                                      '${acts.length} steps',
-                                      style:
-                                      const TextStyle(
-                                        fontSize: 10,
-                                        color: AppColors
-                                            .textSecondary,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-
-                            // Activities list
-                            if (acts.isEmpty)
-                              Container(
-                                padding:
-                                const EdgeInsets
-                                    .all(16),
-                                decoration:
-                                _cardDecor(),
-                                child: const Text(
-                                  'No activities configured yet for this lesson.',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: AppColors
-                                        .textSecondary,
-                                  ),
-                                ),
-                              )
-                            else
-                              Column(
-                                children:
-                                acts.map((a) {
-                                  final ad =
-                                  a.data();
-                                  final type =
-                                      (ad['type']
-                                      as String?) ??
-                                          'activity';
-                                  final order =
-                                      (ad['order']
-                                      as num?)
-                                          ?.toInt() ??
-                                          0;
-                                  final label =
-                                      (ad['label']
-                                      as String?) ??
-                                          _labelForType(
-                                              type);
-                                  final duration =
-                                  (ad['estimatedMin']
-                                  as num?)
-                                      ?.toInt();
-
-                                  return Padding(
-                                    padding:
-                                    const EdgeInsets
-                                        .only(
-                                      bottom: 10,
-                                    ),
-                                    child:
-                                    InkWell(
-                                      borderRadius:
-                                      BorderRadius
-                                          .circular(
-                                          16),
-                                      onTap: !hasUser
-                                          ? null
-                                          : () {
-                                        _openActivity(
-                                          context,
-                                          courseId:
-                                          courseId,
-                                          moduleId:
-                                          moduleId,
-                                          lessonId:
-                                          realLessonId,
-                                          activityId:
-                                          a.id,
-                                          type:
-                                          type,
-                                        );
-                                      },
-                                      child:
-                                      Container(
-                                        padding:
-                                        const EdgeInsets
-                                            .all(
-                                            14),
-                                        decoration:
-                                        _cardDecor(),
-                                        child: Row(
-                                          children: [
-                                            Container(
-                                              width:
-                                              40,
-                                              height:
-                                              40,
-                                              decoration:
-                                              BoxDecoration(
-                                                color: AppColors
-                                                    .background,
-                                                borderRadius:
-                                                BorderRadius.circular(12),
-                                                border:
-                                                Border.all(
-                                                  color: AppColors
-                                                      .border,
-                                                ),
-                                              ),
-                                              child:
-                                              Icon(
-                                                _iconForType(
-                                                    type),
-                                                color: AppColors
-                                                    .primaryVariant,
-                                              ),
-                                            ),
-                                            const SizedBox(
-                                                width:
-                                                12),
-                                            Expanded(
-                                              child:
-                                              Column(
-                                                crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    'Step $order · $label',
-                                                    style:
-                                                    const TextStyle(
-                                                      fontSize: 13,
-                                                      fontWeight: FontWeight.w600,
-                                                      color: AppColors.textPrimary,
-                                                    ),
-                                                  ),
-                                                  if (duration !=
-                                                      null)
-                                                    Padding(
-                                                      padding: const EdgeInsets.only(top: 2),
-                                                      child: Text(
-                                                        '$duration min',
-                                                        style: const TextStyle(
-                                                          fontSize: 10,
-                                                          color: AppColors.textSecondary,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                ],
-                                              ),
-                                            ),
-                                            const Icon(
-                                              Icons
-                                                  .chevron_right_rounded,
-                                              color:
-                                              AppColors.muted,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                }).toList(),
-                              ),
-                          ],
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: _cardDecor(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        lessonTitle,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textPrimary,
                         ),
-                      );
-                    },
-                  );
-                },
-              );
-            },
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.background,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          'Course: $courseTitle',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.background,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          'Module: $moduleTitle',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          const Icon(Icons.timer_outlined,
+                              size: 14, color: AppColors.textSecondary),
+                          const SizedBox(width: 4),
+                          Text(
+                            estMin > 0 ? '$estMin minutes' : 'Self-paced',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      if (objectives.isNotEmpty) ...[
+                        const Text(
+                          'Objectives',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: objectives
+                              .map((o) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 4.0),
+                                    child: Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text('• ',
+                                            style: TextStyle(
+                                                color: AppColors.textSecondary)),
+                                        Expanded(
+                                          child: Text(
+                                            o,
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: AppColors.textSecondary,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ))
+                              .toList(),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Activities',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    if (hasUser)
+                      TextButton.icon(
+                        onPressed: () => HomeMetricsService.onActivityCompleted(uid!),
+                        icon: const Icon(Icons.refresh, size: 16),
+                        label: const Text('Sync progress'),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (bundle.activities.isEmpty)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: _cardDecor(),
+                    child: const Text(
+                      'No activities yet. Check back soon!',
+                      style: TextStyle(color: AppColors.textSecondary),
+                    ),
+                  )
+                else
+                  Column(
+                    children: bundle.activities
+                        .map(
+                          (a) => _ActivityTile(
+                            courseId: courseId,
+                            moduleId: moduleId,
+                            lessonId: realLessonId,
+                            activity: a,
+                            onTap: _openActivity,
+                          ),
+                        )
+                        .toList(),
+                  ),
+              ],
+            ),
           );
         },
       ),
     );
   }
 
-  static String _labelForType(String type) {
-    switch (type) {
-      case 'video_drill':
-        return 'Watch & repeat';
-      case 'viseme_match':
-        return 'Viseme match';
-      case 'mirror_practice':
-        return 'Mirror practice';
-      case 'quiz':
-        return 'Quick quiz';
-      default:
-        return 'Practice';
-    }
-  }
-
-  static IconData _iconForType(String type) {
-    switch (type) {
-      case 'video_drill':
-        return Icons.play_circle_fill_rounded;
-      case 'viseme_match':
-        return Icons.grid_on_rounded;
-      case 'mirror_practice':
-        return Icons.flip_rounded;
-      case 'quiz':
-        return Icons.quiz_rounded;
-      default:
-        return Icons.task_alt_rounded;
-    }
-  }
-
   void _openActivity(
-      BuildContext context, {
-        required String courseId,
-        required String moduleId,
-        required String lessonId,
-        required String activityId,
-        required String type,
-      }) {
-
+    BuildContext context, {
+    required String courseId,
+    required String moduleId,
+    required String lessonId,
+    required String activityId,
+    required String type,
+  }) {
     final activityRef = '$courseId|$moduleId|$lessonId|$activityId';
 
     switch (type) {
@@ -689,13 +341,146 @@ class LessonDetailScreen extends StatelessWidget {
         );
         break;
 
+      case 'dictation':
+        Navigator.pushNamed(
+          context,
+          Routes.dictationActivity,
+          arguments: activityRef,
+        );
+        break;
+
+      case 'practice_lip':
+        Navigator.pushNamed(
+          context,
+          Routes.practiceActivity,
+          arguments: activityRef,
+        );
+        break;
+
       default:
-      // Fallback: send to transcribe with full context
         Navigator.pushNamed(
           context,
           Routes.transcribe,
           arguments: activityRef,
         );
+    }
+  }
+}
+
+class _ActivityTile extends StatelessWidget {
+  final String courseId;
+  final String moduleId;
+  final String lessonId;
+  final ActivitySummary activity;
+  final void Function(
+    BuildContext context, {
+    required String courseId,
+    required String moduleId,
+    required String lessonId,
+    required String activityId,
+    required String type,
+  }) onTap;
+
+  const _ActivityTile({
+    required this.courseId,
+    required this.moduleId,
+    required this.lessonId,
+    required this.activity,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final subtitle = _subtitle(activity);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: InkWell(
+        onTap: () => onTap(
+          context,
+          courseId: courseId,
+          moduleId: moduleId,
+          lessonId: lessonId,
+          activityId: activity.id,
+          type: activity.type,
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: _cardDecor(),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  _iconFor(activity.type),
+                  color: AppColors.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      activity.title ?? 'Activity',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Icon(Icons.chevron_right_rounded,
+                  color: AppColors.textSecondary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  IconData _iconFor(String type) {
+    switch (type) {
+      case 'quiz':
+        return Icons.quiz_outlined;
+      case 'dictation':
+        return Icons.library_music_outlined;
+      case 'practice_lip':
+        return Icons.mic_none_rounded;
+      case 'video_drill':
+        return Icons.play_circle_outline;
+      default:
+        return Icons.extension_outlined;
+    }
+  }
+
+  String _subtitle(ActivitySummary a) {
+    switch (a.type) {
+      case 'quiz':
+        return 'Quiz · ${a.itemCount} questions';
+      case 'dictation':
+        return 'Dictation · ${a.itemCount} prompts';
+      case 'practice_lip':
+        return 'Practice · ${a.itemCount} items';
+      default:
+        return a.config['description'] as String? ?? 'Activity';
     }
   }
 }

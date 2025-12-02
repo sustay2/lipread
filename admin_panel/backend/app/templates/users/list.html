@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Users | LipRead Admin{% endblock %}
+{% block header %}User Management{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h5 class="mb-1">All Users</h5>
+        <p class="text-muted mb-0">Search, filter, and manage user accounts.</p>
+    </div>
+    <a class="btn btn-outline-secondary" href="/reports">Generate Report</a>
+</div>
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form class="row g-3 align-items-end">
+            <div class="col-md-5">
+                <label class="form-label text-muted">Search</label>
+                <input type="text" name="q" value="{{ search }}" class="form-control" placeholder="Email or name">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label text-muted">Role</label>
+                <select name="role" class="form-select">
+                    <option value="">Any</option>
+                    <option value="admin" {% if role=='admin' %}selected{% endif %}>Admin</option>
+                    <option value="content_editor" {% if role=='content_editor' %}selected{% endif %}>Content Editor</option>
+                    <option value="learner" {% if role=='learner' %}selected{% endif %}>Learner</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-outline-primary w-100" type="submit">Filter</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-striped align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Last Active</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr>
+                    <td class="fw-semibold">{{ user.displayName or 'N/A' }}</td>
+                    <td>{{ user.email }}</td>
+                    <td>
+                        {% for r in user.roles %}
+                        <span class="badge bg-soft-primary text-primary me-1">{{ r|capitalize }}</span>
+                        {% endfor %}
+                    </td>
+                    <td>
+                        <span class="badge {{ 'bg-success' if user.status=='active' else 'bg-secondary' }}">{{ user.status|capitalize }}</span>
+                    </td>
+                    <td class="text-muted small">{{ user.lastActiveAtIso or 'Unknown' }}</td>
+                    <td>
+                        <div class="btn-group btn-group-sm" role="group">
+                            <a href="/users/{{ user.id }}" class="btn btn-outline-primary">View</a>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="text-center text-muted">No users found.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+{% set total_pages = ((total - 1) // page_size) + 1 %}
+<nav class="mt-3">
+    <ul class="pagination">
+        {% for p in range(1, total_pages + 1) %}
+        <li class="page-item {% if p == page %}active{% endif %}"><a class="page-link" href="?page={{p}}&page_size={{page_size}}&q={{search}}&role={{role}}">{{ p }}</a></li>
+        {% endfor %}
+    </ul>
+</nav>
+{% endblock %}

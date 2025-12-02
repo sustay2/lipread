@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Billing | LipRead Admin{% endblock %}
+{% block header %}Payment History{% endblock %}
+{% block content %}
+<div class="card shadow-sm">
+    <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">Payment Transactions</h6>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>User</th>
+                        <th>Plan</th>
+                        <th>Amount</th>
+                        <th>Date</th>
+                        <th>Status</th>
+                        <th>Transaction ID</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pay in payments %}
+                    <tr>
+                        <td>{{ pay.userId }}</td>
+                        <td>{{ pay.planId }}</td>
+                        <td>{{ pay.amount }} {{ pay.currency }}</td>
+                        <td class="text-muted small">{{ pay.createdAt }}</td>
+                        <td><span class="badge {{ 'bg-success' if pay.status=='paid' else 'bg-warning' if pay.status=='pending' else 'bg-danger' }}">{{ pay.status|capitalize }}</span></td>
+                        <td>{{ pay.transactionId }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6" class="text-center text-muted">No payments recorded.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

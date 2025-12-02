@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Content Library | LipRead Admin{% endblock %}
+{% block header %}Content Library{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h5 class="mb-1">All Media</h5>
+    <p class="text-muted mb-0">Videos and images stored in Firestore-backed library.</p>
+  </div>
+</div>
+<div class="row g-3">
+  {% for item in media_items %}
+  <div class="col-xl-3 col-lg-4 col-md-6">
+    <div class="card shadow-sm h-100">
+      {% if item.type == 'video' %}
+      <div class="ratio ratio-16x9 bg-dark">
+        {% if item.thumbUrl %}
+        <img src="{{ item.thumbUrl }}" class="img-fluid rounded-top" alt="Thumbnail">
+        {% else %}
+        <div class="d-flex align-items-center justify-content-center text-white-50">Video</div>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="ratio ratio-16x9 bg-light">
+        <img src="{{ item.url }}" class="img-fluid rounded-top" alt="{{ item.name }}">
+      </div>
+      {% endif %}
+      <div class="card-body">
+        <div class="d-flex align-items-center mb-2">
+          <span class="badge bg-primary-soft text-primary text-uppercase">{{ item.type }}</span>
+          <span class="text-muted small ms-auto">{{ item.createdAt or '' }}</span>
+        </div>
+        <h6 class="fw-semibold text-truncate" title="{{ item.name }}">{{ item.name }}</h6>
+        <p class="text-muted small mb-2">{{ item.url }}</p>
+        {% if item.url %}
+        <a href="{{ item.url }}" target="_blank" class="btn btn-sm btn-outline-primary">Open</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="col-12">
+    <div class="alert alert-info">No media found. Upload thumbnails or lesson videos to populate the library.</div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

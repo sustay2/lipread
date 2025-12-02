@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Courses | LipRead Admin{% endblock %}
+{% block header %}Course Management{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h5 class="mb-1">Courses</h5>
+        <p class="text-muted mb-0">Organize courses, modules, and lessons.</p>
+    </div>
+    <a class="btn btn-primary" href="/courses/new"><i class="bi bi-plus-lg me-2"></i>Create Course</a>
+</div>
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+<div class="row g-4">
+    {% for course in courses %}
+    <div class="col-xl-4 col-lg-6">
+        <div class="card h-100 border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div>
+                        <h6 class="fw-semibold mb-0">{{ course.title }}</h6>
+                        <p class="text-muted small mb-0">{{ course.description }}</p>
+                    </div>
+                    {% if course.published %}
+                        <span class="badge bg-success">Published</span>
+                    {% else %}
+                        <span class="badge bg-secondary">Draft</span>
+                    {% endif %}
+                </div>
+                <div class="mb-3">
+                    <span class="badge bg-soft-primary text-primary me-1">{{ course.difficulty or 'N/A' }}</span>
+                    {% for tag in course.tags %}<span class="badge bg-light text-muted border me-1">{{ tag }}</span>{% endfor %}
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between text-muted small">
+                        <span>{{ course.modules|length }} modules</span>
+                        <span>{{ course.lesson_count }} lessons</span>
+                    </div>
+                </div>
+                <div class="accordion" id="accordion-{{ course.id }}">
+                    {% for module in course.modules %}
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="heading-{{ module.id }}">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ module.id }}">{{ module.title }}</button>
+                        </h2>
+                        <div id="collapse-{{ module.id }}" class="accordion-collapse collapse" data-bs-parent="#accordion-{{ course.id }}">
+                            <div class="accordion-body">
+                                <p class="text-muted small">{{ module.summary }}</p>
+                                <ul class="list-group list-group-flush">
+                                    {% for lesson in module.lessons %}
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <div class="fw-semibold">{{ lesson.title }}</div>
+                                            <div class="text-muted small">{{ lesson.estimatedMin }} min • Order {{ lesson.order }}</div>
+                                        </div>
+                                        <span class="badge bg-soft-primary text-primary">{{ lesson.objectives|length }} objectives</span>
+                                    </li>
+                                    {% else %}
+                                    <li class="list-group-item text-muted">No lessons yet.</li>
+                                    {% endfor %}
+                                </ul>
+                                <div class="d-flex gap-2 mt-3">
+                                    <a class="btn btn-sm btn-outline-primary" href="/courses/{{ course.id }}/modules#{{ module.id }}">Edit Module</a>
+                                    <a class="btn btn-sm btn-outline-secondary" href="/courses/{{ course.id }}/modules/{{ module.id }}/lessons">Lessons</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <p class="text-muted">No modules added.</p>
+                    {% endfor %}
+                </div>
+                <div class="d-flex gap-2 mt-3">
+                    <a class="btn btn-outline-primary btn-sm" href="/courses/{{ course.id }}/edit">Edit Course</a>
+                    <a class="btn btn-outline-secondary btn-sm" href="/courses/{{ course.id }}/modules">Modules</a>
+                    <form method="post" action="/courses/{{ course.id }}/delete" onsubmit="return confirm('Delete this course and all child content?')">
+                        <button class="btn btn-outline-danger btn-sm" type="submit">Delete</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <p class="text-muted">No courses available.</p>
+    {% endfor %}
+</div>
+{% endblock %}
