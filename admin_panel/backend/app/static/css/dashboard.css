@@ -42,3 +42,7 @@ body {
 .card {
     border-radius: 14px;
 }
+
+.invalid-feedback {
+    display: block !important;
+}

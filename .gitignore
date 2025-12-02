@@ -15,6 +15,7 @@ admin_panel/lipreadapp-441dd04e8b92.json
 google-services.json
 
 # Flutter / Dart / tooling
+*.env
 *.class
 *.log
 *.swp

@@ -152,7 +152,7 @@
       </div>
       <div class="mb-2">
         <label class="form-label">Question stem</label>
-        <textarea class="form-control question-stem" name="questionStem" data-field="stem" rows="2" placeholder="Enter the question" required></textarea>
+        <textarea class="form-control question-stem" name="questionStem" data-field="stem" rows="2" placeholder="Enter the question"></textarea>
       </div>
       <div class="mb-2">
         <label class="form-label">Options</label>
@@ -163,7 +163,7 @@
       <div class="row g-3">
         <div class="col-md-8">
           <label class="form-label">Question video <span class="text-muted small">(MP4, MOV, etc.)</span></label>
-          <input class="form-control question-media" type="file" name="questionMedia" data-field="questionMedia" accept="video/*" required>
+          <input class="form-control question-media" type="file" name="questionMedia" data-field="questionMedia" accept="video/*">
         </div>
       </div>
       <div class="mt-2">
@@ -183,12 +183,12 @@
       </div>
       <div class="mb-2">
         <label class="form-label">Correct text</label>
-        <textarea class="form-control dictation-correct" name="dictationCorrect" data-field="dictationCorrect" rows="2" placeholder="Type the correct transcript" required></textarea>
+        <textarea class="form-control dictation-correct" name="dictationCorrect" data-field="dictationCorrect" rows="2" placeholder="Type the correct transcript"></textarea>
       </div>
       <div class="row g-3">
         <div class="col-md-6">
           <label class="form-label">Dictation video</label>
-          <input class="form-control dictation-media" type="file" name="dictationMedia" data-field="dictationMedia" accept="video/*" required>
+          <input class="form-control dictation-media" type="file" name="dictationMedia" data-field="dictationMedia" accept="video/*">
         </div>
         <div class="col-md-6">
           <label class="form-label">Hints <span class="text-muted small">(optional)</span></label>
@@ -208,7 +208,7 @@
       </div>
       <div class="mb-2">
         <label class="form-label">Prompt / Description</label>
-        <textarea class="form-control practice-description" name="practiceDescription" data-field="practiceDescription" rows="2" placeholder="Describe what the learner should practice" required></textarea>
+        <textarea class="form-control practice-description" name="practiceDescription" data-field="practiceDescription" rows="2" placeholder="Describe what the learner should practice"></textarea>
       </div>
       <div class="row g-3">
         <div class="col-md-6">
@@ -217,12 +217,13 @@
         </div>
         <div class="col-md-6">
           <label class="form-label">Practice video</label>
-          <input class="form-control practice-media" type="file" name="practiceMedia" data-field="practiceMedia" accept="video/*" required>
+          <input class="form-control practice-media" type="file" name="practiceMedia" data-field="practiceMedia" accept="video/*">
         </div>
       </div>
     </div>
   </div>
 </template>
+
 <script src="/static/js/activity-form.js"></script>
 <script>
   initActivityForm({

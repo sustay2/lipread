@@ -6,10 +6,7 @@
   function safeArray(val) {
     if (Array.isArray(val)) return val;
     if (typeof val === "string" && val.trim()) {
-      return val
-        .split(",")
-        .map((v) => v.trim())
-        .filter(Boolean);
+      return val.split(",").map((v) => v.trim()).filter(Boolean);
     }
     return [];
   }
@@ -40,9 +37,7 @@
   };
 
   function difficultyFromValue(value) {
-    if (typeof value === "string") {
-      return difficultyToNumber[value] || 1;
-    }
+    if (typeof value === "string") return difficultyToNumber[value] || 1;
     if (typeof value === "number") {
       if (value >= 3) return difficultyToNumber.advanced;
       if (value >= 2) return difficultyToNumber.intermediate;
@@ -52,7 +47,8 @@
 
   function renderExistingMedia(inputEl, mediaId) {
     if (!inputEl) return;
-    let helper = inputEl.parentElement.querySelector(".existing-media-note");
+    let helper =
+      inputEl.parentElement.querySelector(".existing-media-note");
     if (!helper) {
       helper = document.createElement("div");
       helper.className = "form-text existing-media-note";
@@ -111,17 +107,47 @@
     const dictationList = document.getElementById("dictationList");
     const practiceList = document.getElementById("practiceList");
 
-    /* ---------- required toggling per section ---------- */
+    /* --------------------------------------------------------
+     * REQUIRED FIX — ensure ONLY visible media inputs become required
+     * -------------------------------------------------------- */
+
+    function enforceMediaRequirements() {
+      const type = typeSelect?.value || "quiz";
+
+      // Remove required from ALL media inputs first (fixes browser errors)
+      form.querySelectorAll(".question-media,.dictation-media,.practice-media")
+        .forEach((el) => el.removeAttribute("required"));
+
+      if (type === "quiz") {
+        questionList.querySelectorAll(".mcq-question").forEach((card) => {
+          const input = card.querySelector(".question-media");
+          if (input && !card.dataset.existingMedia) {
+            input.setAttribute("required", "required");
+          }
+        });
+      } else if (type === "dictation") {
+        dictationList.querySelectorAll(".dictation-item").forEach((card) => {
+          const input = card.querySelector(".dictation-media");
+          if (input && !card.dataset.existingMedia) {
+            input.setAttribute("required", "required");
+          }
+        });
+      } else if (type === "practice_lip") {
+        practiceList.querySelectorAll(".practice-item").forEach((card) => {
+          const input = card.querySelector(".practice-media");
+          if (input && !card.dataset.existingMedia) {
+            input.setAttribute("required", "required");
+          }
+        });
+      }
+    }
 
     function setSectionRequired(activeType) {
-      // Clear all first
       form
         .querySelectorAll(
           ".question-stem, .option-text, .dictation-correct, .practice-description"
         )
-        .forEach((el) => {
-          el.removeAttribute("required");
-        });
+        .forEach((el) => el.removeAttribute("required"));
 
       if (activeType === "quiz") {
         questionList
@@ -135,42 +161,6 @@
         practiceList
           .querySelectorAll(".practice-description")
           .forEach((el) => el.setAttribute("required", "required"));
-      }
-    }
-
-    function enforceMediaRequirements() {
-      const type = typeSelect?.value || "quiz";
-
-      if (type === "quiz") {
-        questionList.querySelectorAll(".mcq-question").forEach((card) => {
-          const input = card.querySelector(".question-media");
-          if (!input) return;
-          if (card.dataset.existingMedia) {
-            input.removeAttribute("required");
-          } else {
-            input.setAttribute("required", "required");
-          }
-        });
-      } else if (type === "dictation") {
-        dictationList.querySelectorAll(".dictation-item").forEach((card) => {
-          const input = card.querySelector(".dictation-media");
-          if (!input) return;
-          if (card.dataset.existingMedia) {
-            input.removeAttribute("required");
-          } else {
-            input.setAttribute("required", "required");
-          }
-        });
-      } else if (type === "practice_lip") {
-        practiceList.querySelectorAll(".practice-item").forEach((card) => {
-          const input = card.querySelector(".practice-media");
-          if (!input) return;
-          if (card.dataset.existingMedia) {
-            input.removeAttribute("required");
-          } else {
-            input.setAttribute("required", "required");
-          }
-        });
       }
     }
 
@@ -587,12 +577,9 @@
       }
 
       if (type === "quiz") {
-        const bankEl = getEl("bankTitle");
-        clearError(bankEl);
         const bankTitle = readStr("bankTitle");
         if (!bankTitle) {
-          showError(bankEl, "Question bank title is required.");
-          hasError = true;
+            setValue("bankTitle", readStr("title") + " Bank");
         }
 
         const cards = questionList.querySelectorAll(".mcq-question");
