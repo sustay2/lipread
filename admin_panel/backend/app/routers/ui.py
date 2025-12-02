@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 import json
 
-from fastapi import APIRouter, Depends, Form, Query, Request, UploadFile, File
+from fastapi import APIRouter, Depends, Form, Query, Request, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+
+from firebase_admin import firestore as admin_firestore
+
+from app.services.billing_service import STRIPE_DEFAULT_CURRENCY, stripe
+from app.services.firebase_client import get_firestore_client
 
 from app.deps.admin_session import require_admin_session
 from app.services import firestore_admin
@@ -19,6 +25,7 @@ from app.services.question_banks import question_bank_service
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+db = get_firestore_client()
 
 router = APIRouter(dependencies=[Depends(require_admin_session)])
 
@@ -1078,43 +1085,154 @@ async def generate_report(
     )
 
 
+def _to_unit_amount(price_myr: float) -> int:
+    return int((Decimal(str(price_myr)).quantize(Decimal("0.01"))) * 100)
+
+
+def _serialize_plan_doc(doc) -> Dict[str, Any]:
+    data = doc.to_dict() or {}
+    return {
+        "id": doc.id,
+        "name": data.get("name"),
+        "price_myr": data.get("price_myr"),
+        "stripe_product_id": data.get("stripe_product_id"),
+        "stripe_price_id": data.get("stripe_price_id"),
+        "transcription_limit": data.get("transcription_limit"),
+        "is_transcription_unlimited": data.get("is_transcription_unlimited", False),
+        "can_access_premium_courses": data.get("can_access_premium_courses", False),
+        "trial_period_days": data.get("trial_period_days", 0),
+        "is_active": data.get("is_active", False),
+        "createdAt": data.get("createdAt"),
+        "updatedAt": data.get("updatedAt"),
+    }
+
+
+def _ensure_price_and_product(name: str, price_myr: float, product_id: Optional[str]) -> Dict[str, str]:
+    unit_amount = _to_unit_amount(price_myr)
+
+    if product_id:
+        price = stripe.Price.create(
+            currency=STRIPE_DEFAULT_CURRENCY,
+            unit_amount=unit_amount,
+            recurring={"interval": "month"},
+            product=product_id,
+        )
+        return {"product_id": product_id, "price_id": price["id"]}
+
+    product = stripe.Product.create(name=name)
+    price = stripe.Price.create(
+        currency=STRIPE_DEFAULT_CURRENCY,
+        unit_amount=unit_amount,
+        recurring={"interval": "month"},
+        product=product["id"],
+    )
+    return {"product_id": product["id"], "price_id": price["id"]}
+
+
+def _parse_bool(value: Any) -> bool:
+    return str(value).lower() in ("true", "1", "on", "yes")
+
+
 @router.get("/subscriptions", response_class=HTMLResponse)
-async def subscriptions(request: Request, message: Optional[str] = None):
-    plans = firestore_admin.list_subscription_plans()
+async def subscription_plans(request: Request, message: Optional[str] = None):
+    snaps = (
+        db.collection("subscription_plans")
+        .order_by("createdAt", direction=admin_firestore.Query.DESCENDING)
+        .stream()
+    )
+    plans = [_serialize_plan_doc(doc) for doc in snaps]
     return templates.TemplateResponse(
-        "subscriptions.html",
+        "subscription_plans.html",
         {"request": request, "plans": plans, "message": message},
+    )
+
+
+@router.get("/subscriptions/new", response_class=HTMLResponse)
+async def new_subscription_plan(request: Request):
+    return templates.TemplateResponse(
+        "subscription_plan_edit.html", {"request": request, "plan": None}
+    )
+
+
+@router.get("/subscriptions/{plan_id}/edit", response_class=HTMLResponse)
+async def edit_subscription_plan(request: Request, plan_id: str):
+    snap = db.collection("subscription_plans").document(plan_id).get()
+    if not snap.exists:
+        raise HTTPException(status_code=404, detail="Subscription plan not found")
+    plan = _serialize_plan_doc(snap)
+    return templates.TemplateResponse(
+        "subscription_plan_edit.html", {"request": request, "plan": plan}
     )
 
 
 @router.post("/subscriptions")
 async def create_subscription_plan(
-    plan_id: str = Form(None),
     name: str = Form(...),
-    price: float = Form(...),
-    currency: str = Form("USD"),
-    interval: str = Form("month"),
-    trialDays: int = Form(0),
-    features: str = Form(""),
+    price_myr: float = Form(...),
+    transcription_limit: Optional[int] = Form(None),
+    is_transcription_unlimited: bool = Form(False),
+    can_access_premium_courses: bool = Form(False),
+    trial_period_days: int = Form(0),
+    is_active: bool = Form(False),
 ):
-    firestore_admin.upsert_subscription_plan(
-        plan_id,
-        {
-            "name": name,
-            "price": price,
-            "currency": currency,
-            "interval": interval,
-            "trialDays": trialDays,
-            "features": [f.strip() for f in features.split("\n") if f.strip()],
-        },
-    )
-    return RedirectResponse(url="/subscriptions?message=plan-saved", status_code=303)
+    stripe_ids = _ensure_price_and_product(name, price_myr, product_id=None)
+    payload = {
+        "name": name,
+        "price_myr": price_myr,
+        "stripe_product_id": stripe_ids["product_id"],
+        "stripe_price_id": stripe_ids["price_id"],
+        "transcription_limit": transcription_limit,
+        "is_transcription_unlimited": _parse_bool(is_transcription_unlimited),
+        "can_access_premium_courses": _parse_bool(can_access_premium_courses),
+        "trial_period_days": trial_period_days,
+        "is_active": _parse_bool(is_active),
+    }
+    firestore_admin.upsert_subscription_plan(None, payload)
+    return RedirectResponse(url="/subscriptions?message=plan-created", status_code=303)
 
 
-@router.post("/subscriptions/{plan_id}/delete")
-async def delete_subscription_plan(plan_id: str):
-    firestore_admin.delete_subscription_plan(plan_id)
-    return RedirectResponse(url="/subscriptions?message=plan-deleted", status_code=303)
+@router.post("/subscriptions/{plan_id}")
+async def update_subscription_plan(
+    plan_id: str,
+    name: str = Form(...),
+    price_myr: float = Form(...),
+    transcription_limit: Optional[int] = Form(None),
+    is_transcription_unlimited: bool = Form(False),
+    can_access_premium_courses: bool = Form(False),
+    trial_period_days: int = Form(0),
+    is_active: bool = Form(False),
+):
+    ref = db.collection("subscription_plans").document(plan_id)
+    snap = ref.get()
+    if not snap.exists:
+        raise HTTPException(status_code=404, detail="Subscription plan not found")
+
+    current_data = snap.to_dict() or {}
+    current_price = Decimal(str(current_data.get("price_myr") or 0)).quantize(Decimal("0.01"))
+    incoming_price = Decimal(str(price_myr)).quantize(Decimal("0.01"))
+    price_changed = current_price != incoming_price
+
+    product_id = current_data.get("stripe_product_id")
+    price_id = current_data.get("stripe_price_id")
+
+    if price_changed or not (product_id and price_id):
+        stripe_ids = _ensure_price_and_product(name, price_myr, product_id=product_id)
+        product_id = stripe_ids["product_id"]
+        price_id = stripe_ids["price_id"]
+
+    payload = {
+        "name": name,
+        "price_myr": price_myr,
+        "stripe_product_id": product_id,
+        "stripe_price_id": price_id,
+        "transcription_limit": transcription_limit,
+        "is_transcription_unlimited": _parse_bool(is_transcription_unlimited),
+        "can_access_premium_courses": _parse_bool(can_access_premium_courses),
+        "trial_period_days": trial_period_days,
+        "is_active": _parse_bool(is_active),
+    }
+    firestore_admin.upsert_subscription_plan(plan_id, payload)
+    return RedirectResponse(url="/subscriptions?message=plan-updated", status_code=303)
 
 
 @router.get("/billing", response_class=HTMLResponse)

@@ -5,6 +5,7 @@ import json
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from firebase_admin import firestore
 from google.cloud.firestore_v1 import Query
 
 from google.cloud.firestore_v1.base_document import DocumentSnapshot
@@ -786,24 +787,52 @@ def list_subscription_plans() -> List[Dict[str, Any]]:
             {
                 "id": snap.id,
                 "name": data.get("name"),
-                "price": data.get("price"),
-                "currency": data.get("currency", "USD"),
-                "interval": data.get("interval", "month"),
-                "features": data.get("features", []),
-                "trialDays": data.get("trialDays", 0),
+                "price_myr": data.get("price_myr"),
+                "stripe_product_id": data.get("stripe_product_id"),
+                "stripe_price_id": data.get("stripe_price_id"),
+                "transcription_limit": data.get("transcription_limit"),
+                "is_transcription_unlimited": data.get("is_transcription_unlimited", False),
+                "can_access_premium_courses": data.get("can_access_premium_courses", False),
+                "trial_period_days": data.get("trial_period_days", 0),
+                "is_active": data.get("is_active", False),
+                "createdAt": data.get("createdAt"),
+                "updatedAt": data.get("updatedAt"),
             }
         )
     return plans
 
 
+def get_subscription_plan(plan_id: str) -> Optional[Dict[str, Any]]:
+    snap = db.collection("subscription_plans").document(plan_id).get()
+    if not snap.exists:
+        return None
+    data = snap.to_dict() or {}
+    return {
+        "id": snap.id,
+        "name": data.get("name"),
+        "price_myr": data.get("price_myr"),
+        "stripe_product_id": data.get("stripe_product_id"),
+        "stripe_price_id": data.get("stripe_price_id"),
+        "transcription_limit": data.get("transcription_limit"),
+        "is_transcription_unlimited": data.get("is_transcription_unlimited", False),
+        "can_access_premium_courses": data.get("can_access_premium_courses", False),
+        "trial_period_days": data.get("trial_period_days", 0),
+        "is_active": data.get("is_active", False),
+        "createdAt": data.get("createdAt"),
+        "updatedAt": data.get("updatedAt"),
+    }
+
+
 def upsert_subscription_plan(plan_id: Optional[str], payload: Dict[str, Any]) -> str:
-    if plan_id:
-        ref = db.collection("subscription_plans").document(plan_id)
-        ref.set(payload, merge=True)
-        return plan_id
-    ref = db.collection("subscription_plans").document()
-    ref.set(payload)
-    return ref.id
+    timestamps = {"updatedAt": firestore.SERVER_TIMESTAMP}
+    if not plan_id:
+        ref = db.collection("subscription_plans").document()
+        ref.set({**payload, **timestamps, "createdAt": firestore.SERVER_TIMESTAMP})
+        return ref.id
+
+    ref = db.collection("subscription_plans").document(plan_id)
+    ref.set({**payload, **timestamps}, merge=True)
+    return plan_id
 
 
 def delete_subscription_plan(plan_id: str) -> bool:
