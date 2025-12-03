@@ -1026,6 +1026,7 @@ async def analytics_dashboard(
     start_dt = datetime.fromisoformat(start_date) if start_date else None
     end_dt = datetime.fromisoformat(end_date) if end_date else None
     chart = firestore_admin.analytics_timeseries(days=30, start_date=start_dt.date() if start_dt else None, end_date=end_dt.date() if end_dt else None)
+    subscription_chart = firestore_admin.subscription_analytics(months=12)
     return templates.TemplateResponse(
         "analytics.html",
         {
@@ -1033,6 +1034,7 @@ async def analytics_dashboard(
             "kpis": kpis,
             "engagement": engagement,
             "chart": chart,
+            "subscription_chart": subscription_chart,
         },
     )
 

@@ -776,6 +776,99 @@ def analytics_timeseries(days: int = 14, start_date: Optional[date] = None, end_
     }
 
 
+# Billing analytics ----------------------------------------------------------
+
+
+def subscription_analytics(months: int = 12) -> Dict[str, Any]:
+    """Aggregate subscription and revenue analytics.
+
+    Generates month-by-month series (most recent month last) for revenue and new
+    subscriptions plus summary breakdowns for active vs canceled and trial
+    conversions.
+    """
+
+    today = datetime.now(timezone.utc).date()
+    current_year, current_month = today.year, today.month
+    month_buckets: List[Tuple[int, int]] = []
+    for _ in range(max(months, 1)):
+        month_buckets.append((current_year, current_month))
+        if current_month == 1:
+            current_year -= 1
+            current_month = 12
+        else:
+            current_month -= 1
+    month_buckets.reverse()
+
+    labels = [datetime(y, m, 1, tzinfo=timezone.utc).strftime("%b %Y") for y, m in month_buckets]
+    start_date = date(month_buckets[0][0], month_buckets[0][1], 1)
+    revenue_by_month = {label: 0.0 for label in labels}
+    new_subs_by_month = {label: 0 for label in labels}
+
+    # Revenue from payment events (paid/succeeded only)
+    start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
+    paid_statuses = {"paid", "succeeded", "completed"}
+    for snap in db.collection("payment_events").where("createdAt", ">=", start_dt).stream():
+        pdata = snap.to_dict() or {}
+        created_at = _to_datetime(pdata.get("createdAt"))
+        if not created_at:
+            continue
+        label = datetime(created_at.year, created_at.month, 1, tzinfo=timezone.utc).strftime("%b %Y")
+        if label not in revenue_by_month:
+            continue
+        status = str(pdata.get("status", "")).lower()
+        if paid_statuses and status and status not in paid_statuses:
+            continue
+        amount = pdata.get("amount_myr")
+        if amount is None:
+            amount = pdata.get("amount")
+        try:
+            revenue_by_month[label] += float(amount or 0)
+        except (TypeError, ValueError):
+            continue
+
+    active_count = 0
+    canceled_count = 0
+    trial_total = 0
+    trial_converted = 0
+
+    for snap in db.collection("user_subscriptions").stream():
+        sdata = snap.to_dict() or {}
+        status = str(sdata.get("status", "")).lower()
+        created_at = _to_datetime(sdata.get("createdAt"))
+        if created_at:
+            label = datetime(created_at.year, created_at.month, 1, tzinfo=timezone.utc).strftime("%b %Y")
+            if label in new_subs_by_month:
+                new_subs_by_month[label] += 1
+
+        if status == "active":
+            active_count += 1
+        elif status == "canceled":
+            canceled_count += 1
+
+        trial_end = _to_datetime(sdata.get("trial_end_at") or sdata.get("trialEndAt"))
+        if trial_end:
+            trial_total += 1
+            if status == "active":
+                trial_converted += 1
+
+    conversion_pct = round((trial_converted / trial_total) * 100, 2) if trial_total else 0.0
+
+    return {
+        "labels": labels,
+        "monthly_revenue": [round(revenue_by_month[label], 2) for label in labels],
+        "new_subscriptions": [new_subs_by_month[label] for label in labels],
+        "status_breakdown": {
+            "active": active_count,
+            "canceled": canceled_count,
+        },
+        "trial_conversion": {
+            "converted": trial_converted,
+            "total_trials": trial_total,
+            "percentage": conversion_pct,
+        },
+    }
+
+
 # Subscriptions & billing ----------------------------------------------------
 
 
