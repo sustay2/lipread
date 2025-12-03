@@ -866,3 +866,36 @@ def list_payments(limit: int = 200) -> List[Dict[str, Any]]:
             }
         )
     return payments
+
+
+def list_payment_events(page: int = 1, page_size: int = 20) -> tuple[List[Dict[str, Any]], bool]:
+    """Paginate payment events ordered by creation time (newest first).
+
+    Returns a tuple of (events, has_next) to support pagination controls.
+    """
+
+    offset = max(page - 1, 0) * page_size
+    query = (
+        db.collection("payment_events")
+        .order_by("createdAt", direction=Query.DESCENDING)
+        .offset(offset)
+        .limit(page_size + 1)
+    )
+    snaps = list(query.stream())
+    has_next = len(snaps) > page_size
+    events: List[Dict[str, Any]] = []
+
+    for snap in snaps[:page_size]:
+        data = snap.to_dict() or {}
+        events.append(
+            {
+                "id": snap.id,
+                "user_email": data.get("user_email") or data.get("userEmail"),
+                "stripe_invoice_id": data.get("stripe_invoice_id") or data.get("invoice_id"),
+                "amount_myr": data.get("amount_myr") or data.get("amount") or 0,
+                "status": data.get("status", "unknown"),
+                "createdAt": _iso(data.get("createdAt")),
+            }
+        )
+
+    return events, has_next

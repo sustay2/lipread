@@ -1239,3 +1239,22 @@ async def update_subscription_plan(
 async def billing(request: Request):
     payments = firestore_admin.list_payments(limit=200)
     return templates.TemplateResponse("billing.html", {"request": request, "payments": payments})
+
+
+@router.get("/admin/payments", response_class=HTMLResponse)
+async def payment_events(
+    request: Request,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    events, has_next = firestore_admin.list_payment_events(page=page, page_size=page_size)
+    return templates.TemplateResponse(
+        "payment_events.html",
+        {
+            "request": request,
+            "events": events,
+            "page": page,
+            "page_size": page_size,
+            "has_next": has_next,
+        },
+    )
