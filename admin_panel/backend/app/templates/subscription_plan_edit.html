@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if plan else 'New' }} Subscription Plan | LipRead Admin{% endblock %}
+{% block header %}{{ 'Edit' if plan else 'New' }} Subscription Plan{% endblock %}
+{% block content %}
+<div class="card shadow-sm">
+    <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+        <div>
+            <h6 class="mb-0">{{ plan.name if plan else 'Create a plan' }}</h6>
+            <small class="text-muted">Plans are billed monthly in MYR</small>
+        </div>
+        <div class="d-flex gap-2">
+            <a class="btn btn-outline-secondary" href="/subscriptions">Back</a>
+            {% if plan %}
+                <span class="badge bg-light text-muted align-self-center">Stripe product: {{ plan.stripe_product_id or '—' }}</span>
+            {% endif %}
+        </div>
+    </div>
+    <div class="card-body">
+        <form class="row g-3" method="post" action="{{ '/subscriptions/' + plan.id if plan else '/subscriptions' }}">
+            <div class="col-md-6">
+                <label class="form-label">Plan name</label>
+                <input type="text" class="form-control" name="name" value="{{ plan.name if plan else '' }}" required>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Price (MYR)</label>
+                <div class="input-group">
+                    <span class="input-group-text">RM</span>
+                    <input type="number" class="form-control" name="price_myr" step="0.01" min="0" value="{{ plan.price_myr if plan else '' }}" required>
+                    <span class="input-group-text">/ month</span>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Transcription limit</label>
+                <input type="number" class="form-control" id="transcription_limit" name="transcription_limit" min="0" value="{{ plan.transcription_limit if plan and plan.transcription_limit is not none else '' }}">
+                <div class="form-text">Leave blank if not enforced.</div>
+            </div>
+            <div class="col-md-6 d-flex align-items-center">
+                <div class="form-check form-switch mt-4">
+                    <input class="form-check-input" type="checkbox" role="switch" id="is_transcription_unlimited" name="is_transcription_unlimited" value="true" {% if plan and plan.is_transcription_unlimited %}checked{% endif %}>
+                    <label class="form-check-label" for="is_transcription_unlimited">Unlimited transcription</label>
+                </div>
+            </div>
+            <div class="col-md-6 d-flex align-items-center">
+                <div class="form-check form-switch mt-4">
+                    <input class="form-check-input" type="checkbox" role="switch" id="can_access_premium_courses" name="can_access_premium_courses" value="true" {% if plan and plan.can_access_premium_courses %}checked{% endif %}>
+                    <label class="form-check-label" for="can_access_premium_courses">Access premium courses</label>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Trial period (days)</label>
+                <input type="number" class="form-control" name="trial_period_days" min="0" value="{{ plan.trial_period_days if plan else 0 }}">
+            </div>
+            <div class="col-md-3 d-flex align-items-center">
+                <div class="form-check form-switch mt-4">
+                    <input class="form-check-input" type="checkbox" role="switch" id="is_active" name="is_active" value="true" {% if not plan or plan.is_active %}checked{% endif %}>
+                    <label class="form-check-label" for="is_active">Active</label>
+                </div>
+            </div>
+            {% if plan %}
+            <div class="col-12">
+                <div class="alert alert-light border">
+                    <div class="small text-muted">Stripe product ID</div>
+                    <code>{{ plan.stripe_product_id or '—' }}</code>
+                    <div class="mt-2 small text-muted">Stripe price ID</div>
+                    <code>{{ plan.stripe_price_id or '—' }}</code>
+                </div>
+            </div>
+            {% endif %}
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary">{{ 'Update plan' if plan else 'Create plan' }}</button>
+            </div>
+        </form>
+    </div>
+</div>
+<script>
+    const unlimitedToggle = document.getElementById('is_transcription_unlimited');
+    const limitInput = document.getElementById('transcription_limit');
+    function toggleLimitInput() {
+        if (!limitInput) return;
+        limitInput.disabled = unlimitedToggle.checked;
+        if (unlimitedToggle.checked) {
+            limitInput.value = '';
+        }
+    }
+    if (unlimitedToggle) {
+        unlimitedToggle.addEventListener('change', toggleLimitInput);
+        toggleLimitInput();
+    }
+</script>
+{% endblock %}

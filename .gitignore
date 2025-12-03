@@ -12,6 +12,7 @@ ai_inference/__pycache__/
 
 # Credentials and secrets
 admin_panel/lipreadapp-441dd04e8b92.json
+admin_panel/backend/.env
 google-services.json
 
 # Flutter / Dart / tooling
