@@ -6,6 +6,9 @@ class Settings(BaseSettings):
     FIREBASE_PRIVATE_KEY: str
     MEDIA_ROOT: str = "C:/lipread_media"
     MEDIA_BASE_URL: str = "http://localhost:8000/media"
+    STRIPE_SECRET_KEY: str
+    STRIPE_DEFAULT_CURRENCY: str
+    STRIPE_WEBHOOK_SECRET: str
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
