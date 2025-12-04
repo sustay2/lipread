@@ -1,7 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../../common/services/theme_controller.dart';
 import '../../common/theme/app_colors.dart';
 import '../../common/theme/app_spacing.dart';
 import '../../services/biometric_service.dart';
@@ -465,6 +467,8 @@ class _AccountPageState extends State<AccountPage> {
   // ---------------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
+    final themeController = context.watch<ThemeController>();
+
     if (_loading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
@@ -640,6 +644,52 @@ class _AccountPageState extends State<AccountPage> {
                   ],
                 ),
               ),
+
+              const SizedBox(height: 20),
+
+              // --- Theme selector start ---
+              Container(
+                decoration: _cardDecor(),
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Appearance",
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                    ),
+                    const SizedBox(height: 12),
+                    RadioListTile<ThemeMode>(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Light'),
+                      value: ThemeMode.light,
+                      groupValue: themeController.themeMode,
+                      onChanged: (mode) {
+                        if (mode != null) themeController.setThemeMode(mode);
+                      },
+                    ),
+                    RadioListTile<ThemeMode>(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Dark'),
+                      value: ThemeMode.dark,
+                      groupValue: themeController.themeMode,
+                      onChanged: (mode) {
+                        if (mode != null) themeController.setThemeMode(mode);
+                      },
+                    ),
+                    RadioListTile<ThemeMode>(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('System Default'),
+                      value: ThemeMode.system,
+                      groupValue: themeController.themeMode,
+                      onChanged: (mode) {
+                        if (mode != null) themeController.setThemeMode(mode);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              // --- Theme selector end ---
 
               const SizedBox(height: 20),
 
