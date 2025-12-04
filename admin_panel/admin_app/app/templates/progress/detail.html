@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block title %}Progress for {{ user_id }}{% endblock %}
+{% block page_title %}Progress Detail{% endblock %}
+{% block content %}
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="card p-4">
+            <h6 class="mb-3">Lessons</h6>
+            <ul class="list-group list-group-flush">
+                {% for lesson in timeline.lessons %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="fw-semibold">{{ lesson.title }}</div>
+                        <small class="text-muted">Status: {{ lesson.status }}</small>
+                    </div>
+                    <span class="badge bg-light text-dark">{{ lesson.completed_at or 'In progress' }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card p-4">
+            <h6 class="mb-3">Quizzes</h6>
+            <ul class="list-group list-group-flush">
+                {% for quiz in timeline.quizzes %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="fw-semibold">{{ quiz.title }}</div>
+                        <small class="text-muted">Taken {{ quiz.taken_at }}</small>
+                    </div>
+                    <span class="badge bg-primary">{{ quiz.score }}%</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

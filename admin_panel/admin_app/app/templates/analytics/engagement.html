@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block title %}Engagement Monitoring{% endblock %}
+{% block page_title %}Engagement Monitoring{% endblock %}
+{% block content %}
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card p-3">
+            <div class="text-muted">Daily Active Users</div>
+            <h4 class="mb-0">{{ metrics.daily_active_users }}</h4>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card p-3">
+            <div class="text-muted">Lesson Completion Rate</div>
+            <h4 class="mb-0">{{ metrics.lesson_completion_rate }}%</h4>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card p-3">
+            <div class="text-muted">Quiz Participation</div>
+            <h4 class="mb-0">{{ metrics.quiz_participation }}%</h4>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card p-3">
+            <div class="text-muted">Avg Time Spent</div>
+            <h4 class="mb-0">{{ metrics.avg_time }}</h4>
+        </div>
+    </div>
+</div>
+<div class="card p-4 mb-4">
+    <h6 class="mb-3">Active Users</h6>
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead><tr><th>Name</th><th>Email</th><th>Streak</th></tr></thead>
+            <tbody>
+            {% for user in active_users %}
+            <tr>
+                <td>{{ user.name }}</td>
+                <td>{{ user.email }}</td>
+                <td><span class="badge bg-primary">{{ user.streak }} days</span></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

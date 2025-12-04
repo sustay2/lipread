@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block title %}PDF Reports{% endblock %}
+{% block page_title %}PDF Reporting{% endblock %}
+{% block content %}
+<div class="card p-4 mb-4">
+    <h6 class="mb-3">Generate Report</h6>
+    <form class="row g-3" method="post" action="/reports/generate">
+        <div class="col-md-4">
+            <label class="form-label">Report Type</label>
+            <select class="form-select" name="report_type">
+                <option value="user_progress">User progress report</option>
+                <option value="course_completion">Course completion statistics</option>
+                <option value="quiz_scores">Quiz scores summary</option>
+                <option value="revenue">Revenue reports</option>
+                <option value="engagement">Engagement analytics</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">Start Date</label>
+            <input type="date" class="form-control" name="start_date" required>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">End Date</label>
+            <input type="date" class="form-control" name="end_date" required>
+        </div>
+        <div class="col-md-2 align-self-end">
+            <button class="btn btn-primary w-100" type="submit">Generate PDF</button>
+        </div>
+    </form>
+</div>
+<div class="card p-4">
+    <h6 class="mb-3">Saved Templates</h6>
+    <div class="row g-3">
+        {% for template in templates %}
+        <div class="col-md-4">
+            <div class="border rounded p-3 h-100">
+                <div class="fw-semibold">{{ template.name }}</div>
+                <small class="text-muted">{{ template.type }} • {{ template.range }}</small>
+                <button class="btn btn-sm btn-outline-primary mt-2">Generate</button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

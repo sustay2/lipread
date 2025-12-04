@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block title %}Subscriptions{% endblock %}
+{% block page_title %}Subscription Management{% endblock %}
+{% block content %}
+<div class="card p-4 mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h6 class="mb-0">Plans</h6>
+        <button class="btn btn-primary btn-sm"><i class="bi bi-plus"></i> Create Plan</button>
+    </div>
+    <div class="row g-3">
+        {% for plan in plans %}
+        <div class="col-md-4">
+            <div class="border rounded p-3 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h5 class="mb-0">{{ plan.name }}</h5>
+                    <span class="badge bg-light text-dark">{{ plan.cycle|capitalize }}</span>
+                </div>
+                <div class="display-6">${{ plan.price }}</div>
+                <ul class="mt-2 text-muted">
+                    {% for feature in plan.features %}
+                    <li>{{ feature }}</li>
+                    {% endfor %}
+                </ul>
+                <button class="btn btn-outline-primary btn-sm">Edit</button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+<div class="card p-4">
+    <h6 class="mb-3">Payment History</h6>
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead class="table-light"><tr><th>User</th><th>Plan</th><th>Amount</th><th>Date</th><th>Status</th><th>Transaction ID</th></tr></thead>
+            <tbody>
+            {% for payment in payments %}
+            <tr>
+                <td>{{ payment.user }}</td>
+                <td>{{ payment.plan }}</td>
+                <td>{{ payment.amount }}</td>
+                <td>{{ payment.date }}</td>
+                <td><span class="badge {% if payment.status=='failed' %}badge-soft-danger{% else %}badge-soft-success{% endif %}">{{ payment.status }}</span></td>
+                <td>{{ payment.transaction_id }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

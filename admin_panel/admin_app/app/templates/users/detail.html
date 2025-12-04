@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block title %}User Details{% endblock %}
+{% block page_title %}User Detail{% endblock %}
+{% block content %}
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card p-4 h-100">
+            <div class="d-flex align-items-center gap-3 mb-3">
+                <div class="avatar bg-primary text-white rounded-circle d-flex align-items-center justify-content-center" style="width:56px;height:56px;"><i class="bi bi-person"></i></div>
+                <div>
+                    <h5 class="mb-0">{{ user.name or 'User' }}</h5>
+                    <small class="text-muted">{{ user.email }}</small>
+                </div>
+            </div>
+            <div class="mb-2"><span class="badge bg-info text-dark">{{ user.role or 'student' }}</span></div>
+            <div class="mb-2">Status: <span class="badge {% if user.status=='disabled' %}badge-soft-danger{% else %}badge-soft-success{% endif %}">{{ user.status or 'active' }}</span></div>
+            <div class="d-flex gap-2 mt-3">
+                <button class="btn btn-outline-primary btn-sm" type="button">Reset Password</button>
+                <button class="btn btn-outline-danger btn-sm" type="button">Force Logout</button>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-8">
+        <div class="card p-4 mb-3">
+            <ul class="nav nav-tabs" role="tablist">
+                <li class="nav-item" role="presentation"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#profile">Profile Info</button></li>
+                <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#progress">Learning Progress</button></li>
+                <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#quizzes">Quiz Results</button></li>
+                <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#billing">Billing History</button></li>
+            </ul>
+            <div class="tab-content pt-3">
+                <div class="tab-pane fade show active" id="profile">
+                    <p class="mb-1"><strong>UID:</strong> {{ user.id }}</p>
+                    <p class="mb-1"><strong>Subscription:</strong> {{ user.subscription or 'Free' }}</p>
+                </div>
+                <div class="tab-pane fade" id="progress">
+                    <div class="row text-center">
+                        <div class="col"><h6>{{ progress.courses }}</h6><small class="text-muted">Courses</small></div>
+                        <div class="col"><h6>{{ progress.completed }}</h6><small class="text-muted">Lessons</small></div>
+                        <div class="col"><h6>{{ progress.quizzes }}</h6><small class="text-muted">Quizzes</small></div>
+                        <div class="col"><h6>{{ progress.average_score }}%</h6><small class="text-muted">Avg Score</small></div>
+                    </div>
+                </div>
+                <div class="tab-pane fade" id="quizzes">
+                    <p class="text-muted">Quiz history will be loaded from analytics service.</p>
+                </div>
+                <div class="tab-pane fade" id="billing">
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead><tr><th>Plan</th><th>Amount</th><th>Date</th><th>Status</th></tr></thead>
+                            <tbody>
+                            {% for txn in billing %}
+                            <tr>
+                                <td>{{ txn.plan }}</td>
+                                <td>{{ txn.amount }}</td>
+                                <td>{{ txn.date }}</td>
+                                <td><span class="badge {% if txn.status=='success' %}badge-soft-success{% else %}badge-soft-danger{% endif %}">{{ txn.status }}</span></td>
+                            </tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
