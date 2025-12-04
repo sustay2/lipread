@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -6,6 +8,7 @@ import '../../models/content_models.dart';
 import '../../services/content_api_service.dart';
 import '../../services/home_metrics_service.dart';
 import '../../services/router.dart';
+import '../../services/subscription_service.dart';
 import '../activities/quiz_activity_page.dart';
 
 class _LessonBundle {
@@ -36,13 +39,17 @@ class LessonDetailScreen extends StatefulWidget {
 
 class _LessonDetailScreenState extends State<LessonDetailScreen> {
   final ContentApiService _contentApi = ContentApiService();
+  final SubscriptionService _subscriptionService = SubscriptionService();
 
   Future<_LessonBundle>? _bundleFuture;
+  UserSubscription? _subscription;
+  bool _subscriptionLoading = true;
 
   @override
   void initState() {
     super.initState();
     _bundleFuture = _loadBundle();
+    _loadSubscription();
   }
 
   Future<_LessonBundle> _loadBundle() async {
@@ -69,6 +76,24 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
       lesson: lesson,
       activities: activities,
     );
+  }
+
+  Future<void> _loadSubscription() async {
+    try {
+      final sub = await _subscriptionService.getMySubscription();
+      if (!mounted) return;
+      setState(() {
+        _subscription = sub;
+      });
+    } catch (e) {
+      debugPrint('Failed to load subscription for lesson: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _subscriptionLoading = false;
+        });
+      }
+    }
   }
 
   @override
@@ -129,164 +154,208 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
           final estMin = lesson.estimatedMin;
           final courseTitle = bundle.course?.title ?? courseId;
           final moduleTitle = bundle.module?.title ?? moduleId;
+          final isPremiumCourse = bundle.course?.isPremium ?? false;
+          final hasPremiumAccess =
+              _subscription?.plan?.canAccessPremiumCourses ?? false;
+          final gating =
+              isPremiumCourse && (!hasPremiumAccess || _subscriptionLoading);
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: _cardDecor(),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        lessonTitle,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.background,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          'Course: $courseTitle',
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.background,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          'Module: $moduleTitle',
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
+          return Stack(
+            children: [
+              SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: _cardDecor(),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(Icons.timer_outlined,
-                              size: 14, color: AppColors.textSecondary),
-                          const SizedBox(width: 4),
                           Text(
-                            estMin > 0 ? '$estMin minutes' : 'Self-paced',
+                            lessonTitle,
                             style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textPrimary,
                             ),
                           ),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.background,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              'Course: $courseTitle',
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.background,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              'Module: $moduleTitle',
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              const Icon(Icons.timer_outlined,
+                                  size: 14, color: AppColors.textSecondary),
+                              const SizedBox(width: 4),
+                              Text(
+                                estMin > 0
+                                    ? '$estMin minutes'
+                                    : 'Self-paced',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              if (isPremiumCourse) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: const Text(
+                                    'Premium',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          if (objectives.isNotEmpty) ...[
+                            const Text(
+                              'Objectives',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: objectives
+                                  .map((o) => Padding(
+                                        padding:
+                                            const EdgeInsets.only(bottom: 4.0),
+                                        child: Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const Text('• ',
+                                                style: TextStyle(
+                                                    color:
+                                                        AppColors.textSecondary)),
+                                            Expanded(
+                                              child: Text(
+                                                o,
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  color: AppColors.textSecondary,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ))
+                                  .toList(),
+                            ),
+                          ],
                         ],
                       ),
-                      const SizedBox(height: 10),
-                      if (objectives.isNotEmpty) ...[
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
                         const Text(
-                          'Objectives',
+                          'Activities',
                           style: TextStyle(
+                            fontSize: 16,
                             fontWeight: FontWeight.w700,
-                            fontSize: 13,
                             color: AppColors.textPrimary,
                           ),
                         ),
-                        const SizedBox(height: 6),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: objectives
-                              .map((o) => Padding(
-                                    padding: const EdgeInsets.only(bottom: 4.0),
-                                    child: Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        const Text('• ',
-                                            style: TextStyle(
-                                                color: AppColors.textSecondary)),
-                                        Expanded(
-                                          child: Text(
-                                            o,
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              color: AppColors.textSecondary,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ))
-                              .toList(),
-                        ),
+                        if (hasUser)
+                          TextButton.icon(
+                            onPressed: () =>
+                                HomeMetricsService.onActivityCompleted(uid!),
+                            icon: const Icon(Icons.refresh, size: 16),
+                            label: const Text('Sync progress'),
+                          ),
                       ],
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Activities',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
                     ),
-                    if (hasUser)
-                      TextButton.icon(
-                        onPressed: () => HomeMetricsService.onActivityCompleted(uid!),
-                        icon: const Icon(Icons.refresh, size: 16),
-                        label: const Text('Sync progress'),
+                    const SizedBox(height: 8),
+                    if (bundle.activities.isEmpty)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: _cardDecor(),
+                        child: const Text(
+                          'No activities yet. Check back soon!',
+                          style: TextStyle(color: AppColors.textSecondary),
+                        ),
+                      )
+                    else
+                      Column(
+                        children: bundle.activities
+                            .map(
+                              (a) => _ActivityTile(
+                                courseId: courseId,
+                                moduleId: moduleId,
+                                lessonId: realLessonId,
+                                activity: a,
+                                onTap: _openActivity,
+                              ),
+                            )
+                            .toList(),
                       ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                if (bundle.activities.isEmpty)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: _cardDecor(),
-                    child: const Text(
-                      'No activities yet. Check back soon!',
-                      style: TextStyle(color: AppColors.textSecondary),
-                    ),
-                  )
-                else
-                  Column(
-                    children: bundle.activities
-                        .map(
-                          (a) => _ActivityTile(
-                            courseId: courseId,
-                            moduleId: moduleId,
-                            lessonId: realLessonId,
-                            activity: a,
-                            onTap: _openActivity,
-                          ),
-                        )
-                        .toList(),
+              ),
+              if (gating)
+                Positioned.fill(
+                  child: _PremiumLessonOverlay(
+                    isLoading: _subscriptionLoading,
+                    onTap: () =>
+                        Navigator.pushNamed(context, Routes.subscription),
                   ),
-              ],
-            ),
+                ),
+            ],
           );
         },
       ),
@@ -482,6 +551,61 @@ class _ActivityTile extends StatelessWidget {
       default:
         return a.config['description'] as String? ?? 'Activity';
     }
+  }
+}
+
+class _PremiumLessonOverlay extends StatelessWidget {
+  final bool isLoading;
+  final VoidCallback onTap;
+
+  const _PremiumLessonOverlay({
+    required this.isLoading,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+          child: Container(color: Colors.black.withOpacity(0.35)),
+        ),
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.lock_outline, color: Colors.white, size: 44),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'This is premium content',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 18,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    isLoading ? 'Checking access...' : 'Upgrade to access',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
