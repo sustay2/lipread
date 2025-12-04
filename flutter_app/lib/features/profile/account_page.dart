@@ -1,9 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-
-import '../../common/services/theme_controller.dart';
 import '../../common/theme/app_spacing.dart';
 import '../../services/biometric_service.dart';
 import '../../services/secure_storage_service.dart';
@@ -466,9 +463,7 @@ class _AccountPageState extends State<AccountPage> {
   // ---------------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
-    final themeController = context.watch<ThemeController>();
     final theme = Theme.of(context);
-    final cs = theme.colorScheme;
     final sectionTitleStyle =
         theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700);
 
@@ -517,9 +512,8 @@ class _AccountPageState extends State<AccountPage> {
                                 _usernameAvailable
                                     ? Icons.check_circle
                                     : Icons.error,
-                                    color: _usernameAvailable
-                                        ? cs.tertiary
-                                        : cs.error,
+                                    color:
+                                        _usernameAvailable ? Colors.green : Colors.red,
                                   ),
                       ),
                       onChanged: _checkUsername,
@@ -629,52 +623,6 @@ class _AccountPageState extends State<AccountPage> {
 
               const SizedBox(height: 20),
 
-              // --- Theme selector start ---
-              Container(
-                decoration: _cardDecor(context),
-                padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      "Appearance",
-                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-                    ),
-                    const SizedBox(height: 12),
-                    RadioListTile<ThemeMode>(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Light'),
-                      value: ThemeMode.light,
-                      groupValue: themeController.themeMode,
-                      onChanged: (mode) {
-                        if (mode != null) themeController.setThemeMode(mode);
-                      },
-                    ),
-                    RadioListTile<ThemeMode>(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Dark'),
-                      value: ThemeMode.dark,
-                      groupValue: themeController.themeMode,
-                      onChanged: (mode) {
-                        if (mode != null) themeController.setThemeMode(mode);
-                      },
-                    ),
-                    RadioListTile<ThemeMode>(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('System Default'),
-                      value: ThemeMode.system,
-                      groupValue: themeController.themeMode,
-                      onChanged: (mode) {
-                        if (mode != null) themeController.setThemeMode(mode);
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              // --- Theme selector end ---
-
-              const SizedBox(height: 20),
-
               // DANGER ZONE
               Container(
                 decoration: _cardDecor(context),
@@ -684,15 +632,16 @@ class _AccountPageState extends State<AccountPage> {
                   children: [
                     Text(
                       "Danger zone",
-                      style: sectionTitleStyle?.copyWith(color: cs.error),
+                      style:
+                          sectionTitleStyle?.copyWith(color: Colors.redAccent),
                     ),
                     const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton(
                         style: FilledButton.styleFrom(
-                          backgroundColor: cs.error,
-                          foregroundColor: cs.onError,
+                          backgroundColor: Colors.redAccent,
+                          foregroundColor: Colors.white,
                         ),
                         onPressed: _deleteAccount,
                         child: const Text("Delete account"),
@@ -713,7 +662,7 @@ class _AccountPageState extends State<AccountPage> {
                         width: 18,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: Theme.of(context).colorScheme.onPrimary,
+                          color: Colors.white,
                         ),
                       )
                     : const Text("Save changes"),
@@ -730,13 +679,12 @@ class _AccountPageState extends State<AccountPage> {
 }
 
 BoxDecoration _cardDecor(BuildContext context) {
-  final cs = Theme.of(context).colorScheme;
   return BoxDecoration(
-    color: cs.surface,
+    color: Colors.white,
     borderRadius: BorderRadius.circular(16),
     boxShadow: [
       BoxShadow(
-        color: cs.shadow.withOpacity(0.12),
+        color: Colors.black.withOpacity(0.08),
         blurRadius: 18,
         offset: const Offset(0, 8),
       ),

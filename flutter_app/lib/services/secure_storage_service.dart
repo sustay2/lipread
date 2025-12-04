@@ -6,7 +6,6 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 class SecureStorageService {
   static const _storageName = 'lipread_bio_v1';
   static const _flagsStorageName = 'lipread_bio_flags_v1';
-  static const _themeModeKey = 'theme_mode';
 
   static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
 
@@ -191,17 +190,5 @@ class SecureStorageService {
     } else {
       await storage.write(jsonEncode(data));
     }
-  }
-
-  // ---------------------------------------------------------------------------
-  // THEME MODE
-  // ---------------------------------------------------------------------------
-
-  static Future<void> saveThemeMode(String value) {
-    return _secureStorage.write(key: _themeModeKey, value: value);
-  }
-
-  static Future<String?> readThemeMode() {
-    return _secureStorage.read(key: _themeModeKey);
   }
 }
