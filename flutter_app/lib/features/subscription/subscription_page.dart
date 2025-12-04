@@ -435,7 +435,7 @@ class _PlanCard extends StatelessWidget {
                 backgroundColor:
                     isCurrent ? colorScheme.primaryContainer : colorScheme.primary,
                 foregroundColor:
-                    isCurrent ? colorScheme.onPrimaryContainer : Colors.white,
+                    isCurrent ? colorScheme.onPrimaryContainer : colorScheme.onPrimary,
               ),
               onPressed: isProcessing ? null : onSelect,
               icon: isProcessing

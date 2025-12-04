@@ -92,9 +92,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: AppColors.background,
+        backgroundColor: theme.scaffoldBackgroundColor,
         elevation: 0,
         centerTitle: false,
         titleSpacing: 16,
@@ -104,7 +104,7 @@ class _HomeScreenState extends State<HomeScreen> {
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: theme.colorScheme.surface,
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
@@ -125,7 +125,7 @@ class _HomeScreenState extends State<HomeScreen> {
               'Lip Learning',
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
+                color: theme.colorScheme.onSurface,
               ),
             ),
           ],
@@ -253,7 +253,8 @@ class _GreetingCard extends StatelessWidget {
               color: AppColors.primary,
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.waving_hand_rounded, color: Colors.white),
+            child: Icon(Icons.waving_hand_rounded,
+                color: Theme.of(context).colorScheme.onPrimary),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -455,9 +456,9 @@ class _ContinueCourseRow extends StatelessWidget {
                   color: AppColors.primary,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.play_arrow_rounded,
-                  color: Colors.white,
+                  color: Theme.of(context).colorScheme.onPrimary,
                   size: 28,
                 ),
               ),
@@ -470,7 +471,7 @@ class _ContinueCourseRow extends StatelessWidget {
                       title,
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
+                        color: theme.colorScheme.onSurface,
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -1289,11 +1290,11 @@ class _CourseVideoThumbState extends State<_CourseVideoThumb> {
                 child: AnimatedOpacity(
                   opacity: showPlay ? 1.0 : 0.0,
                   duration: const Duration(milliseconds: 160),
-                  child: const Center(
+                  child: Center(
                     child: Icon(
                       Icons.play_circle_fill_rounded,
                       size: 36,
-                      color: Colors.white,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                 ),

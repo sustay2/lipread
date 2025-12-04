@@ -170,7 +170,8 @@ class BadgeService {
               // dim background
               Opacity(
                 opacity: anim.value * 0.35,
-                child: Container(color: Colors.black),
+                child: Container(
+                    color: Theme.of(ctx).colorScheme.scrim),
               ),
               // badge card
               Center(
@@ -236,7 +237,8 @@ class _BadgePopupCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(18),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.35),
+              color:
+                  Theme.of(context).colorScheme.scrim.withOpacity(0.35),
               blurRadius: 24,
               offset: const Offset(0, 12),
             ),

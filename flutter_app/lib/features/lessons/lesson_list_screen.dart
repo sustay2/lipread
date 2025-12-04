@@ -134,28 +134,32 @@ class _LessonListScreenState extends State<LessonListScreen> {
                       textInputAction: TextInputAction.search,
                       decoration: InputDecoration(
                         hintText: 'Search courses, modules, lessons...',
-                        prefixIcon: const Icon(
+                        prefixIcon: Icon(
                           Icons.search_rounded,
-                          color: AppColors.primary,
+                          color: Theme.of(context).colorScheme.primary,
                         ),
                         filled: true,
-                        fillColor: Colors.white,
+                        fillColor:
+                            Theme.of(context).colorScheme.surfaceVariant,
                         contentPadding: const EdgeInsets.symmetric(
                             vertical: 12, horizontal: 12),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide:
-                              const BorderSide(color: AppColors.border, width: 1),
+                          borderSide: BorderSide(
+                              color: Theme.of(context).colorScheme.outline,
+                              width: 1),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide:
-                              const BorderSide(color: AppColors.border, width: 1),
+                          borderSide: BorderSide(
+                              color: Theme.of(context).colorScheme.outline,
+                              width: 1),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                              color: AppColors.primary, width: 1.2),
+                          borderSide: BorderSide(
+                              color: Theme.of(context).colorScheme.primary,
+                              width: 1.2),
                         ),
                       ),
                       onChanged: (v) => setState(() => _searchQuery = v.trim()),
@@ -303,24 +307,32 @@ class _LevelChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: selected ? AppColors.primary.withOpacity(0.12) : Colors.white,
+          color: selected
+              ? Theme.of(context).colorScheme.primary.withOpacity(0.12)
+              : Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
-            color: selected ? AppColors.primary : AppColors.border,
+            color: selected
+                ? Theme.of(context).colorScheme.primary
+                : Theme.of(context).colorScheme.outline,
           ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (selected)
-              const Icon(Icons.check, size: 14, color: AppColors.primary),
+              Icon(Icons.check,
+                  size: 14,
+                  color: Theme.of(context).colorScheme.primary),
             if (selected) const SizedBox(width: 4),
             Text(
               label,
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                color: selected ? AppColors.primary : AppColors.textSecondary,
+                color: selected
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -558,7 +570,9 @@ class _PremiumOverlay extends StatelessWidget {
       children: [
         BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
-          child: Container(color: Colors.grey.withOpacity(0.4)),
+          child: Container(
+            color: Theme.of(context).colorScheme.scrim.withOpacity(0.3),
+          ),
         ),
         Material(
           color: Colors.transparent,
@@ -568,24 +582,25 @@ class _PremiumOverlay extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.lock_outline, color: Colors.white, size: 40),
+                  Icon(Icons.lock_outline,
+                      color: Theme.of(context).colorScheme.onSurface,
+                      size: 40),
                   const SizedBox(height: 8),
-                  const Text(
+                  Text(
                     'This is premium content',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16,
-                    ),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurface,
+                          fontWeight: FontWeight.w700,
+                        ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     isLoading ? 'Checking access...' : 'Upgrade to access',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurface,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
                   ),
                 ],
               ),
@@ -631,9 +646,9 @@ class _ModuleTile extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 8),
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border),
+          border: Border.all(color: Theme.of(context).colorScheme.outline),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -911,9 +926,9 @@ class _CourseSkeletonList extends StatelessWidget {
       itemBuilder: (_, __) => Container(
         height: 96,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.border),
+          border: Border.all(color: Theme.of(context).colorScheme.outline),
         ),
       ),
     );

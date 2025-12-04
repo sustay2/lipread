@@ -5,46 +5,50 @@ class AppTheme {
   static const _primaryVariant = Color(0xFF357ABD);
   static const _error = Color(0xFFE57373);
   static const _success = Color(0xFF4CAF50);
+  static const _lightSurface = Color(0xFFF9FBFF);
+  static const _lightOnSurface = Color(0xFF1C1C28);
+  static const _lightOnColor = Color(0xFFF6F8FC);
+  static const _darkOnColor = Color(0xFFF2F5FC);
 
   static const ColorScheme _lightScheme = ColorScheme(
     brightness: Brightness.light,
     primary: _primary,
-    onPrimary: Colors.white,
+    onPrimary: _lightOnColor,
     primaryContainer: Color(0xFFDEE9FB),
     onPrimaryContainer: Color(0xFF0F2D57),
     secondary: _primaryVariant,
-    onSecondary: Colors.white,
+    onSecondary: _lightOnColor,
     secondaryContainer: Color(0xFFE3EEF9),
     onSecondaryContainer: Color(0xFF0B2A4A),
-    surface: Colors.white,
-    onSurface: Color(0xFF1C1C28),
-    surfaceTint: Colors.white,
+    surface: _lightSurface,
+    onSurface: _lightOnSurface,
+    surfaceTint: _lightSurface,
     surfaceVariant: Color(0xFFE5EBF3),
     onSurfaceVariant: Color(0xFF4C5565),
     background: Color(0xFFF6F8FC),
-    onBackground: Color(0xFF1C1C28),
+    onBackground: _lightOnSurface,
     error: _error,
-    onError: Colors.white,
+    onError: _lightOnColor,
     errorContainer: Color(0xFFFDD9D7),
     onErrorContainer: Color(0xFF5F1210),
     tertiary: _success,
-    onTertiary: Colors.white,
+    onTertiary: _lightOnColor,
     tertiaryContainer: Color(0xFFD4F5DC),
     onTertiaryContainer: Color(0xFF0F3F1D),
     outline: Color(0xFFD2D8E3),
     outlineVariant: Color(0xFFEDF1F7),
     shadow: Color(0x19000000),
-    scrim: Colors.black,
+    scrim: Color(0xFF0B0D14),
   );
 
   static const ColorScheme _darkScheme = ColorScheme(
     brightness: Brightness.dark,
     primary: _primary,
-    onPrimary: Colors.white,
+    onPrimary: _darkOnColor,
     primaryContainer: Color(0xFF1F4B7B),
     onPrimaryContainer: Color(0xFFCEE2FF),
     secondary: _primaryVariant,
-    onSecondary: Colors.white,
+    onSecondary: _darkOnColor,
     secondaryContainer: Color(0xFF1C3D61),
     onSecondaryContainer: Color(0xFFD4E6FF),
     surface: Color(0xFF151B24),
@@ -55,17 +59,17 @@ class AppTheme {
     background: Color(0xFF0F141C),
     onBackground: Color(0xFFE3E8EF),
     error: _error,
-    onError: Colors.white,
+    onError: _darkOnColor,
     errorContainer: Color(0xFF8C1D18),
     onErrorContainer: Color(0xFFFDDAD6),
     tertiary: _success,
-    onTertiary: Colors.white,
+    onTertiary: _darkOnColor,
     tertiaryContainer: Color(0xFF1F4D2C),
     onTertiaryContainer: Color(0xFFCFEBD6),
     outline: Color(0xFF3D4757),
     outlineVariant: Color(0xFF2B3442),
     shadow: Color(0x66000000),
-    scrim: Colors.black,
+    scrim: Color(0xFF0B0D14),
   );
 
   static ThemeData get lightTheme => _baseTheme(_lightScheme);
@@ -158,7 +162,9 @@ class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: isDark ? scheme.surfaceVariant : scheme.onSurface,
-        contentTextStyle: TextStyle(color: isDark ? scheme.onSurface : Colors.white),
+        contentTextStyle: TextStyle(
+          color: isDark ? scheme.onSurface : scheme.onPrimary,
+        ),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),

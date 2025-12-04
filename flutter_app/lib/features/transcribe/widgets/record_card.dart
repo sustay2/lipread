@@ -305,13 +305,15 @@ class _RecordCardState extends State<RecordCard>
                     right: 8,
                     child: IconButton(
                       style: IconButton.styleFrom(
-                        backgroundColor:
-                        Colors.black.withOpacity(0.35),
+                        backgroundColor: Theme.of(context)
+                            .colorScheme
+                            .scrim
+                            .withOpacity(0.35),
                       ),
                       onPressed: widget.enabled ? _switchCamera : null,
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.cameraswitch_rounded,
-                        color: Colors.white,
+                        color: Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
                   ),

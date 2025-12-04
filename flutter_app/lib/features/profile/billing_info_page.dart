@@ -254,12 +254,13 @@ class _BillingSummaryCard extends StatelessWidget {
                 FilledButton.icon(
                   onPressed: onManageBilling,
                   icon: openingPortal
-                      ? const SizedBox(
+                      ? SizedBox(
                           height: 16,
                           width: 16,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: Colors.white,
+                            color:
+                                Theme.of(context).colorScheme.onPrimary,
                           ),
                         )
                       : const Icon(Icons.open_in_new),

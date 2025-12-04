@@ -569,7 +569,9 @@ class _PremiumLessonOverlay extends StatelessWidget {
       children: [
         BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-          child: Container(color: Colors.black.withOpacity(0.35)),
+          child: Container(
+            color: Theme.of(context).colorScheme.scrim.withOpacity(0.35),
+          ),
         ),
         Material(
           color: Colors.transparent,
@@ -579,25 +581,27 @@ class _PremiumLessonOverlay extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.lock_outline, color: Colors.white, size: 44),
+                  Icon(Icons.lock_outline,
+                      color: Theme.of(context).colorScheme.onSurface,
+                      size: 44),
                   const SizedBox(height: 10),
-                  const Text(
+                  Text(
                     'This is premium content',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 18,
-                    ),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurface,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 18,
+                        ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     isLoading ? 'Checking access...' : 'Upgrade to access',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurface,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
                   ),
                 ],
               ),
