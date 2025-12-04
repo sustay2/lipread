@@ -6,6 +6,7 @@ import '../../common/theme/app_colors.dart';
 import '../../common/theme/app_spacing.dart';
 import '../../services/biometric_service.dart';
 import '../../services/secure_storage_service.dart';
+import '../../services/router.dart';
 
 class AccountPage extends StatefulWidget {
   const AccountPage({super.key});
@@ -498,6 +499,45 @@ class _AccountPageState extends State<AccountPage> {
                       child: FilledButton(
                         onPressed: _changePassword,
                         child: const Text("Change password"),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // SUBSCRIPTION / BILLING
+              Container(
+                decoration: _cardDecor(),
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Subscription",
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      "View your plan, usage, and manage billing details.",
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pushNamed(
+                          context,
+                          Routes.profileBilling,
+                        ),
+                        child: const Text("View billing"),
                       ),
                     ),
                   ],

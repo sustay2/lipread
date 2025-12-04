@@ -19,6 +19,7 @@ import '../features/subscription/subscription_page.dart';
 import '../features/transcribe/transcribe_page.dart';
 import '../features/profile/profile_page.dart';
 import '../features/profile/account_page.dart';
+import '../features/profile/billing_info_page.dart';
 import 'package:flutter_app/common/widgets/main_scaffold.dart';
 import '../features/auth/forgot_password_screen.dart';
 import '../features/auth/forgot_password_sent_screen.dart';
@@ -53,6 +54,7 @@ class Routes {
   static const results       = '/app/results';
   static const profile       = '/app/profile';
   static const profileAccount= '/app/profile/account';
+  static const profileBilling= '/app/profile/billing';
 
   // Role homes
   static const creator       = '/creator';
@@ -134,6 +136,9 @@ class AppNavigator {
 
       case Routes.profileAccount:
         return _material(const AccountPage());
+
+      case Routes.profileBilling:
+        return _material(const BillingInfoPage());
 
     // Role homes
       case Routes.creator:
