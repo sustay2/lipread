@@ -24,6 +24,8 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _hasFingerprint = false;
   bool _hasFace = false;
   bool _storedForThisUser = false;
+  bool _fingerprintEnabled = false;
+  bool _faceEnabled = false;
 
   @override
   void initState() {
@@ -36,7 +38,27 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!can) return;
 
     final (hasFp, hasFc) = await BiometricService.getBiometricTypes();
-    final stored = await SecureStorageService.hasBiometricCredentials();
+    final storedCreds = await SecureStorageService.readBiometricCredentials();
+
+    bool stored = false;
+    bool fingerprintFlag = false;
+    bool faceFlag = false;
+
+    if (storedCreds != null) {
+      final (uid, _, __) = storedCreds;
+      stored = await SecureStorageService.hasBiometricCredentialsForUser(uid);
+      fingerprintFlag =
+          await SecureStorageService.readBiometricPreference(
+                uid: uid,
+                key: 'fingerprint',
+              ) ??
+              false;
+      faceFlag = await SecureStorageService.readBiometricPreference(
+            uid: uid,
+            key: 'face',
+          ) ??
+          false;
+    }
 
     if (!mounted) return;
 
@@ -44,6 +66,8 @@ class _LoginScreenState extends State<LoginScreen> {
       _hasFingerprint = hasFp;
       _hasFace = hasFc;
       _storedForThisUser = stored;
+      _fingerprintEnabled = fingerprintFlag && hasFp;
+      _faceEnabled = faceFlag && hasFc;
     });
   }
 
@@ -150,12 +174,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
       final (uid, email, password) = stored;
 
-      final ok = await BiometricService.authenticateWithFingerprint(
+      final ok = await BiometricService.authenticate(
         reason: "Use fingerprint to login",
       );
 
       if (!ok) {
-        setState(() => _error = "Fingerprint authentication failed.");
+        _showBiometricError();
         return;
       }
 
@@ -188,12 +212,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
       final (uid, email, password) = stored;
 
-      final ok = await BiometricService.authenticateWithFace(
+      final ok = await BiometricService.authenticate(
         reason: "Use face recognition to login",
       );
 
       if (!ok) {
-        setState(() => _error = "Face recognition failed.");
+        _showBiometricError();
         return;
       }
 
@@ -423,22 +447,26 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildBiometricRow() {
-    if (!_storedForThisUser) return const SizedBox.shrink();
+    if (!_storedForThisUser || (!_fingerprintEnabled && !_faceEnabled)) {
+      return const SizedBox.shrink();
+    }
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (_hasFingerprint)
+        if (_fingerprintEnabled)
           _bioButton(
             key: UniqueKey(),
             icon: Icons.fingerprint,
+            label: "Continue with Fingerprint",
             onTap: _loginWithFingerprint,
           ),
-        if (_hasFingerprint && _hasFace) const SizedBox(width: 20),
-        if (_hasFace)
+        if (_fingerprintEnabled && _faceEnabled) const SizedBox(height: 12),
+        if (_faceEnabled)
           _bioButton(
             key: UniqueKey(),
             icon: Icons.face_unlock_rounded,
+            label: "Continue with Face Recognition",
             onTap: _loginWithFace,
           ),
       ],
@@ -482,22 +510,42 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Widget _bioButton({
     required IconData icon,
+    required String label,
     required VoidCallback onTap,
     Key? key,
   }) {
-    return InkWell(
-      key: key,
-      onTap: _loading ? null : onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        width: 65,
-        height: 65,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.grey.shade300),
-          color: Colors.white,
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        key: key,
+        onPressed: _loading ? null : onTap,
+        icon: Icon(icon),
+        style: ElevatedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
         ),
-        child: Icon(icon, size: 32, color: Colors.black87),
+        label: Text(label),
+      ),
+    );
+  }
+
+  Future<void> _showBiometricError() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Biometric authentication failed"),
+        content: const Text(
+          "Please try again or use another sign-in method.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("OK"),
+          ),
+        ],
       ),
     );
   }
