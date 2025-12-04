@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Subscription Plans | LipRead Admin{% endblock %}
+{% block header %}Subscription Plans{% endblock %}
+{% block content %}
+{% if message %}
+<div class="alert alert-success">{{ message.replace('-', ' ') | capitalize }}</div>
+{% endif %}
+<div class="card shadow-sm">
+    <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+        <div>
+            <h6 class="mb-0">Plans</h6>
+            <small class="text-muted">Manage Stripe-connected subscription plans</small>
+        </div>
+        <a class="btn btn-primary" href="/subscriptions/new"><i class="bi bi-plus-lg me-1"></i>New Plan</a>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Name</th>
+                        <th>Price (MYR)</th>
+                        <th>Transcription</th>
+                        <th>Premium Courses</th>
+                        <th>Trial (days)</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for plan in plans %}
+                    <tr>
+                        <td class="fw-semibold">{{ plan.name }}</td>
+                        <td>RM {{ plan.price_myr }} / month</td>
+                        <td>
+                            {% if plan.is_transcription_unlimited %}
+                                <span class="badge bg-success">Unlimited</span>
+                            {% elif plan.transcription_limit %}
+                                <span class="badge bg-light text-dark">{{ plan.transcription_limit }} clips</span>
+                            {% else %}
+                                <span class="text-muted">Not set</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge {{ 'bg-primary' if plan.can_access_premium_courses else 'bg-secondary' }}">
+                                {{ 'Yes' if plan.can_access_premium_courses else 'No' }}
+                            </span>
+                        </td>
+                        <td>{{ plan.trial_period_days }}</td>
+                        <td>
+                            <span class="badge {{ 'bg-success' if plan.is_active else 'bg-light text-muted border' }}">
+                                {{ 'Active' if plan.is_active else 'Inactive' }}
+                            </span>
+                        </td>
+                        <td class="text-end">
+                            <a class="btn btn-outline-primary btn-sm" href="/subscriptions/{{ plan.id }}/edit">Edit</a>
+                        </td>
+                    </tr>
+                    <tr class="table-light">
+                        <td colspan="7" class="small text-muted">
+                            Stripe product: {{ plan.stripe_product_id or '—' }} | Price: {{ plan.stripe_price_id or '—' }}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="7" class="text-center text-muted">No subscription plans defined.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Payment Events | LipRead Admin{% endblock %}
+{% block header %}Payment Events{% endblock %}
+{% block content %}
+<div class="card shadow-sm">
+    <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">Transaction Logs</h6>
+        <div class="text-muted small">Page {{ page }}</div>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th scope="col">User Email</th>
+                        <th scope="col">Stripe Invoice ID</th>
+                        <th scope="col" class="text-end">Amount (MYR)</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Created</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for event in events %}
+                    <tr>
+                        <td>{{ event.user_email or '—' }}</td>
+                        <td class="text-break">{{ event.stripe_invoice_id or '—' }}</td>
+                        <td class="text-end">{{ '%.2f'|format(event.amount_myr or 0) }}</td>
+                        <td>
+                            <span class="badge {{ 'bg-success' if event.status == 'paid' else 'bg-warning' if event.status in ['pending', 'processing'] else 'bg-secondary' }}">{{ event.status|capitalize }}</span>
+                        </td>
+                        <td class="text-muted small">{{ event.createdAt or '—' }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="text-center text-muted">No payment events found.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <nav aria-label="Payment events pagination">
+            <ul class="pagination justify-content-between mb-0">
+                <li class="page-item {{ 'disabled' if page <= 1 }}">
+                    <a class="page-link" href="/admin/payments?page={{ page - 1 if page > 1 else 1 }}&page_size={{ page_size }}" tabindex="-1">Previous</a>
+                </li>
+                <li class="page-item {{ 'disabled' if not has_next }}">
+                    <a class="page-link" href="/admin/payments?page={{ page + 1 }}&page_size={{ page_size }}">Next</a>
+                </li>
+            </ul>
+        </nav>
+    </div>
+</div>
+{% endblock %}

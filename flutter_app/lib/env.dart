@@ -41,6 +41,10 @@ String getDynamicApiBase() {
 final String kApiBase = getDynamicApiBase();
 final Uri kApiBaseUri = Uri.parse(kApiBase);
 
+/// Stripe publishable key for client-side flows (e.g., mobile Checkout).
+const String kStripePublishableKey =
+    String.fromEnvironment('STRIPE_PUBLISHABLE_KEY', defaultValue: '');
+
 /// Transcribe (lip-reading) backend base.
 /// Can be overridden via:
 ///   --dart-define=TRANSCRIBE_BASE=http://192.168.0.115:8001
