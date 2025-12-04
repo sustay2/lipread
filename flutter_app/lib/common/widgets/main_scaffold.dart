@@ -5,7 +5,7 @@ import '../../features/home/home_screen.dart';
 import '../../features/lessons/lesson_list_screen.dart';
 import '../../features/transcribe/transcribe_page.dart';
 import '../../features/transcribe/transcribe_tab_state.dart';
-import '../../features/results/results_screen.dart';
+import '../../features/subscription/subscription_page.dart';
 import '../../features/profile/profile_page.dart';
 
 class MainNavScaffold extends StatefulWidget {
@@ -21,7 +21,7 @@ class _MainNavScaffoldState extends State<MainNavScaffold> {
   static const int _homeIdx = 0;
   static const int _lessonsIdx = 1;
   static const int _transcribeIdx = 2;
-  static const int _resultsIdx = 3;
+  static const int _subscriptionIdx = 3;
   static const int _profileIdx = 4;
 
   int _localIndex = _homeIdx;
@@ -66,7 +66,7 @@ class _MainNavScaffoldState extends State<MainNavScaffold> {
           else
             const SizedBox.shrink(),
 
-          const ResultsScreen(),
+          const SubscriptionPage(),
           const ProfilePage(),
         ],
       ),
@@ -111,9 +111,9 @@ class _MainNavScaffoldState extends State<MainNavScaffold> {
                   label: 'Transcribe',
                 ),
                 NavigationDestination(
-                  icon: Icon(Icons.article_outlined),
-                  selectedIcon: Icon(Icons.article),
-                  label: 'Results',
+                  icon: Icon(Icons.credit_card_outlined),
+                  selectedIcon: Icon(Icons.credit_card),
+                  label: 'Subscription',
                 ),
                 NavigationDestination(
                   icon: Icon(Icons.person_outline),

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/transcript_result.dart';
 import '../../services/dio_client.dart';
+import '../../services/router.dart';
 import 'widgets/record_card.dart';
 import 'widgets/upload_card.dart';
 import 'widgets/transcript_view.dart';
@@ -161,6 +162,13 @@ class _TranscribePageState extends State<TranscribePage>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Lip Transcription'),
+        actions: [
+          IconButton(
+            tooltip: 'Transcription History',
+            onPressed: () => Navigator.pushNamed(context, Routes.transcriptions),
+            icon: const Icon(Icons.history_outlined),
+          ),
+        ],
         bottom: TabBar(
           controller: _tab,
           tabs: const [

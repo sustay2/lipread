@@ -15,6 +15,7 @@ import '../features/home/home_screen.dart';
 import '../features/lessons/lesson_list_screen.dart';
 import '../features/lessons/lesson_detail_screen.dart';
 import '../features/results/results_screen.dart';
+import '../features/subscription/subscription_page.dart';
 import '../features/transcribe/transcribe_page.dart';
 import '../features/profile/profile_page.dart';
 import '../features/profile/account_page.dart';
@@ -48,6 +49,7 @@ class Routes {
   static const lessonDetail  = '/app/lesson';        // use arguments
   static const transcribe    = '/app/transcribe';
   static const transcriptions = '/transcriptions';
+  static const subscription  = '/app/subscription';
   static const results       = '/app/results';
   static const profile       = '/app/profile';
   static const profileAccount= '/app/profile/account';
@@ -120,6 +122,9 @@ class AppNavigator {
         return MaterialPageRoute(
           builder: (_) => const TranscriptionHistoryPage(),
         );
+
+      case Routes.subscription:
+        return _material(const SubscriptionPage());
 
       case Routes.results:
         return _material(const ResultsScreen());

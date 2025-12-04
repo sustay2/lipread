@@ -88,6 +88,13 @@ class _LessonListScreenState extends State<LessonListScreen> {
         centerTitle: true,
         backgroundColor: AppColors.background,
         elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: 'Lesson Attempts',
+            onPressed: () => Navigator.pushNamed(context, Routes.results),
+            icon: const Icon(Icons.insights_outlined),
+          ),
+        ],
       ),
       body: Column(
         children: [
