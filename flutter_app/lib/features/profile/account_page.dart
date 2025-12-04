@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../common/services/theme_controller.dart';
-import '../../common/theme/app_colors.dart';
 import '../../common/theme/app_spacing.dart';
 import '../../services/biometric_service.dart';
 import '../../services/secure_storage_service.dart';
@@ -468,6 +467,10 @@ class _AccountPageState extends State<AccountPage> {
   @override
   Widget build(BuildContext context) {
     final themeController = context.watch<ThemeController>();
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final sectionTitleStyle =
+        theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700);
 
     if (_loading) {
       return const Scaffold(
@@ -486,7 +489,7 @@ class _AccountPageState extends State<AccountPage> {
             children: [
               // PROFILE CARD
               Container(
-                decoration: _cardDecor(),
+                decoration: _cardDecor(context),
                 padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -510,13 +513,13 @@ class _AccountPageState extends State<AccountPage> {
                               )
                             : _nameCtrl.text.isEmpty
                                 ? null
-                                : Icon(
-                                    _usernameAvailable
-                                        ? Icons.check_circle
-                                        : Icons.error,
+                            : Icon(
+                                _usernameAvailable
+                                    ? Icons.check_circle
+                                    : Icons.error,
                                     color: _usernameAvailable
-                                        ? Colors.green
-                                        : Colors.red,
+                                        ? cs.tertiary
+                                        : cs.error,
                                   ),
                       ),
                       onChanged: _checkUsername,
@@ -534,19 +537,12 @@ class _AccountPageState extends State<AccountPage> {
 
               // PASSWORD BLOCK
               Container(
-                decoration: _cardDecor(),
+                decoration: _cardDecor(context),
                 padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      "Password",
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
+                    Text("Password", style: sectionTitleStyle),
                     const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
@@ -563,19 +559,12 @@ class _AccountPageState extends State<AccountPage> {
 
               // SUBSCRIPTION / BILLING
               Container(
-                decoration: _cardDecor(),
+                decoration: _cardDecor(context),
                 padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      "Subscription",
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
+                    Text("Subscription", style: sectionTitleStyle),
                     const SizedBox(height: 8),
                     ListTile(
                       contentPadding: EdgeInsets.zero,
@@ -609,19 +598,12 @@ class _AccountPageState extends State<AccountPage> {
 
               // BIOMETRICS CARD
               Container(
-                decoration: _cardDecor(),
+                decoration: _cardDecor(context),
                 padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      "Biometric login",
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
+                    Text("Biometric login", style: sectionTitleStyle),
                     const SizedBox(height: 12),
 
                     _BiometricTile(
@@ -649,7 +631,7 @@ class _AccountPageState extends State<AccountPage> {
 
               // --- Theme selector start ---
               Container(
-                decoration: _cardDecor(),
+                decoration: _cardDecor(context),
                 padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -695,25 +677,22 @@ class _AccountPageState extends State<AccountPage> {
 
               // DANGER ZONE
               Container(
-                decoration: _cardDecor(),
+                decoration: _cardDecor(context),
                 padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       "Danger zone",
-                      style: TextStyle(
-                        color: Colors.red,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                      ),
+                      style: sectionTitleStyle?.copyWith(color: cs.error),
                     ),
                     const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton(
                         style: FilledButton.styleFrom(
-                          backgroundColor: Colors.red,
+                          backgroundColor: cs.error,
+                          foregroundColor: cs.onError,
                         ),
                         onPressed: _deleteAccount,
                         child: const Text("Delete account"),
@@ -750,13 +729,14 @@ class _AccountPageState extends State<AccountPage> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 }
 
-BoxDecoration _cardDecor() {
+BoxDecoration _cardDecor(BuildContext context) {
+  final cs = Theme.of(context).colorScheme;
   return BoxDecoration(
-    color: AppColors.surface,
+    color: cs.surface,
     borderRadius: BorderRadius.circular(16),
     boxShadow: [
       BoxShadow(
-        color: AppColors.softShadow,
+        color: cs.shadow.withOpacity(0.12),
         blurRadius: 18,
         offset: const Offset(0, 8),
       ),

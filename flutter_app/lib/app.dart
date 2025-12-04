@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_app/common/services/theme_controller.dart';
-import 'package:flutter_app/common/theme/app_theme.dart';
+import 'package:flutter_app/theme/app_theme.dart';
 import 'package:flutter_app/services/router.dart';
 import 'package:provider/provider.dart';
 
@@ -21,8 +21,8 @@ class ELRLApp extends StatelessWidget {
           return MaterialApp(
             title: 'Lip Learning',
             debugShowCheckedModeBanner: false,
-            theme: AppTheme.light(),
-            darkTheme: AppTheme.dark(),
+            theme: AppTheme.lightTheme,
+            darkTheme: AppTheme.darkTheme,
             themeMode: theme.themeMode,
             onGenerateRoute: AppNavigator.onGenerateRoute,
             initialRoute: Routes.splash,

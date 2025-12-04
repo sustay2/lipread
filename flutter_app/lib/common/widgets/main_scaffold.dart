@@ -51,7 +51,7 @@ class _MainNavScaffoldState extends State<MainNavScaffold> {
     TranscribeTabState.isActive.value = (idx == _transcribeIdx);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F8FD),
+      backgroundColor: cs.background,
       // IMPORTANT: do NOT keep TranscribePage alive when its tab is inactive.
       body: IndexedStack(
         index: idx,
@@ -74,48 +74,53 @@ class _MainNavScaffoldState extends State<MainNavScaffold> {
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(24),
-          child: Container(
+          child: DecoratedBox(
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: cs.surface,
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.blue.shade100.withOpacity(0.5),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8),
+                  color: cs.shadow.withOpacity(0.12),
+                  blurRadius: 18,
+                  offset: const Offset(0, 10),
                 ),
               ],
             ),
             child: NavigationBar(
-              backgroundColor: Colors.white,
+              key: const ValueKey('main-navigation-bar'),
+              backgroundColor: cs.surface,
               height: 64,
               elevation: 0,
-              indicatorColor: const Color(0x334A90E2),
               labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
               selectedIndex: idx,
               onDestinationSelected: _onTap,
               destinations: const [
                 NavigationDestination(
+                  key: ValueKey('nav-home'),
                   icon: Icon(Icons.home_outlined),
                   selectedIcon: Icon(Icons.home),
                   label: 'Home',
                 ),
                 NavigationDestination(
+                  key: ValueKey('nav-lessons'),
                   icon: Icon(Icons.menu_book_outlined),
                   selectedIcon: Icon(Icons.menu_book),
                   label: 'Lessons',
                 ),
                 NavigationDestination(
+                  key: ValueKey('nav-transcribe'),
                   icon: Icon(Icons.mic_none_outlined),
                   selectedIcon: Icon(Icons.mic),
                   label: 'Transcribe',
                 ),
                 NavigationDestination(
+                  key: ValueKey('nav-subscription'),
                   icon: Icon(Icons.credit_card_outlined),
                   selectedIcon: Icon(Icons.credit_card),
                   label: 'Subscription',
                 ),
                 NavigationDestination(
+                  key: ValueKey('nav-profile'),
                   icon: Icon(Icons.person_outline),
                   selectedIcon: Icon(Icons.person),
                   label: 'Profile',

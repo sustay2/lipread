@@ -295,9 +295,10 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FB),
+      backgroundColor: cs.background,
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -311,83 +312,78 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildCard(ThemeData theme) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          )
-        ],
-      ),
-      child: Column(
-        children: [
-          Icon(Icons.mic_none_rounded,
-              size: 64, color: theme.colorScheme.primary),
-          const SizedBox(height: 12),
-
-          Text(
-            "Welcome Back 👋",
-            style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 6),
-
-          const Text(
-            "Sign in to continue learning",
-            style: TextStyle(color: Colors.grey),
-          ),
-
-          const SizedBox(height: 32),
-
-          _buildForm(),
-
-          if (_error != null) ...[
+    final cs = theme.colorScheme;
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
+        child: Column(
+          children: [
+            Icon(Icons.mic_none_rounded, size: 64, color: cs.primary),
             const SizedBox(height: 12),
-            _errorBox(),
+
+            Text(
+              "Welcome Back 👋",
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 6),
+
+            Text(
+              "Sign in to continue learning",
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+
+            const SizedBox(height: 32),
+
+            _buildForm(),
+
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              _errorBox(cs),
+            ],
+
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () =>
+                    Navigator.pushNamed(context, Routes.forgotPassword),
+                child: const Text("Forgot Password?"),
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            _buildLoginButton(),
+
+            const SizedBox(height: 20),
+
+            _buildBiometricRow(),
+
+            const SizedBox(height: 20),
+
+            _buildDivider(theme),
+
+            const SizedBox(height: 16),
+
+            _googleButton(theme),
+
+            const SizedBox(height: 16),
+
+            TextButton(
+              onPressed: () =>
+                  Navigator.pushNamed(context, Routes.register),
+              child: Text(
+                "Don't have an account? Sign Up",
+                style: TextStyle(color: cs.primary),
+              ),
+            ),
           ],
-
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: () => Navigator.pushNamed(
-                  context, Routes.forgotPassword),
-              child: const Text("Forgot Password?"),
-            ),
-          ),
-
-          const SizedBox(height: 8),
-
-          _buildLoginButton(),
-
-          const SizedBox(height: 20),
-
-          _buildBiometricRow(),
-
-          const SizedBox(height: 20),
-
-          _buildDivider(),
-
-          const SizedBox(height: 16),
-
-          _googleButton(),
-
-          const SizedBox(height: 16),
-
-          TextButton(
-            onPressed: () =>
-                Navigator.pushNamed(context, Routes.register),
-            child: const Text(
-              "Don't have an account? Sign Up",
-              style: TextStyle(color: Color(0xFF4A90E2)),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -428,6 +424,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildLoginButton() {
+    final cs = Theme.of(context).colorScheme;
     return SizedBox(
       width: double.infinity,
       child: FilledButton(
@@ -438,7 +435,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 width: 18,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: Colors.white,
+                  color: cs.onPrimary,
                 ),
               )
             : const Text("Login"),
@@ -473,14 +470,20 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildDivider() {
+  Widget _buildDivider(ThemeData theme) {
+    final cs = theme.colorScheme;
     return Row(
-      children: const [
-        Expanded(child: Divider()),
-        SizedBox(width: 8),
-        Text("Or Continue With"),
-        SizedBox(width: 8),
-        Expanded(child: Divider()),
+      children: [
+        Expanded(child: Divider(color: cs.outlineVariant)),
+        const SizedBox(width: 8),
+        Text(
+          "Or Continue With",
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: cs.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(child: Divider(color: cs.outlineVariant)),
       ],
     );
   }
@@ -494,17 +497,26 @@ class _LoginScreenState extends State<LoginScreen> {
     IconData? prefix,
     Widget? suffix,
   }) {
+    final cs = Theme.of(context).colorScheme;
     return InputDecoration(
       labelText: label,
       prefixIcon: prefix != null ? Icon(prefix) : null,
       suffixIcon: suffix,
       filled: true,
-      fillColor: const Color(0xFFF3F4F6),
+      fillColor: cs.surfaceVariant,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide.none,
+        borderSide: BorderSide(color: cs.outline),
       ),
-      contentPadding: const EdgeInsets.symmetric(vertical: 16),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: cs.outline),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: cs.primary, width: 1.5),
+      ),
+      contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
     );
   }
 
@@ -550,22 +562,22 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _errorBox() {
+  Widget _errorBox(ColorScheme cs) {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: Colors.red.shade50,
+        color: cs.errorContainer.withOpacity(0.3),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.red.shade100),
+        border: Border.all(color: cs.errorContainer.withOpacity(0.6)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.error_outline, color: Colors.red, size: 20),
+          Icon(Icons.error_outline, color: cs.error, size: 20),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               _error ?? "",
-              style: const TextStyle(color: Colors.red, fontSize: 13),
+              style: TextStyle(color: cs.error, fontSize: 13),
             ),
           ),
         ],
@@ -573,7 +585,8 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _googleButton() {
+  Widget _googleButton(ThemeData theme) {
+    final cs = theme.colorScheme;
     return SizedBox(
       width: 200,
       height: 55,
@@ -583,8 +596,8 @@ class _LoginScreenState extends State<LoginScreen> {
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.grey.shade300),
-            color: Colors.white,
+            border: Border.all(color: cs.outlineVariant),
+            color: cs.surface,
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -595,7 +608,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 height: 28,
               ),
               const SizedBox(width: 10),
-              const Text("Google", style: TextStyle(fontSize: 16)),
+              Text(
+                "Google",
+                style: theme.textTheme.bodyLarge,
+              ),
             ],
           ),
         ),
