@@ -34,6 +34,9 @@ class _AccountPageState extends State<AccountPage> {
   bool _fingerprintEnabled = false;
   bool _faceEnabled = false;
 
+  static const _fingerprintPrefKey = 'fingerprint';
+  static const _facePrefKey = 'face';
+
   late User _user;
   late String _uid;
 
@@ -89,6 +92,14 @@ class _AccountPageState extends State<AccountPage> {
     final (hasFp, hasFace) = await BiometricService.getBiometricTypes();
     final hasCredsForUser =
         await SecureStorageService.hasBiometricCredentialsForUser(_uid);
+    final savedFingerprint = await SecureStorageService.readBiometricPreference(
+      uid: _uid,
+      key: _fingerprintPrefKey,
+    );
+    final savedFace = await SecureStorageService.readBiometricPreference(
+      uid: _uid,
+      key: _facePrefKey,
+    );
 
     if (!mounted) return;
 
@@ -97,15 +108,10 @@ class _AccountPageState extends State<AccountPage> {
       _hasFingerprint = hasFp;
       _hasFace = hasFace;
 
-      // If this user owns the stored biometric creds,
-      // we treat their available modalities as "enabled" by default.
-      if (hasCredsForUser) {
-        _fingerprintEnabled = hasFp;
-        _faceEnabled = hasFace;
-      } else {
-        _fingerprintEnabled = false;
-        _faceEnabled = false;
-      }
+      final credsOk = hasCredsForUser;
+      _fingerprintEnabled =
+          credsOk && hasFp && (savedFingerprint ?? (hasFp && credsOk));
+      _faceEnabled = credsOk && hasFace && (savedFace ?? (hasFace && credsOk));
     });
   }
 
@@ -207,6 +213,11 @@ class _AccountPageState extends State<AccountPage> {
         email: _user.email!,
         password: password,
       );
+      await SecureStorageService.saveBiometricPreference(
+        uid: _uid,
+        key: _fingerprintPrefKey,
+        enabled: true,
+      );
 
       setState(() {
         _fingerprintEnabled = true;
@@ -220,6 +231,12 @@ class _AccountPageState extends State<AccountPage> {
       // If neither modality is enabled anymore, clear creds for this user.
       if (!_faceEnabled) {
         await SecureStorageService.clearBiometricCredentialsForUser(_uid);
+        await SecureStorageService.clearBiometricPreferencesForUser(_uid);
+      } else {
+        await SecureStorageService.clearBiometricPreference(
+          uid: _uid,
+          key: _fingerprintPrefKey,
+        );
       }
 
       _show("Fingerprint login disabled.");
@@ -247,6 +264,11 @@ class _AccountPageState extends State<AccountPage> {
         email: _user.email!,
         password: password,
       );
+      await SecureStorageService.saveBiometricPreference(
+        uid: _uid,
+        key: _facePrefKey,
+        enabled: true,
+      );
 
       setState(() {
         _faceEnabled = true;
@@ -258,10 +280,38 @@ class _AccountPageState extends State<AccountPage> {
 
       if (!_fingerprintEnabled) {
         await SecureStorageService.clearBiometricCredentialsForUser(_uid);
+        await SecureStorageService.clearBiometricPreferencesForUser(_uid);
+      } else {
+        await SecureStorageService.clearBiometricPreference(
+          uid: _uid,
+          key: _facePrefKey,
+        );
       }
 
       _show("Face recognition login disabled.");
     }
+  }
+
+  void _showUnsupportedBiometric(String method) {
+    final label = method.toLowerCase().contains('face')
+        ? 'face recognition'
+        : 'fingerprint';
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Not supported"),
+        content: Text(
+          "Your device does not support $label login on this device.",
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -522,17 +572,24 @@ class _AccountPageState extends State<AccountPage> {
                         color: AppColors.textPrimary,
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      "View your plan, usage, and manage billing details.",
-                      style: TextStyle(
-                        color: AppColors.textSecondary,
+                    const SizedBox(height: 8),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.receipt_long_outlined),
+                      title: const Text("Billing & Subscription"),
+                      subtitle: const Text(
+                        "View your plan, usage, and manage billing details.",
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.pushNamed(
+                        context,
+                        Routes.profileBilling,
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                     SizedBox(
                       width: double.infinity,
-                      child: OutlinedButton(
+                      child: FilledButton(
                         onPressed: () => Navigator.pushNamed(
                           context,
                           Routes.profileBilling,
@@ -547,45 +604,42 @@ class _AccountPageState extends State<AccountPage> {
               const SizedBox(height: 20),
 
               // BIOMETRICS CARD
-              if (_biometricsAvailable)
-                Container(
-                  decoration: _cardDecor(),
-                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "Biometric login",
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
-                        ),
+              Container(
+                decoration: _cardDecor(),
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Biometric login",
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
                       ),
-                      const SizedBox(height: 12),
+                    ),
+                    const SizedBox(height: 12),
 
-                      if (_hasFingerprint)
-                        SwitchListTile.adaptive(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text("Fingerprint login"),
-                          subtitle: const Text(
-                              "Use your fingerprint to log in quickly."),
-                          value: _fingerprintEnabled,
-                          onChanged: (v) => _toggleFingerprint(v),
-                        ),
-
-                      if (_hasFace)
-                        SwitchListTile.adaptive(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text("Face recognition login"),
-                          subtitle: const Text(
-                              "Use face unlock to log in instantly."),
-                          value: _faceEnabled,
-                          onChanged: (v) => _toggleFace(v),
-                        ),
-                    ],
-                  ),
+                    _BiometricTile(
+                      title: "Enable Fingerprint Login",
+                      subtitle: "Use your fingerprint to log in quickly.",
+                      supported: _biometricsAvailable && _hasFingerprint,
+                      value: _fingerprintEnabled,
+                      onChanged: (v) => _toggleFingerprint(v),
+                      onUnsupported: () =>
+                          _showUnsupportedBiometric('fingerprint'),
+                    ),
+                    _BiometricTile(
+                      title: "Enable Face Recognition Login",
+                      subtitle: "Use face unlock to log in instantly.",
+                      supported: _biometricsAvailable && _hasFace,
+                      value: _faceEnabled,
+                      onChanged: (v) => _toggleFace(v),
+                      onUnsupported: () => _showUnsupportedBiometric('face'),
+                    ),
+                  ],
                 ),
+              ),
 
               const SizedBox(height: 20),
 
@@ -658,4 +712,38 @@ BoxDecoration _cardDecor() {
       ),
     ],
   );
+}
+
+class _BiometricTile extends StatelessWidget {
+  const _BiometricTile({
+    required this.title,
+    required this.subtitle,
+    required this.supported,
+    required this.value,
+    required this.onChanged,
+    required this.onUnsupported,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool supported;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final VoidCallback onUnsupported;
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveValue = supported ? value : false;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(title),
+      subtitle: Text(subtitle),
+      trailing: Switch.adaptive(
+        value: effectiveValue,
+        onChanged: supported ? onChanged : null,
+      ),
+      onTap: supported ? () => onChanged(!effectiveValue) : onUnsupported,
+      enabled: true,
+    );
+  }
 }
