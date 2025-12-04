@@ -165,6 +165,7 @@ async def course_create(
     difficulty: str = Form("beginner"),
     tags: str = Form(""),
     published: bool = Form(False),
+    is_premium: bool = Form(False),
     thumbnail: UploadFile = File(None),
 ):
     media_id = None
@@ -176,7 +177,8 @@ async def course_create(
         "description": description,
         "difficulty": difficulty,
         "tags": [t.strip() for t in tags.split(",") if t.strip()],
-        "published": bool(published),
+        "published": _parse_bool(published),
+        "isPremium": _parse_bool(is_premium),
         "mediaId": media_id,
     }
     course_id = firestore_admin.create_course(payload)
@@ -200,6 +202,7 @@ async def course_update(
     difficulty: str = Form("beginner"),
     tags: str = Form(""),
     published: bool = Form(False),
+    is_premium: bool = Form(False),
     thumbnail: UploadFile = File(None),
 ):
     media_id = None
@@ -211,7 +214,8 @@ async def course_update(
         "description": description,
         "difficulty": difficulty,
         "tags": [t.strip() for t in tags.split(",") if t.strip()],
-        "published": bool(published),
+        "published": _parse_bool(published),
+        "isPremium": _parse_bool(is_premium),
     }
     if media_id:
         payload["mediaId"] = media_id
