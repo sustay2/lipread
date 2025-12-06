@@ -430,7 +430,7 @@ class _LoginScreenState extends State<LoginScreen> {
       child: FilledButton(
         onPressed: _loading ? null : _login,
         child: _loading
-            ? const SizedBox(
+            ? SizedBox(
                 height: 18,
                 width: 18,
                 child: CircularProgressIndicator(

@@ -103,16 +103,16 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       autofillHints: const [AutofillHints.email],
                       decoration: InputDecoration(
                         labelText: 'Email',
-                        prefixIcon: const Icon(Icons.email_outlined, color: cs.primary),
+                        prefixIcon: Icon(Icons.email_outlined, color: cs.primary),
                         filled: true,
                         fillColor: cs.surface,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(color: cs.outline),
+                          borderSide: BorderSide(color: cs.outline),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(color: cs.primary, width: 1.5),
+                          borderSide: BorderSide(color: cs.primary, width: 1.5),
                         ),
                         contentPadding: const EdgeInsets.symmetric(vertical: 16),
                       ),

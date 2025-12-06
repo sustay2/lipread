@@ -208,7 +208,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
                       ),
                       child: Text(
                         _email!,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w600,
                           color: cs.onSurface,
                         ),
@@ -231,7 +231,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
                         child: FilledButton.icon(
                           onPressed: _sending || _cooldown > 0 ? null : _resend,
                           icon: _sending
-                              ? const SizedBox(
+                              ? SizedBox(
                             width: 18,
                             height: 18,
                             child: CircularProgressIndicator(
@@ -260,7 +260,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
                           label: const Text('Open mail'),
                           style: OutlinedButton.styleFrom(
                             backgroundColor: cs.surface,
-                            side: const BorderSide(color: cs.outline),
+                            side: BorderSide(color: cs.outline),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14),
                             ),
@@ -323,7 +323,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
                       await FirebaseAuth.instance.signOut();
                       if (mounted) context.go('/login');
                     },
-                    child: const Text.rich(
+                    child: Text.rich(
                       TextSpan(
                         text: 'Wrong email? ',
                         children: [

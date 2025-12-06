@@ -154,21 +154,23 @@ class SubscriptionService {
     String? stripePublishableKey,
   })  : _auth = auth ?? FirebaseAuth.instance,
         _apiBase = _normalizeBase(apiBase ?? kApiBase),
-        _publishableKey = stripePublishableKey ?? const String.fromEnvironment('STRIPE_PUBLISHABLE_KEY'),
+        _publishableKey = stripePublishableKey ??
+            const String.fromEnvironment('STRIPE_PUBLISHABLE_KEY'),
         _successUrl = successUrl ?? 'https://lipread.app/stripe/success',
         _cancelUrl = cancelUrl ?? 'https://lipread.app/stripe/cancel',
         _portalReturnUrl = portalReturnUrl ?? 'https://lipread.app/account',
-        _dio = dio ??
-            Dio(
-              BaseOptions(
-                baseUrl: '$_apiBase/api/billing',
-                connectTimeout: const Duration(seconds: 10),
-                receiveTimeout: const Duration(seconds: 20),
-                sendTimeout: const Duration(seconds: 20),
-                headers: const {'Accept': 'application/json'},
-              ),
-            ) {
-    debugPrint('[SubscriptionService] base=$_apiBase publishableKey=$_publishableKey');
+        _dio = dio ?? Dio() {
+    _dio.options.baseUrl = '$_apiBase/api/billing';
+    _dio.options = _dio.options.copyWith(
+      connectTimeout: const Duration(seconds: 10),
+      receiveTimeout: const Duration(seconds: 20),
+      sendTimeout: const Duration(seconds: 20),
+      headers: const {'Accept': 'application/json'},
+    );
+
+    debugPrint(
+      '[SubscriptionService] base=$_apiBase publishableKey=$_publishableKey',
+    );
   }
 
   final Dio _dio;
