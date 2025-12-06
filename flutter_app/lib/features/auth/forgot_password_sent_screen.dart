@@ -192,7 +192,7 @@ class _ForgotPasswordSentScreenState extends State<ForgotPasswordSentScreen> {
                       ),
                       child: Text(
                         email,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w600,
                           color: cs.onSurface,
                         ),
@@ -226,7 +226,7 @@ class _ForgotPasswordSentScreenState extends State<ForgotPasswordSentScreen> {
                         child: FilledButton.icon(
                           onPressed: (_cooldown > 0 || _sending) ? null : _resend,
                           icon: _sending
-                              ? const SizedBox(
+                              ? SizedBox(
                             height: 18, width: 18,
                             child: CircularProgressIndicator(strokeWidth: 2, color: cs.surface),
                           )
@@ -248,7 +248,7 @@ class _ForgotPasswordSentScreenState extends State<ForgotPasswordSentScreen> {
                           label: const Text('Open mail'),
                           style: OutlinedButton.styleFrom(
                             backgroundColor: cs.surface,
-                            side: const BorderSide(color: cs.outline),
+                            side: BorderSide(color: cs.outline),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14),
                             ),
@@ -263,7 +263,7 @@ class _ForgotPasswordSentScreenState extends State<ForgotPasswordSentScreen> {
 
                   TextButton(
                     onPressed: () => Navigator.pushNamedAndRemoveUntil(context, Routes.login, (r) => false),
-                    child: const Text.rich(
+                    child: Text.rich(
                       TextSpan(
                         text: 'Back to ',
                         children: [

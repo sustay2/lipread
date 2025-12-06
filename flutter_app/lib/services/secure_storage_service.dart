@@ -17,7 +17,7 @@ class SecureStorageService {
 
     return BiometricStorage().getStorage(
       _flagsStorageName,
-      options: const StorageFileInitOptions(authenticationRequired: false),
+      options: StorageFileInitOptions(authenticationRequired: false),
     );
   }
 

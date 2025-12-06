@@ -24,7 +24,7 @@ class LightTheme {
       elevation: 0,
       centerTitle: true,
     ),
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       color: Colors.white,
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -76,7 +76,7 @@ class LightTheme {
       unselectedItemColor: Colors.grey,
       type: BottomNavigationBarType.fixed,
     ),
-    tabBarTheme: const TabBarTheme(
+    tabBarTheme: const TabBarThemeData(
       labelColor: Color(0xFF007AFF),
       unselectedLabelColor: Colors.black54,
       indicatorColor: Color(0xFF007AFF),

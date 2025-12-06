@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -112,6 +113,36 @@ class UserSubscription {
   final DateTime? updatedAt;
 }
 
+class SubscriptionMetadata {
+  SubscriptionMetadata({
+    this.transcriptionLimit,
+    this.isUnlimited = false,
+    this.canAccessPremiumCourses = false,
+    this.freeTrialDays = 0,
+  });
+
+  factory SubscriptionMetadata.fromJson(Map<String, dynamic> json) {
+    final rawLimit = json['transcriptionLimit'] ?? json['transcription_limit'];
+    final limitStr = rawLimit?.toString().toLowerCase();
+    final unlimited = limitStr == 'unlimited';
+    final limitVal = _asInt(rawLimit);
+
+    return SubscriptionMetadata(
+      transcriptionLimit: unlimited ? null : (limitVal ?? 10),
+      isUnlimited: unlimited,
+      canAccessPremiumCourses:
+          _asBool(json['canAccessPremiumCourses'] ?? json['can_access_premium_courses']) ??
+              false,
+      freeTrialDays: _asInt(json['freeTrialDays'] ?? json['trial_period_days']) ?? 0,
+    );
+  }
+
+  final int? transcriptionLimit;
+  final bool isUnlimited;
+  final bool canAccessPremiumCourses;
+  final int freeTrialDays;
+}
+
 class SubscriptionService {
   SubscriptionService({
     Dio? dio,
@@ -123,21 +154,23 @@ class SubscriptionService {
     String? stripePublishableKey,
   })  : _auth = auth ?? FirebaseAuth.instance,
         _apiBase = _normalizeBase(apiBase ?? kApiBase),
-        _publishableKey = stripePublishableKey ?? const String.fromEnvironment('STRIPE_PUBLISHABLE_KEY'),
+        _publishableKey = stripePublishableKey ??
+            const String.fromEnvironment('STRIPE_PUBLISHABLE_KEY'),
         _successUrl = successUrl ?? 'https://lipread.app/stripe/success',
         _cancelUrl = cancelUrl ?? 'https://lipread.app/stripe/cancel',
         _portalReturnUrl = portalReturnUrl ?? 'https://lipread.app/account',
-        _dio = dio ??
-            Dio(
-              BaseOptions(
-                baseUrl: '$_apiBase/api/billing',
-                connectTimeout: const Duration(seconds: 10),
-                receiveTimeout: const Duration(seconds: 20),
-                sendTimeout: const Duration(seconds: 20),
-                headers: const {'Accept': 'application/json'},
-              ),
-            ) {
-    debugPrint('[SubscriptionService] base=$_apiBase publishableKey=$_publishableKey');
+        _dio = dio ?? Dio() {
+    _dio.options.baseUrl = '$_apiBase/api/billing';
+    _dio.options = _dio.options.copyWith(
+      connectTimeout: const Duration(seconds: 10),
+      receiveTimeout: const Duration(seconds: 20),
+      sendTimeout: const Duration(seconds: 20),
+      headers: const {'Accept': 'application/json'},
+    );
+
+    debugPrint(
+      '[SubscriptionService] base=$_apiBase publishableKey=$_publishableKey',
+    );
   }
 
   final Dio _dio;
@@ -220,6 +253,20 @@ class SubscriptionService {
       throw Exception('Billing portal session did not return a URL');
     }
     return url;
+  }
+
+  Future<SubscriptionMetadata> getSubscriptionMetadata() async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('config')
+          .doc('subscription_metadata')
+          .get();
+      final data = snap.data() ?? {};
+      return SubscriptionMetadata.fromJson(_decodeFirestoreDocument(data));
+    } catch (e) {
+      debugPrint('Failed to load subscription metadata: $e');
+      return SubscriptionMetadata();
+    }
   }
 
   Future<Map<String, String>> _authHeaders() async {

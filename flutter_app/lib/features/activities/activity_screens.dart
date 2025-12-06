@@ -7,6 +7,7 @@ import '../../common/theme/app_colors.dart';
 import '../../models/content_models.dart';
 import '../../services/content_api_service.dart';
 import '../../services/home_metrics_service.dart';
+import '../../services/daily_task_service.dart';
 // IMPORTANT: use the same URL normalizer you use elsewhere
 import '../../common/utils/media_utils.dart'; // normalizeMediaUrl
 
@@ -86,6 +87,7 @@ class _DictationActivityScreenState extends State<DictationActivityScreen> {
     if (uid != null) {
       await HomeMetricsService.onActivityCompleted(uid);
       await HomeMetricsService.onAttemptSubmitted(uid);
+      await DailyTaskService.markTaskCompleted(uid, 'complete_dictation');
     }
 
     if (!mounted) return;
@@ -300,6 +302,7 @@ class _PracticeActivityScreenState extends State<PracticeActivityScreen> {
     if (uid != null) {
       await HomeMetricsService.onActivityCompleted(uid);
       await HomeMetricsService.onAttemptSubmitted(uid);
+      await DailyTaskService.markTaskCompleted(uid, 'finish_practice');
     }
 
     if (!mounted) return;

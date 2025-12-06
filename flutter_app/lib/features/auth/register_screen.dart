@@ -190,18 +190,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       textInputAction: TextInputAction.next,
                       decoration: InputDecoration(
                         labelText: 'Full name',
-                        prefixIcon: const Icon(
+                        prefixIcon: Icon(
                             Icons.person_outline, color: cs.primary),
                         filled: true,
                         fillColor: cs.surface,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(
+                          borderSide: BorderSide(
                               color: cs.outline),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(
+                          borderSide: BorderSide(
                               color: cs.primary, width: 1.5),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
@@ -231,18 +231,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       autofillHints: const [AutofillHints.email],
                       decoration: InputDecoration(
                         labelText: 'Email',
-                        prefixIcon: const Icon(
+                        prefixIcon: Icon(
                             Icons.email_outlined, color: cs.primary),
                         filled: true,
                         fillColor: cs.surface,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(
+                          borderSide: BorderSide(
                               color: cs.outline),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(
+                          borderSide: BorderSide(
                               color: cs.primary, width: 1.5),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
@@ -414,19 +414,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               setState(() => _acceptTos = v ?? false),
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(4)),
-                          side: const BorderSide(color: cs.outline),
+                          side: BorderSide(color: cs.outline),
                         ),
                         Expanded(
                           child: Wrap(
                             crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
-                              const Text('I agree to the ',
+                              Text('I agree to the ',
                                   style: TextStyle(color: cs.onSurfaceVariant)),
                               GestureDetector(
                                 onTap: () {
                                   // Navigator.pushNamed(context, Routes.terms);
                                 },
-                                child: const Text(
+                                child: Text(
                                   'Terms & Privacy',
                                   style: TextStyle(
                                     color: cs.primary,
@@ -452,7 +452,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                       ),
                       child: _loading
-                          ? const SizedBox(
+                          ? SizedBox(
                         height: 20, width: 20,
                         child: CircularProgressIndicator(
                             strokeWidth: 2, color: cs.onPrimary),

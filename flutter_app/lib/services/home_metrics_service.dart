@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../common/utils/level_utils.dart';
 import 'badge_service.dart';
+import 'daily_task_service.dart';
 
 class HomeMetricsService {
   static final _db = FirebaseFirestore.instance;
@@ -11,62 +12,7 @@ class HomeMetricsService {
   /// Ensure the user's daily streak is up-to-date for *today*.
   /// Call this once after login / app open.
   static Future<void> ensureDailyStreak(String uid) async {
-    final userRef = _db.collection('users').doc(uid);
-
-    await _db.runTransaction((tx) async {
-      final snap = await tx.get(userRef);
-      final now = DateTime.now().toUtc();
-      final today = DateTime.utc(now.year, now.month, now.day);
-
-      int streak = 0;
-      DateTime? lastDay;
-
-      if (snap.exists && snap.data() != null) {
-        final data = snap.data()!;
-        if (data['streakCurrent'] is int) {
-          streak = data['streakCurrent'] as int;
-        }
-        if (data['streakLastHit'] is Timestamp) {
-          final ts = data['streakLastHit'] as Timestamp;
-          final d = ts.toDate().toUtc();
-          lastDay = DateTime.utc(d.year, d.month, d.day);
-        }
-      }
-
-      // First time: start at 1
-      if (lastDay == null) {
-        tx.set(
-          userRef,
-          {
-            'streakCurrent': 1,
-            'streakLastHit': Timestamp.fromDate(today),
-          },
-          SetOptions(merge: true),
-        );
-        return;
-      }
-
-      // Already counted today
-      if (today.isAtSameMomentAs(lastDay)) return;
-
-      final diffDays = today.difference(lastDay).inDays;
-
-      if (diffDays == 1) {
-        streak += 1;
-      } else if (diffDays > 1) {
-        // Missed a day: reset streak
-        streak = 1;
-      }
-
-      tx.set(
-        userRef,
-        {
-          'streakCurrent': streak,
-          'streakLastHit': Timestamp.fromDate(today),
-        },
-        SetOptions(merge: true),
-      );
-    });
+    await DailyTaskService.ensureStreakConsistency(uid);
 
     // Streak-based badges (e.g., 3-day, 7-day, 30-day)
     await BadgeService.checkAll(uid);
