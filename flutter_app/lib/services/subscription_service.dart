@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -112,6 +113,36 @@ class UserSubscription {
   final DateTime? updatedAt;
 }
 
+class SubscriptionMetadata {
+  SubscriptionMetadata({
+    this.transcriptionLimit,
+    this.isUnlimited = false,
+    this.canAccessPremiumCourses = false,
+    this.freeTrialDays = 0,
+  });
+
+  factory SubscriptionMetadata.fromJson(Map<String, dynamic> json) {
+    final rawLimit = json['transcriptionLimit'] ?? json['transcription_limit'];
+    final limitStr = rawLimit?.toString().toLowerCase();
+    final unlimited = limitStr == 'unlimited';
+    final limitVal = _asInt(rawLimit);
+
+    return SubscriptionMetadata(
+      transcriptionLimit: unlimited ? null : (limitVal ?? 10),
+      isUnlimited: unlimited,
+      canAccessPremiumCourses:
+          _asBool(json['canAccessPremiumCourses'] ?? json['can_access_premium_courses']) ??
+              false,
+      freeTrialDays: _asInt(json['freeTrialDays'] ?? json['trial_period_days']) ?? 0,
+    );
+  }
+
+  final int? transcriptionLimit;
+  final bool isUnlimited;
+  final bool canAccessPremiumCourses;
+  final int freeTrialDays;
+}
+
 class SubscriptionService {
   SubscriptionService({
     Dio? dio,
@@ -220,6 +251,20 @@ class SubscriptionService {
       throw Exception('Billing portal session did not return a URL');
     }
     return url;
+  }
+
+  Future<SubscriptionMetadata> getSubscriptionMetadata() async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('config')
+          .doc('subscription_metadata')
+          .get();
+      final data = snap.data() ?? {};
+      return SubscriptionMetadata.fromJson(_decodeFirestoreDocument(data));
+    } catch (e) {
+      debugPrint('Failed to load subscription metadata: $e');
+      return SubscriptionMetadata();
+    }
   }
 
   Future<Map<String, String>> _authHeaders() async {

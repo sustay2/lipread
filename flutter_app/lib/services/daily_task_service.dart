@@ -28,6 +28,34 @@ class DailyTask {
 class DailyTaskService {
   static final _db = FirebaseFirestore.instance;
 
+  /// Find a task by document ID or by action key for backward compatibility
+  /// with clients that sent the action instead of the Firestore document ID.
+  static Future<DailyTask?> _resolveTask(String key) async {
+    // 1) Try direct document ID lookup.
+    final byId = await _fetchTask(key);
+    if (byId != null) return byId;
+
+    // 2) Try resolving by action field.
+    final byActionQuery = await _db
+        .collection('user_tasks')
+        .where('action', isEqualTo: key)
+        .limit(1)
+        .get();
+    if (byActionQuery.docs.isNotEmpty) {
+      final doc = byActionQuery.docs.first;
+      final data = doc.data();
+      return DailyTask(
+        id: doc.id,
+        title: (data['title'] as String?) ?? 'Task',
+        points: (data['points'] as num?)?.toInt() ?? 0,
+        frequency: (data['frequency'] as String?) ?? 'daily',
+        action: (data['action'] as String?) ?? key,
+      );
+    }
+
+    return null;
+  }
+
   static String _dayKey(DateTime dt) {
     final utc = dt.toUtc();
     return '${utc.year.toString().padLeft(4, '0')}-${utc.month.toString().padLeft(2, '0')}-${utc.day.toString().padLeft(2, '0')}';
@@ -50,19 +78,28 @@ class DailyTaskService {
       final completionSnap = events[1] as QuerySnapshot<Map<String, dynamic>>;
 
       final todayKey = _dayKey(DateTime.now());
-      final completedMap = <String, Map<String, dynamic>>{};
+      final completedById = <String, Map<String, dynamic>>{};
+      final completedByAction = <String, Map<String, dynamic>>{};
       for (final doc in completionSnap.docs) {
         final data = doc.data();
         if (data['dayKey'] == todayKey) {
-          completedMap[doc.id] = data;
+          final resolvedKey = (data['taskId'] ?? doc.id).toString();
+          completedById[resolvedKey] = data;
+          final actionKey = data['action']?.toString();
+          if (actionKey != null && actionKey.isNotEmpty) {
+            completedByAction[actionKey] = data;
+          }
         }
       }
 
       return taskSnap.docs.map((doc) {
         final data = doc.data();
-        final completed = completedMap.containsKey(doc.id);
-        final completedAt = completedMap[doc.id]?['completedAt'] is Timestamp
-            ? (completedMap[doc.id]!['completedAt'] as Timestamp)
+        final action = (data['action'] as String?) ?? '';
+        final completed =
+            completedById.containsKey(doc.id) || completedByAction.containsKey(action);
+        final completionData = completedById[doc.id] ?? completedByAction[action];
+        final completedAt = completionData?['completedAt'] is Timestamp
+            ? (completionData!['completedAt'] as Timestamp)
                 .toDate()
                 .toUtc()
             : null;
@@ -72,7 +109,7 @@ class DailyTaskService {
           title: (data['title'] as String?) ?? 'Task',
           points: (data['points'] as num?)?.toInt() ?? 0,
           frequency: (data['frequency'] as String?) ?? 'daily',
-          action: (data['action'] as String?) ?? '',
+          action: action,
           completed: completed,
           completedAt: completedAt,
         );
@@ -95,13 +132,16 @@ class DailyTaskService {
   }
 
   /// Mark task completed for today (UTC) and award XP/streak updates.
-  static Future<void> markTaskCompleted(String uid, String taskId,
+  static Future<void> markTaskCompleted(String uid, String taskKey,
       {DailyTask? task}) async {
     final dayKey = _dayKey(DateTime.now());
-    final completionRef =
-        _db.collection('users').doc(uid).collection('completed_tasks').doc(
-              taskId,
-            );
+    final resolvedTask = task ?? await _resolveTask(taskKey);
+    final taskId = resolvedTask?.id ?? taskKey;
+    final completionRef = _db
+        .collection('users')
+        .doc(uid)
+        .collection('completed_tasks')
+        .doc(taskId);
 
     await _db.runTransaction((tx) async {
       final existing = await tx.get(completionRef);
@@ -112,15 +152,14 @@ class DailyTaskService {
         }
       }
 
-      DailyTask? resolved = task;
-      resolved ??= await _fetchTask(taskId);
-      resolved ??= DailyTask(
-        id: taskId,
-        title: 'Daily task',
-        points: 5,
-        frequency: 'daily',
-        action: 'complete',
-      );
+      DailyTask resolved = resolvedTask ??
+          DailyTask(
+            id: taskId,
+            title: 'Daily task',
+            points: 5,
+            frequency: 'daily',
+            action: taskKey,
+          );
 
       tx.set(completionRef, {
         'taskId': taskId,
@@ -132,13 +171,13 @@ class DailyTaskService {
       });
     });
 
-    final resolvedTask = task ?? await _fetchTask(taskId);
-    if (resolvedTask != null && resolvedTask.points > 0) {
+    final resolvedAfterWrite = resolvedTask ?? await _resolveTask(taskKey);
+    if (resolvedAfterWrite != null && resolvedAfterWrite.points > 0) {
       await XpService.awardXPForTaskCompletion(
         uid,
-        points: resolvedTask.points,
-        taskId: resolvedTask.id,
-        taskTitle: resolvedTask.title,
+        points: resolvedAfterWrite.points,
+        taskId: resolvedAfterWrite.id,
+        taskTitle: resolvedAfterWrite.title,
       );
     }
 

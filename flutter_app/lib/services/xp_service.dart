@@ -23,8 +23,8 @@ class XpService {
       final snap = await tx.get(ref);
       final data = snap.data() ?? {};
 
-      Map<String, dynamic> stats =
-      Map<String, dynamic>.from(data['stats'] ?? {});
+      final Map<String, dynamic> stats =
+          Map<String, dynamic>.from(data['stats'] ?? {});
 
       int xp = (stats['xp'] as num?)?.toInt() ?? 0;
       int level = (stats['level'] as num?)?.toInt() ?? 1;

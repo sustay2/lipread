@@ -30,7 +30,8 @@ class _TranscribePageState extends State<TranscribePage>
   bool _recordTabActive = true;
   final SubscriptionService _subscriptionService = SubscriptionService();
   UserSubscription? _subscription;
-  int? _transcriptionLimit;
+  SubscriptionMetadata? _metadata;
+  int _transcriptionLimit = 10;
   int _transcriptionsThisMonth = 0;
 
   @override
@@ -56,11 +57,16 @@ class _TranscribePageState extends State<TranscribePage>
 
   Future<void> _loadSubscription() async {
     try {
-      final subscription = await _subscriptionService.getMySubscription();
+      final results = await Future.wait([
+        _subscriptionService.getMySubscription(),
+        _subscriptionService.getSubscriptionMetadata(),
+      ]);
+      final subscription = results[0] as UserSubscription?;
+      final metadata = results[1] as SubscriptionMetadata;
       setState(() {
         _subscription = subscription;
-        _transcriptionLimit =
-            subscription?.plan?.transcriptionLimit ?? _transcriptionLimit ?? 10;
+        _metadata = metadata;
+        _transcriptionLimit = _resolveLimit(subscription);
       });
     } catch (e) {
       debugPrint('Failed to load subscription for transcription: $e');
@@ -80,13 +86,17 @@ class _TranscribePageState extends State<TranscribePage>
   }
 
   int _resolveLimit(UserSubscription? subscription) {
-    if (subscription?.plan?.isTranscriptionUnlimited == true) {
+    if (subscription?.plan?.isTranscriptionUnlimited == true ||
+        (_metadata?.isUnlimited ?? false)) {
       return 1 << 30; // effectively unlimited
     }
     if (subscription?.plan?.transcriptionLimit != null) {
       return subscription!.plan!.transcriptionLimit!;
     }
-    return _transcriptionLimit ?? 10;
+    if (_metadata?.transcriptionLimit != null) {
+      return _metadata!.transcriptionLimit!;
+    }
+    return _transcriptionLimit;
   }
 
   Future<bool> _checkTranscriptionAllowance() async {
@@ -100,6 +110,15 @@ class _TranscribePageState extends State<TranscribePage>
         setState(() => _subscription = subscription);
       } catch (e) {
         debugPrint('Unable to refresh subscription: $e');
+      }
+    }
+
+    if (_metadata == null) {
+      try {
+        final meta = await _subscriptionService.getSubscriptionMetadata();
+        setState(() => _metadata = meta);
+      } catch (e) {
+        debugPrint('Unable to refresh subscription metadata: $e');
       }
     }
 
@@ -126,7 +145,7 @@ class _TranscribePageState extends State<TranscribePage>
         return AlertDialog(
           title: const Text('Upgrade to continue'),
           content: Text(
-            'You have reached your ${_transcriptionLimit ?? 10}-per-month transcription limit. Upgrade your subscription to keep transcribing.',
+            'You have reached your ${_transcriptionLimit}-per-month transcription limit. Upgrade your subscription to keep transcribing.',
           ),
           actions: [
             TextButton(

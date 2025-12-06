@@ -1010,7 +1010,9 @@ def get_subscription_metadata() -> Dict[str, Any]:
     ref = db.collection("config").document("subscription_metadata")
     snap = ref.get()
     defaults = {
-        "transcriptionLimit": None,
+        # Default to the free plan limit (10/month) so the admin UI and
+        # client-side enforcement stay aligned even before metadata is saved.
+        "transcriptionLimit": 10,
         "canAccessPremiumCourses": False,
         "freeTrialDays": 0,
     }
