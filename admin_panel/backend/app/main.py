@@ -22,6 +22,7 @@ from app.routers import (
     flags,
     import_export,
     ui,
+    report,
     admin_auth,
     admin_profile,
     public_api,
@@ -99,6 +100,7 @@ app.include_router(visemes.router, prefix="/admin/visemes", tags=["visemes"])
 app.include_router(import_export.router, prefix="/admin", tags=["import_export"])
 # app.include_router(feedback.router, prefix="/admin/feedback", tags=["feedback"])
 app.include_router(ui.router, tags=["ui"])
+app.include_router(report.router, tags=["reports"])
 
 
 @app.exception_handler(HTTPException)
