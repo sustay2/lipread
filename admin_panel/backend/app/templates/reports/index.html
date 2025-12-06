@@ -1,0 +1,306 @@
+{% extends "base.html" %}
+{% block title %}Reports | LipRead Admin{% endblock %}
+{% block header %}Analytics Reports{% endblock %}
+{% block head %}
+<style>
+    .metric-card { border-left: 4px solid #0d6efd; }
+    .table-sm td, .table-sm th { padding: .45rem; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+        <h4 class="mb-0">Comprehensive analytics</h4>
+        <p class="text-muted small mb-0">Download a consolidated view of users, courses, subscriptions, revenue, and transcription usage.</p>
+    </div>
+    <form class="d-flex gap-2" method="post" action="/reports/export">
+        <input type="hidden" name="start_date" value="{{ start_date }}">
+        <input type="hidden" name="end_date" value="{{ end_date }}">
+        <button type="submit" class="btn btn-primary"><i class="bi bi-download me-2"></i>Generate PDF Report</button>
+    </form>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form class="row gy-2 gx-3 align-items-end" method="get" action="/reports">
+            <div class="col-sm-4">
+                <label class="form-label text-muted">Start date</label>
+                <input type="date" class="form-control" name="start_date" value="{{ start_date }}">
+            </div>
+            <div class="col-sm-4">
+                <label class="form-label text-muted">End date</label>
+                <input type="date" class="form-control" name="end_date" value="{{ end_date }}">
+            </div>
+            <div class="col-sm-4 d-flex align-items-end justify-content-end">
+                <button type="submit" class="btn btn-outline-primary"><i class="bi bi-funnel me-1"></i>Apply filters</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-3">
+        <div class="card metric-card shadow-sm">
+            <div class="card-body">
+                <div class="text-muted small">Total users</div>
+                <div class="h4 mb-0">{{ metrics.user.total_users }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card metric-card shadow-sm">
+            <div class="card-body">
+                <div class="text-muted small">Active users</div>
+                <div class="h4 mb-0">{{ metrics.user.active_users }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card metric-card shadow-sm">
+            <div class="card-body">
+                <div class="text-muted small">Total subscribers</div>
+                <div class="h4 mb-0">{{ metrics.subscription.total_subscribers }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card metric-card shadow-sm">
+            <div class="card-body">
+                <div class="text-muted small">Total revenue (RM)</div>
+                <div class="h4 mb-0">{{ format_currency(metrics.revenue.total_revenue) }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm mt-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">User analytics</h6>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-lg-6">
+                <table class="table table-sm table-bordered align-middle mb-0">
+                    <tbody>
+                        <tr><th class="w-50">Total users</th><td>{{ metrics.user.total_users }}</td></tr>
+                        <tr><th>Active users in range</th><td>{{ metrics.user.active_users }}</td></tr>
+                        <tr><th>Average streak</th><td>{{ metrics.user.avg_streak }} days</td></tr>
+                        <tr><th>Task completion rate</th><td>{{ metrics.user.task_completion_rate }}%</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="col-lg-6">
+                <h6 class="text-muted text-uppercase small">New users per month</h6>
+                <table class="table table-sm table-hover">
+                    <thead><tr><th>Month</th><th class="text-end">New users</th></tr></thead>
+                    <tbody>
+                        {% for row in metrics.user.new_users_per_month %}
+                        <tr><td>{{ row.label }}</td><td class="text-end">{{ row.count }}</td></tr>
+                        {% else %}
+                        <tr><td colspan="2" class="text-muted">No sign ups in this range.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <h6 class="text-muted text-uppercase mt-3">XP distribution</h6>
+        <div class="row g-2">
+            {% for row in metrics.user.xp_distribution %}
+            <div class="col-sm-4">
+                <div class="border rounded p-2 d-flex justify-content-between align-items-center">
+                    <span class="text-muted">{{ row.label }}</span>
+                    <strong>{{ row.count }}</strong>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm mt-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">Course analytics</h6>
+    </div>
+    <div class="card-body">
+        <div class="row g-3 mb-3">
+            <div class="col-md-3">
+                <div class="border rounded p-3 h-100">
+                    <div class="text-muted small">Courses</div>
+                    <div class="h5 mb-0">{{ metrics.course.total_courses }}</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="border rounded p-3 h-100">
+                    <div class="text-muted small">Modules</div>
+                    <div class="h5 mb-0">{{ metrics.course.total_modules }}</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="border rounded p-3 h-100">
+                    <div class="text-muted small">Lessons</div>
+                    <div class="h5 mb-0">{{ metrics.course.total_lessons }}</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="border rounded p-3 h-100">
+                    <div class="text-muted small">Premium courses</div>
+                    <div class="h5 mb-0">{{ metrics.course.premium_courses }}</div>
+                </div>
+            </div>
+        </div>
+        <h6 class="text-muted text-uppercase">Top courses by engagement</h6>
+        <table class="table table-sm table-striped">
+            <thead><tr><th>Course</th><th class="text-end">Enrolled</th><th class="text-end">Completed</th></tr></thead>
+            <tbody>
+                {% for course in metrics.course.top_courses %}
+                <tr>
+                    <td>{{ course.title }}</td>
+                    <td class="text-end">{{ course.enrolled }}</td>
+                    <td class="text-end">{{ course.completed }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="3" class="text-muted">No engagement yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <h6 class="text-muted text-uppercase mt-3">Activity completion heatmap</h6>
+        <div class="d-flex flex-wrap gap-2">
+            {% for label, value in metrics.course.activity_heatmap.items() %}
+            <span class="badge bg-light text-dark border">{{ label|title }}: {{ value }}</span>
+            {% else %}
+            <span class="text-muted">No activity attempts found.</span>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm mt-4">
+    <div class="card-header bg-white">
+        <h6 class="mb-0">Subscription analytics</h6>
+    </div>
+    <div class="card-body">
+        <div class="row g-3 mb-3">
+            <div class="col-md-4">
+                <div class="border rounded p-3 h-100">
+                    <div class="text-muted small">Total subscribers</div>
+                    <div class="h5 mb-1">{{ metrics.subscription.total_subscribers }}</div>
+                    <div class="text-muted small">Active / trial / canceled: {{ metrics.subscription.status_breakdown.active|default(0) }} / {{ metrics.subscription.status_breakdown.trialing|default(0) }} / {{ metrics.subscription.status_breakdown.canceled|default(0) }}</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="border rounded p-3 h-100">
+                    <div class="text-muted small">Free to paid conversion</div>
+                    <div class="h5 mb-0">{{ metrics.subscription.free_to_paid_conversion }}%</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="border rounded p-3 h-100">
+                    <div class="text-muted small">Trial conversion</div>
+                    <div class="h5 mb-0">{{ metrics.subscription.trial_conversion }}%</div>
+                </div>
+            </div>
+        </div>
+        <h6 class="text-muted text-uppercase">Active subscriptions by plan</h6>
+        <table class="table table-sm table-bordered w-auto">
+            <thead><tr><th>Plan</th><th class="text-end">Active</th></tr></thead>
+            <tbody>
+                {% for plan in metrics.subscription.active_by_plan %}
+                <tr><td>{{ plan.plan }}</td><td class="text-end">{{ plan.count }}</td></tr>
+                {% else %}
+                <tr><td colspan="2" class="text-muted">No active plans found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <h6 class="text-muted text-uppercase mt-3">Monthly new subscriptions</h6>
+        <div class="row g-2">
+            {% for row in metrics.subscription.monthly_new_subscriptions %}
+            <div class="col-sm-3">
+                <div class="border rounded p-2 d-flex justify-content-between align-items-center">
+                    <span>{{ row.label }}</span>
+                    <strong>{{ row.count }}</strong>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm mt-4">
+    <div class="card-header bg-white">
+        <h6 class="mb-0">Revenue analytics</h6>
+    </div>
+    <div class="card-body">
+        <div class="row g-3 mb-3">
+            <div class="col-md-3">
+                <div class="border rounded p-3 h-100">
+                    <div class="text-muted small">Total revenue (MYR)</div>
+                    <div class="h5 mb-0">{{ format_currency(metrics.revenue.total_revenue) }}</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="border rounded p-3 h-100">
+                    <div class="text-muted small">MRR</div>
+                    <div class="h5 mb-0">{{ format_currency(metrics.revenue.mrr) }}</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="border rounded p-3 h-100">
+                    <div class="text-muted small">ARPU</div>
+                    <div class="h5 mb-0">{{ format_currency(metrics.revenue.arpu) }}</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="border rounded p-3 h-100">
+                    <div class="text-muted small">Churn rate</div>
+                    <div class="h5 mb-0">{{ metrics.revenue.churn_rate }}%</div>
+                </div>
+            </div>
+        </div>
+        <h6 class="text-muted text-uppercase">Monthly revenue</h6>
+        <table class="table table-sm table-hover w-auto">
+            <thead><tr><th>Month</th><th class="text-end">Revenue</th></tr></thead>
+            <tbody>
+                {% for row in metrics.revenue.monthly_revenue %}
+                <tr><td>{{ row.label }}</td><td class="text-end">{{ format_currency(row.amount) }}</td></tr>
+                {% else %}
+                <tr><td colspan="2" class="text-muted">No revenue data in this range.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card shadow-sm mt-4">
+    <div class="card-header bg-white">
+        <h6 class="mb-0">Transcription analytics</h6>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <div class="border rounded p-3 h-100">
+                    <div class="text-muted small">Total uploads</div>
+                    <div class="h5 mb-0">{{ metrics.transcription.total_uploads }}</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="border rounded p-3 h-100">
+                    <div class="text-muted small">Avg uploads per user</div>
+                    <div class="h5 mb-0">{{ metrics.transcription.avg_uploads_per_user }}</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="border rounded p-3 h-100">
+                    <div class="text-muted small">Users at monthly limit</div>
+                    <div class="h5 mb-0">{{ metrics.transcription.users_at_limit }}</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="border rounded p-3 h-100">
+                    <div class="text-muted small">Premium feature usage</div>
+                    <div class="h5 mb-0">{{ metrics.transcription.premium_usage }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

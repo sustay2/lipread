@@ -18,7 +18,6 @@ from app.services.firebase_client import get_firestore_client
 from app.deps.admin_session import require_admin_session
 from app.services import firestore_admin
 from app.services.media_library import save_media_file
-from app.services import reporting
 from app.services.lessons import lesson_service
 from app.services.activities import activity_service
 from app.services.question_banks import question_bank_service
@@ -1047,54 +1046,6 @@ async def analytics_dashboard(
             "subscription_chart": subscription_chart,
             "currency": STRIPE_DEFAULT_CURRENCY.upper(),
         },
-    )
-
-
-@router.get("/reports", response_class=HTMLResponse)
-async def reports(request: Request):
-    report_name = request.query_params.get("report")
-    message = request.query_params.get("message")
-    today_str = datetime.utcnow().date().isoformat()
-    default_start = request.query_params.get("start_date") or today_str
-    default_end = request.query_params.get("end_date") or today_str
-    return templates.TemplateResponse(
-        "reports.html",
-        {
-            "request": request,
-            "report_name": report_name,
-            "message": message,
-            "start_date": default_start,
-            "end_date": default_end,
-        },
-    )
-
-
-@router.post("/reports")
-async def generate_report(
-    report_type: str = Form(...),
-    start_date: str = Form(...),
-    end_date: str = Form(...),
-    course: str = Form(""),
-    template_name: str = Form(""),
-):
-    start_dt = datetime.fromisoformat(start_date)
-    end_dt = datetime.fromisoformat(end_date)
-    chart = firestore_admin.analytics_timeseries(
-        days=(end_dt - start_dt).days + 1,
-        start_date=start_dt.date(),
-        end_date=end_dt.date(),
-    )
-    file_name = reporting.generate_pdf_report(
-        report_type=report_type,
-        start_date=start_dt.date(),
-        end_date=end_dt.date(),
-        course=course,
-        template_name=template_name,
-        chart=chart,
-    )
-    return RedirectResponse(
-        url=f"/reports?report={file_name}&message=generated",
-        status_code=303,
     )
 
 
