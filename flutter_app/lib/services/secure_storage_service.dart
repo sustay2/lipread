@@ -1,7 +1,25 @@
+import 'dart:convert';
+
 import 'package:biometric_storage/biometric_storage.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class SecureStorageService {
   static const _storageName = 'lipread_bio_v1';
+  static const _flagsStorageName = 'lipread_bio_flags_v1';
+
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
+
+  static Future<BiometricStorageFile?> _getFlagsStorage() async {
+    final can = await BiometricStorage().canAuthenticate();
+    if (can != CanAuthenticateResponse.success) {
+      return null;
+    }
+
+    return BiometricStorage().getStorage(
+      _flagsStorageName,
+      options: StorageFileInitOptions(authenticationRequired: false),
+    );
+  }
 
   static Future<BiometricStorageFile?> _getStorage() async {
     final can = await BiometricStorage().canAuthenticate();
@@ -102,5 +120,75 @@ class SecureStorageService {
     final storage = await _getStorage();
     if (storage == null) return;
     await storage.delete();
+  }
+
+  // ---------------------------------------------------------------------------
+  // BIOMETRIC PREFERENCES (toggles)
+  // ---------------------------------------------------------------------------
+
+  static Future<void> saveBiometricPreference({
+    required String uid,
+    required String key,
+    required bool enabled,
+  }) async {
+    final storage = await _getFlagsStorage();
+    if (storage == null) return;
+
+    final raw = await storage.read();
+    final Map<String, dynamic> data =
+        raw == null || raw.isEmpty ? {} : (jsonDecode(raw) as Map<String, dynamic>);
+
+    data['$uid::$key'] = enabled;
+    await storage.write(jsonEncode(data));
+  }
+
+  static Future<bool?> readBiometricPreference({
+    required String uid,
+    required String key,
+  }) async {
+    final storage = await _getFlagsStorage();
+    if (storage == null) return null;
+
+    final raw = await storage.read();
+    if (raw == null || raw.isEmpty) return null;
+    final data = jsonDecode(raw) as Map<String, dynamic>;
+    return data['$uid::$key'] as bool?;
+  }
+
+  static Future<void> clearBiometricPreferencesForUser(String uid) async {
+    final storage = await _getFlagsStorage();
+    if (storage == null) return;
+
+    final raw = await storage.read();
+    if (raw == null || raw.isEmpty) return;
+
+    final data = jsonDecode(raw) as Map<String, dynamic>;
+    data.removeWhere((k, _) => k.startsWith('$uid::'));
+
+    if (data.isEmpty) {
+      await storage.delete();
+    } else {
+      await storage.write(jsonEncode(data));
+    }
+  }
+
+  static Future<void> clearBiometricPreference({
+    required String uid,
+    required String key,
+  }) async {
+    final storage = await _getFlagsStorage();
+    if (storage == null) return;
+
+    final raw = await storage.read();
+    if (raw == null || raw.isEmpty) return;
+
+    final data = jsonDecode(raw) as Map<String, dynamic>;
+    data.remove('$uid::$key');
+
+    if (data.isEmpty) {
+      await storage.delete();
+    } else {
+      await storage.write(jsonEncode(data));
+    }
   }
 }

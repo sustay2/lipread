@@ -7,6 +7,7 @@ import '../../common/theme/app_colors.dart';
 import '../../models/content_models.dart';
 import '../../services/content_api_service.dart';
 import '../../services/home_metrics_service.dart';
+import '../../services/daily_task_service.dart';
 // IMPORTANT: use the same URL normalizer you use elsewhere
 import '../../common/utils/media_utils.dart'; // normalizeMediaUrl
 
@@ -86,6 +87,7 @@ class _DictationActivityScreenState extends State<DictationActivityScreen> {
     if (uid != null) {
       await HomeMetricsService.onActivityCompleted(uid);
       await HomeMetricsService.onAttemptSubmitted(uid);
+      await DailyTaskService.markTaskCompleted(uid, 'complete_dictation');
     }
 
     if (!mounted) return;
@@ -233,12 +235,13 @@ class _DictationActivityScreenState extends State<DictationActivityScreen> {
                   child: FilledButton(
                     onPressed: _submitting ? null : () => _submit(detail),
                     child: _submitting
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 18,
                             height: 18,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: Colors.white,
+                              color:
+                                  Theme.of(context).colorScheme.onPrimary,
                             ),
                           )
                         : const Text('Submit answers'),
@@ -299,6 +302,7 @@ class _PracticeActivityScreenState extends State<PracticeActivityScreen> {
     if (uid != null) {
       await HomeMetricsService.onActivityCompleted(uid);
       await HomeMetricsService.onAttemptSubmitted(uid);
+      await DailyTaskService.markTaskCompleted(uid, 'finish_practice');
     }
 
     if (!mounted) return;
@@ -393,12 +397,13 @@ class _PracticeActivityScreenState extends State<PracticeActivityScreen> {
                   child: FilledButton(
                     onPressed: _submitting ? null : () => _complete(detail),
                     child: _submitting
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 18,
                             height: 18,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: Colors.white,
+                              color:
+                                  Theme.of(context).colorScheme.onPrimary,
                             ),
                           )
                         : const Text('I’ve practiced'),
@@ -717,7 +722,8 @@ class _ActivityMediaState extends State<_ActivityMedia> {
                     }
                   },
                   child: Container(
-                    color: Colors.black26,
+                    color:
+                        Theme.of(context).colorScheme.scrim.withOpacity(0.26),
                     child: Center(
                       child: Icon(
                         ended
@@ -726,7 +732,7 @@ class _ActivityMediaState extends State<_ActivityMedia> {
                             ? Icons.pause_circle_filled_rounded
                             : Icons.play_circle_fill_rounded),
                         size: 56,
-                        color: Colors.white,
+                        color: Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
                   ),
@@ -748,19 +754,28 @@ class _ActivityMediaState extends State<_ActivityMedia> {
                         value: (dur.inMilliseconds == 0)
                             ? 0
                             : pos.inMilliseconds / dur.inMilliseconds,
-                        backgroundColor: Colors.black26,
-                        valueColor:
-                        const AlwaysStoppedAnimation<Color>(Colors.white),
+                        backgroundColor: Theme.of(context)
+                            .colorScheme
+                            .onSurfaceVariant
+                            .withOpacity(0.3),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Theme.of(context).colorScheme.primary,
+                        ),
                       ),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Text(
                     '${_fmt(pos)} / ${_fmt(dur)}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
-                      color: Colors.white,
-                      shadows: [Shadow(blurRadius: 2, color: Colors.black)],
+                      color: Theme.of(context).colorScheme.onSurface,
+                      shadows: [
+                        Shadow(
+                          blurRadius: 2,
+                          color: Theme.of(context).colorScheme.scrim,
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -956,12 +971,13 @@ class _VideoDrillScreenState extends State<VideoDrillScreen> {
                           onPressed:
                           _submitting ? null : () => _completeAsWatched(ids, data),
                           child: _submitting
-                              ? const SizedBox(
+                              ? SizedBox(
                             height: 18,
                             width: 18,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: Colors.white,
+                              color:
+                                  Theme.of(context).colorScheme.onPrimary,
                             ),
                           )
                               : const Text('Mark as completed'),
@@ -1144,12 +1160,13 @@ class _VisemeMatchScreenState extends State<VisemeMatchScreen> {
                     child: FilledButton(
                       onPressed: _submitting ? null : () => _complete(ids, data),
                       child: _submitting
-                          ? const SizedBox(
+                          ? SizedBox(
                         height: 18,
                         width: 18,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: Colors.white,
+                          color:
+                              Theme.of(context).colorScheme.onPrimary,
                         ),
                       )
                           : const Text('I’ve completed this'),
@@ -1313,12 +1330,13 @@ class _MirrorPracticeScreenState extends State<MirrorPracticeScreen> {
                     child: FilledButton(
                       onPressed: _submitting ? null : () => _complete(ids, data),
                       child: _submitting
-                          ? const SizedBox(
+                          ? SizedBox(
                         height: 18,
                         width: 18,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: Colors.white,
+                          color:
+                              Theme.of(context).colorScheme.onPrimary,
                         ),
                       )
                           : const Text('Mark as completed'),

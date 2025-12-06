@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if task else 'New' }} Task | LipRead Admin{% endblock %}
+{% block header %}{{ 'Edit' if task else 'New' }} Task{% endblock %}
+{% block content %}
+<div class="card shadow-sm">
+    <div class="card-body">
+        {% if errors %}
+        <div class="alert alert-danger">
+            <ul class="mb-0">
+                {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+        <form class="row g-3" method="post" action="{{ '/admin/tasks/' + task.id + '/update' if task and task.id else '/admin/tasks' }}">
+            <div class="col-md-6">
+                <label class="form-label">Title</label>
+                <input type="text" class="form-control" name="title" value="{{ task.title if task else '' }}" required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Points (XP)</label>
+                <input type="number" class="form-control" name="points" min="0" value="{{ task.points if task else 0 }}" required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Frequency</label>
+                <select class="form-select" name="frequency" required>
+                    <option value="daily" {% if task and task.frequency=='daily' or not task %}selected{% endif %}>Daily</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Action</label>
+                <select class="form-select" name="action" required>
+                    <option value="">Select an action</option>
+                    {% for key, label in actions.items() %}
+                        <option value="{{ key }}" {% if task and task.action==key %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <div class="form-text">Maps the task to in-app XP awarding hooks.</div>
+            </div>
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary">{{ 'Update task' if task else 'Create task' }}</button>
+                <a href="/admin/tasks" class="btn btn-outline-secondary">Back</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

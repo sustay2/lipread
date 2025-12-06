@@ -7,6 +7,7 @@ import '../../services/router.dart';
 import '../../common/utils/media_utils.dart';
 import '../../services/xp_service.dart';
 import 'all_badges_page.dart';
+import '../../services/daily_task_service.dart';
 
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
@@ -28,6 +29,7 @@ class ProfilePage extends StatelessWidget {
     }
 
     final userId = uid;
+    DailyTaskService.ensureStreakConsistency(userId);
 
     final userDocStream =
     FirebaseFirestore.instance.collection('users').doc(userId).snapshots();

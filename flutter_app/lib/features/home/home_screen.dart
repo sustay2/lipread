@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../common/theme/app_colors.dart';
-import '../../services/home_metrics_service.dart';
 import '../../services/router.dart';
 import '../../common/utils/media_utils.dart';
 import '../../services/xp_service.dart';
+import '../../services/daily_task_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -22,8 +22,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Stream<DocumentSnapshot<Map<String, dynamic>>>? _userDocStream;
   Stream<QuerySnapshot<Map<String, dynamic>>>? _enrollmentsStream;
   Stream<QuerySnapshot<Map<String, dynamic>>>? _publishedCoursesStream;
-  Stream<QuerySnapshot<Map<String, dynamic>>>? _streaksStream;
-  Stream<QuerySnapshot<Map<String, dynamic>>>? _tasksStream;
+  Stream<List<DailyTask>>? _tasksStream;
 
   @override
   void initState() {
@@ -42,20 +41,10 @@ class _HomeScreenState extends State<HomeScreen> {
           .orderBy('updatedAt', descending: true)
           .snapshots();
 
-      _streaksStream = userDoc
-          .collection('streaks')
-          .orderBy('lastDayAt', descending: true)
-          .limit(1)
-          .snapshots();
+      _tasksStream = DailyTaskService.watchTasksForUser(_uid!);
 
-      _tasksStream = userDoc
-          .collection('tasks')
-          .where('completed', isEqualTo: false)
-          .snapshots();
-
-      // Ensure streak + daily tasks for today
-      HomeMetricsService.ensureDailyStreak(_uid!);
-      HomeMetricsService.ensureDailyTasks(_uid!);
+      // Ensure streak for today is in sync with latest completion.
+      DailyTaskService.ensureStreakConsistency(_uid!);
     }
 
     _publishedCoursesStream =
@@ -74,8 +63,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _goResults() => Navigator.pushNamed(context, Routes.results);
-
   void _goTranscribe([String? lessonId]) {
     Navigator.pushNamed(
       context,
@@ -92,9 +79,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: AppColors.background,
+        backgroundColor: theme.scaffoldBackgroundColor,
         elevation: 0,
         centerTitle: false,
         titleSpacing: 16,
@@ -104,7 +91,7 @@ class _HomeScreenState extends State<HomeScreen> {
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: theme.colorScheme.surface,
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
@@ -125,29 +112,17 @@ class _HomeScreenState extends State<HomeScreen> {
               'Lip Learning',
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
+                color: theme.colorScheme.onSurface,
               ),
             ),
           ],
         ),
-        actions: [
-          IconButton(
-            tooltip: 'Results',
-            onPressed: _goResults,
-            icon: const Icon(
-              Icons.article_outlined,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(width: 4),
-        ],
       ),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () async {
             if (_uid != null) {
-              await HomeMetricsService.ensureDailyStreak(_uid!);
-              await HomeMetricsService.ensureDailyTasks(_uid!);
+              await DailyTaskService.ensureStreakConsistency(_uid!);
             }
           },
           child: SingleChildScrollView(
@@ -169,7 +144,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 16),
                 _StatsRow(
                   userStream: _userDocStream,
-                  streaksStream: _streaksStream,
                 ),
                 const SizedBox(height: 16),
                 _SectionHeader(
@@ -211,9 +185,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 _DailyTasksList(
                   tasksStream: _tasksStream,
                   onQuickAction: (action) {
-                    if (action == 'transcribe') _goTranscribe();
-                    if (action == 'lessons') _goLessons();
-                    if (action == 'results') _goResults();
+                    if (action == 'complete_dictation') _goTranscribe();
+                    if (action == 'complete_quiz') _goLessons();
+                    if (action == 'finish_practice') _goLessons();
                   },
                 ),
               ],
@@ -253,7 +227,8 @@ class _GreetingCard extends StatelessWidget {
               color: AppColors.primary,
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.waving_hand_rounded, color: Colors.white),
+            child: Icon(Icons.waving_hand_rounded,
+                color: Theme.of(context).colorScheme.onPrimary),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -455,9 +430,9 @@ class _ContinueCourseRow extends StatelessWidget {
                   color: AppColors.primary,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.play_arrow_rounded,
-                  color: Colors.white,
+                  color: Theme.of(context).colorScheme.onPrimary,
                   size: 28,
                 ),
               ),
@@ -470,7 +445,7 @@ class _ContinueCourseRow extends StatelessWidget {
                       title,
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
+                        color: theme.colorScheme.onSurface,
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -515,11 +490,9 @@ class _ContinueCourseRow extends StatelessWidget {
 //
 class _StatsRow extends StatelessWidget {
   final Stream<DocumentSnapshot<Map<String, dynamic>>>? userStream;
-  final Stream<QuerySnapshot<Map<String, dynamic>>>? streaksStream;
 
   const _StatsRow({
     required this.userStream,
-    required this.streaksStream,
   });
 
   @override
@@ -527,7 +500,7 @@ class _StatsRow extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: _StreakChip(streaksStream: streaksStream),
+          child: _StreakChip(userStream: userStream),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -539,13 +512,13 @@ class _StatsRow extends StatelessWidget {
 }
 
 class _StreakChip extends StatelessWidget {
-  final Stream<QuerySnapshot<Map<String, dynamic>>>? streaksStream;
+  final Stream<DocumentSnapshot<Map<String, dynamic>>>? userStream;
 
-  const _StreakChip({required this.streaksStream});
+  const _StreakChip({required this.userStream});
 
   @override
   Widget build(BuildContext context) {
-    if (streaksStream == null) {
+    if (userStream == null) {
       return const _StatChip(
         icon: Icons.local_fire_department_rounded,
         label: 'Streak',
@@ -553,15 +526,14 @@ class _StreakChip extends StatelessWidget {
       );
     }
 
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: streaksStream,
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: userStream,
       builder: (context, snap) {
         int streak = 0;
 
-        if (snap.hasData && snap.data!.docs.isNotEmpty) {
-          final d = snap.data!.docs.first.data();
-          // Align with profile_page.dart behaviour: just trust stored count.
-          streak = (d['count'] as num?)?.toInt() ?? 0;
+        if (snap.hasData && snap.data?.data() != null) {
+          final d = snap.data!.data()!;
+          streak = (d['streakCurrent'] as num?)?.toInt() ?? 0;
         }
 
         final label = streak == 1 ? '1 day' : '$streak days';
@@ -1289,11 +1261,11 @@ class _CourseVideoThumbState extends State<_CourseVideoThumb> {
                 child: AnimatedOpacity(
                   opacity: showPlay ? 1.0 : 0.0,
                   duration: const Duration(milliseconds: 160),
-                  child: const Center(
+                  child: Center(
                     child: Icon(
                       Icons.play_circle_fill_rounded,
                       size: 36,
-                      color: Colors.white,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                 ),
@@ -1379,7 +1351,7 @@ class _EmptyCourses extends StatelessWidget {
 // Daily tasks (from /users/{uid}/tasks) — show only incomplete (client-side)
 //
 class _DailyTasksList extends StatelessWidget {
-  final Stream<QuerySnapshot<Map<String, dynamic>>>? tasksStream;
+  final Stream<List<DailyTask>>? tasksStream;
   final void Function(String action) onQuickAction;
 
   const _DailyTasksList({
@@ -1393,7 +1365,7 @@ class _DailyTasksList extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+    return StreamBuilder<List<DailyTask>>(
       stream: tasksStream,
       builder: (context, snap) {
         if (snap.hasError) {
@@ -1405,7 +1377,7 @@ class _DailyTasksList extends StatelessWidget {
           return Column(
             children: List.generate(
               3,
-                  (_) => Padding(
+              (_) => Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: Container(
                   padding: const EdgeInsets.all(14),
@@ -1432,23 +1404,10 @@ class _DailyTasksList extends StatelessWidget {
           );
         }
 
-        final allDocs = snap.data?.docs ?? [];
+        final tasks = snap.data ?? [];
+        final pending = tasks.where((t) => !t.completed).toList();
 
-        final docs = allDocs.where((d) {
-          final completed = (d.data()['completed'] as bool?) ?? false;
-          return !completed;
-        }).toList();
-
-        docs.sort((a, b) {
-          final ao = (a.data()['order'] as num?)?.toInt();
-          final bo = (b.data()['order'] as num?)?.toInt();
-          if (ao == null && bo == null) return 0;
-          if (ao == null) return 1;
-          if (bo == null) return -1;
-          return ao.compareTo(bo);
-        });
-
-        if (docs.isEmpty) {
+        if (pending.isEmpty) {
           return Container(
             width: double.infinity,
             padding: const EdgeInsets.all(14),
@@ -1465,18 +1424,12 @@ class _DailyTasksList extends StatelessWidget {
         }
 
         return Column(
-          children: docs.map((d) {
-            final data = d.data();
-            final title =
-                (data['title'] as String?) ?? 'Complete a practice';
-            final points = (data['points'] as num?)?.toInt() ?? 10;
-            final action = (data['action'] as String?) ?? 'lessons';
-
+          children: pending.map((task) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: InkWell(
                 borderRadius: BorderRadius.circular(16),
-                onTap: () => onQuickAction(action),
+                onTap: () => onQuickAction(task.action),
                 child: Container(
                   padding: const EdgeInsets.all(14),
                   decoration: _cardDecor(),
@@ -1493,14 +1446,14 @@ class _DailyTasksList extends StatelessWidget {
                           ),
                         ),
                         child: Icon(
-                          _taskIconForAction(action),
+                          _taskIconForAction(task.action),
                           color: AppColors.primaryVariant,
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          title,
+                          task.title,
                           style: const TextStyle(
                             color: AppColors.textPrimary,
                             fontWeight: FontWeight.w600,
@@ -1510,7 +1463,7 @@ class _DailyTasksList extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        '+$points XP',
+                        '+${task.points} XP',
                         style: const TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 12,
@@ -1534,12 +1487,12 @@ class _DailyTasksList extends StatelessWidget {
 
   static IconData _taskIconForAction(String action) {
     switch (action) {
-      case 'lessons':
-        return Icons.menu_book_rounded;
-      case 'transcribe':
-        return Icons.mic_rounded;
-      case 'results':
-        return Icons.article_rounded;
+      case 'complete_quiz':
+        return Icons.quiz_rounded;
+      case 'finish_practice':
+        return Icons.fitness_center_rounded;
+      case 'complete_dictation':
+        return Icons.hearing_rounded;
       default:
         return Icons.flag_rounded;
     }

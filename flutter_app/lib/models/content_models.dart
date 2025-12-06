@@ -18,6 +18,7 @@ class Course {
   final int? order;
   final bool published;
   final int? version;
+  final bool isPremium;
   final dynamic createdAt;
   final dynamic updatedAt;
 
@@ -37,12 +38,14 @@ class Course {
     this.order,
     this.published = false,
     this.version,
+    this.isPremium = false,
     this.createdAt,
     this.updatedAt,
   });
 
   factory Course.fromJson(Map<String, dynamic> json) {
     final publishedRaw = json['published'];
+    final premiumRaw = json['isPremium'] ?? json['premium'] ?? json['is_premium'];
     return Course(
       id: json['id'] as String,
       title: json['title'] as String?,
@@ -61,6 +64,7 @@ class Course {
       order: (json['order'] as num?)?.toInt(),
       published: publishedRaw is bool ? publishedRaw : true,
       version: (json['version'] as num?)?.toInt(),
+      isPremium: _asBool(premiumRaw),
       createdAt: json['createdAt'],
       updatedAt: json['updatedAt'],
     );
@@ -80,6 +84,13 @@ class Course {
     // 3) mediaId is carried through so the app can resolve elsewhere if needed
     return null;
   }
+}
+
+bool _asBool(dynamic value) {
+  if (value is bool) return value;
+  if (value is num) return value != 0;
+  if (value is String) return value.toLowerCase() == 'true';
+  return false;
 }
 
 class Module {

@@ -11,15 +11,20 @@ class XpService {
   }
 
   /// Awards XP and handles leveling logic.
-  static Future<void> awardXp(String uid, int delta) async {
+  static Future<void> awardXp(
+    String uid,
+    int delta, {
+    String? reason,
+    Map<String, dynamic>? metadata,
+  }) async {
     final ref = _users.doc(uid);
 
     await FirebaseFirestore.instance.runTransaction((tx) async {
       final snap = await tx.get(ref);
       final data = snap.data() ?? {};
 
-      Map<String, dynamic> stats =
-      Map<String, dynamic>.from(data['stats'] ?? {});
+      final Map<String, dynamic> stats =
+          Map<String, dynamic>.from(data['stats'] ?? {});
 
       int xp = (stats['xp'] as num?)?.toInt() ?? 0;
       int level = (stats['level'] as num?)?.toInt() ?? 1;
@@ -45,6 +50,13 @@ class XpService {
 
       tx.set(ref, {'stats': stats}, SetOptions(merge: true));
     });
+
+    await _writeXpHistory(
+      uid,
+      delta,
+      reason: reason,
+      metadata: metadata,
+    );
   }
 
   /// Ensures stats exist when user signs in for the first time
@@ -58,5 +70,45 @@ class XpService {
         'levelNeed': xpNeededForLevel(1),
       }
     }, SetOptions(merge: true));
+  }
+
+  /// Award XP specifically for completing a daily task, with history logging.
+  static Future<void> awardXPForTaskCompletion(
+    String uid, {
+    required int points,
+    required String taskId,
+    required String taskTitle,
+  }) async {
+    await awardXp(
+      uid,
+      points,
+      reason: 'task_completion',
+      metadata: {
+        'taskId': taskId,
+        'taskTitle': taskTitle,
+      },
+    );
+  }
+
+  static Future<void> _writeXpHistory(
+    String uid,
+    int delta, {
+    String? reason,
+    Map<String, dynamic>? metadata,
+  }) async {
+    try {
+      final historyRef = _users
+          .doc(uid)
+          .collection('xp_history')
+          .doc();
+      await historyRef.set({
+        'delta': delta,
+        'reason': reason ?? 'manual',
+        'metadata': metadata ?? {},
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {
+      // history write is best-effort
+    }
   }
 }

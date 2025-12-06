@@ -36,7 +36,7 @@ Future<Future<Object?>> showBadgeUnlockedDialog(
     context: context,
     barrierDismissible: true,
     barrierLabel: 'Badge unlocked',
-    barrierColor: Colors.black54,
+    barrierColor: Theme.of(context).colorScheme.scrim.withOpacity(0.54),
     transitionDuration: const Duration(milliseconds: 280),
     pageBuilder: (context, _, __) {
       return _BadgeUnlockedDialog(badge: badge);
@@ -103,7 +103,8 @@ class _BadgeUnlockedDialogState extends State<_BadgeUnlockedDialog>
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.35),
+                  color:
+                      Theme.of(context).colorScheme.scrim.withOpacity(0.35),
                   blurRadius: 24,
                   offset: const Offset(0, 10),
                 ),

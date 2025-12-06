@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 
 import '../../models/transcript_result.dart';
 import '../../services/dio_client.dart';
+import '../../services/router.dart';
+import '../../services/subscription_service.dart';
 import 'widgets/record_card.dart';
 import 'widgets/upload_card.dart';
 import 'widgets/transcript_view.dart';
@@ -26,6 +28,11 @@ class _TranscribePageState extends State<TranscribePage>
   double _progress = 0.0; // 0..1
   late TabController _tab;
   bool _recordTabActive = true;
+  final SubscriptionService _subscriptionService = SubscriptionService();
+  UserSubscription? _subscription;
+  SubscriptionMetadata? _metadata;
+  int _transcriptionLimit = 10;
+  int _transcriptionsThisMonth = 0;
 
   @override
   void initState() {
@@ -38,12 +45,124 @@ class _TranscribePageState extends State<TranscribePage>
         setState(() => _recordTabActive = isRecord);
       }
     });
+
+    _loadSubscription();
   }
 
   @override
   void dispose() {
     _tab.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadSubscription() async {
+    try {
+      final results = await Future.wait([
+        _subscriptionService.getMySubscription(),
+        _subscriptionService.getSubscriptionMetadata(),
+      ]);
+      final subscription = results[0] as UserSubscription?;
+      final metadata = results[1] as SubscriptionMetadata;
+      setState(() {
+        _subscription = subscription;
+        _metadata = metadata;
+        _transcriptionLimit = _resolveLimit(subscription);
+      });
+    } catch (e) {
+      debugPrint('Failed to load subscription for transcription: $e');
+    }
+  }
+
+  Future<int> _countTranscriptionsThisMonth(String uid) async {
+    final now = DateTime.now().toUtc();
+    final startOfMonth = DateTime.utc(now.year, now.month, 1);
+    final snap = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('transcriptions')
+        .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfMonth))
+        .get();
+    return snap.size;
+  }
+
+  int _resolveLimit(UserSubscription? subscription) {
+    if (subscription?.plan?.isTranscriptionUnlimited == true ||
+        (_metadata?.isUnlimited ?? false)) {
+      return 1 << 30; // effectively unlimited
+    }
+    if (subscription?.plan?.transcriptionLimit != null) {
+      return subscription!.plan!.transcriptionLimit!;
+    }
+    if (_metadata?.transcriptionLimit != null) {
+      return _metadata!.transcriptionLimit!;
+    }
+    return _transcriptionLimit;
+  }
+
+  Future<bool> _checkTranscriptionAllowance() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+
+    UserSubscription? subscription = _subscription;
+    if (subscription == null) {
+      try {
+        subscription = await _subscriptionService.getMySubscription();
+        setState(() => _subscription = subscription);
+      } catch (e) {
+        debugPrint('Unable to refresh subscription: $e');
+      }
+    }
+
+    if (_metadata == null) {
+      try {
+        final meta = await _subscriptionService.getSubscriptionMetadata();
+        setState(() => _metadata = meta);
+      } catch (e) {
+        debugPrint('Unable to refresh subscription metadata: $e');
+      }
+    }
+
+    final limit = _resolveLimit(subscription);
+    final used = await _countTranscriptionsThisMonth(user.uid);
+
+    setState(() {
+      _transcriptionLimit = limit;
+      _transcriptionsThisMonth = used;
+    });
+
+    if (used >= limit && limit < (1 << 29)) {
+      await _showQuotaDialog();
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _showQuotaDialog() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Upgrade to continue'),
+          content: Text(
+            'You have reached your ${_transcriptionLimit}-per-month transcription limit. Upgrade your subscription to keep transcribing.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.pushNamed(context, Routes.subscription);
+              },
+              child: const Text('View plans'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _saveTranscription(TranscriptResult r) async {
@@ -80,6 +199,10 @@ class _TranscribePageState extends State<TranscribePage>
   }
 
   Future<void> _onVideoReady(File file) async {
+    if (!await _checkTranscriptionAllowance()) {
+      return;
+    }
+
     setState(() {
       _busy = true;
       _status = 'Uploading…';
@@ -104,6 +227,9 @@ class _TranscribePageState extends State<TranscribePage>
       );
 
       await _saveTranscription(r);
+      setState(() {
+        _transcriptionsThisMonth += 1;
+      });
 
       setState(() {
         _result = r;
@@ -161,6 +287,13 @@ class _TranscribePageState extends State<TranscribePage>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Lip Transcription'),
+        actions: [
+          IconButton(
+            tooltip: 'Transcription History',
+            onPressed: () => Navigator.pushNamed(context, Routes.transcriptions),
+            icon: const Icon(Icons.history_outlined),
+          ),
+        ],
         bottom: TabBar(
           controller: _tab,
           tabs: const [

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Daily Tasks | LipRead Admin{% endblock %}
+{% block header %}Daily Tasks{% endblock %}
+{% block content %}
+{% if message %}
+<div class="alert alert-success">{{ message.replace('-', ' ') | capitalize }}</div>
+{% endif %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h6 class="mb-0">Manage recurring XP tasks</h6>
+        <small class="text-muted">Configure daily tasks and their XP rewards</small>
+    </div>
+    <a class="btn btn-primary" href="/admin/tasks/new"><i class="bi bi-plus-lg me-1"></i>New Task</a>
+</div>
+<div class="card shadow-sm">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Title</th>
+                        <th>Action</th>
+                        <th>Points</th>
+                        <th>Frequency</th>
+                        <th>Created</th>
+                        <th class="text-end"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for task in tasks %}
+                    <tr>
+                        <td class="fw-semibold">{{ task.title }}</td>
+                        <td class="text-muted">{{ actions.get(task.action, task.action) }}</td>
+                        <td><span class="badge bg-primary">{{ task.points }} XP</span></td>
+                        <td>{{ task.frequency|capitalize }}</td>
+                        <td class="text-muted small">{{ task.createdAt or '—' }}</td>
+                        <td class="text-end">
+                            <a class="btn btn-outline-primary btn-sm" href="/admin/tasks/{{ task.id }}/edit">Edit</a>
+                            <form class="d-inline" method="post" action="/admin/tasks/{{ task.id }}/delete" onsubmit="return confirm('Delete this task?');">
+                                <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6" class="text-center text-muted">No daily tasks configured.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -7,7 +7,7 @@ class AppColors {
 
   // Neutrals
   static const background = Color(0xFFF5F8FD);
-  static const surface = Colors.white;
+  static const surface = Color(0xFFF9FBFF);
   static const textPrimary = Color(0xFF1C1C28);
   static const textSecondary = Color(0xFF6E7A8A);
 

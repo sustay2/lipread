@@ -5,8 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import 'package:flutter_app/services/auth_services.dart';
 import 'package:flutter_app/services/badge_listener.dart';
-import 'package:flutter_app/services/home_metrics_service.dart';
 import 'package:flutter_app/services/xp_service.dart';
+import 'package:flutter_app/services/daily_task_service.dart';
 
 import '../features/auth/login_screen.dart';
 import '../features/auth/register_screen.dart';
@@ -15,9 +15,11 @@ import '../features/home/home_screen.dart';
 import '../features/lessons/lesson_list_screen.dart';
 import '../features/lessons/lesson_detail_screen.dart';
 import '../features/results/results_screen.dart';
+import '../features/subscription/subscription_page.dart';
 import '../features/transcribe/transcribe_page.dart';
 import '../features/profile/profile_page.dart';
 import '../features/profile/account_page.dart';
+import '../features/profile/billing_info_page.dart';
 import 'package:flutter_app/common/widgets/main_scaffold.dart';
 import '../features/auth/forgot_password_screen.dart';
 import '../features/auth/forgot_password_sent_screen.dart';
@@ -48,9 +50,11 @@ class Routes {
   static const lessonDetail  = '/app/lesson';        // use arguments
   static const transcribe    = '/app/transcribe';
   static const transcriptions = '/transcriptions';
+  static const subscription  = '/app/subscription';
   static const results       = '/app/results';
   static const profile       = '/app/profile';
   static const profileAccount= '/app/profile/account';
+  static const profileBilling= '/app/profile/billing';
 
   // Role homes
   static const creator       = '/creator';
@@ -121,6 +125,9 @@ class AppNavigator {
           builder: (_) => const TranscriptionHistoryPage(),
         );
 
+      case Routes.subscription:
+        return _material(const SubscriptionPage());
+
       case Routes.results:
         return _material(const ResultsScreen());
 
@@ -129,6 +136,9 @@ class AppNavigator {
 
       case Routes.profileAccount:
         return _material(const AccountPage());
+
+      case Routes.profileBilling:
+        return _material(const BillingInfoPage());
 
     // Role homes
       case Routes.creator:
@@ -226,8 +236,8 @@ class _SplashDeciderState extends State<_SplashDecider> {
 
       final uid = user.uid;
 
-      // Ensure streak + daily tasks for this user (once per day)
-      await HomeMetricsService.ensureDailyStreak(uid);
+      // Ensure streak reflects last completion (once per day)
+      await DailyTaskService.ensureStreakConsistency(uid);
 
       // Badge Pop-up
       BadgeListener.start(context, uid);

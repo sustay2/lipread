@@ -7,6 +7,7 @@ import '../../common/utils/media_utils.dart';
 import '../../models/content_models.dart';
 import '../../services/content_api_service.dart';
 import '../../services/home_metrics_service.dart';
+import '../../services/daily_task_service.dart';
 
 class QuizActivityArgs {
   final String courseId;
@@ -135,6 +136,7 @@ class _QuizActivityPageState extends State<QuizActivityPage> {
     if (uid != null) {
       await HomeMetricsService.onActivityCompleted(uid);
       await HomeMetricsService.onAttemptSubmitted(uid);
+      await DailyTaskService.markTaskCompleted(uid, 'complete_quiz');
     }
 
     if (!mounted) return;
@@ -322,10 +324,11 @@ class _QuizActivityPageState extends State<QuizActivityPage> {
                       ...List.generate(q.options.length, (i) {
                         final optionText = q.options[i];
                         final isSelected = selected == i;
+                        final cs = Theme.of(context).colorScheme;
 
-                        Color borderColor = AppColors.border;
-                        Color fillColor = Colors.white;
-                        Color textColor = AppColors.textPrimary;
+                        Color borderColor = cs.outline;
+                        Color fillColor = cs.surface;
+                        Color textColor = cs.onSurface;
 
                         if (checked) {
                           if (i == selected && isCorrect) {
@@ -387,8 +390,8 @@ class _QuizActivityPageState extends State<QuizActivityPage> {
                                           : Colors.transparent,
                                     ),
                                     child: isSelected
-                                        ? const Icon(Icons.check,
-                                        size: 14, color: Colors.white)
+                                        ? Icon(Icons.check,
+                                        size: 14, color: Theme.of(context).colorScheme.onPrimary)
                                         : null,
                                   ),
                                   const SizedBox(width: 10),
@@ -742,23 +745,24 @@ class _QuestionMediaState extends State<_QuestionMedia> {
                         } else {
                           playing ? _ctrl!.pause() : _ctrl!.play();
                         }
-                      },
-                      child: Container(
-                        color: Colors.black26,
-                        child: Center(
-                          child: Icon(
-                            ended
-                                ? Icons.replay_rounded
-                                : (playing
-                                ? Icons.pause_circle_filled_rounded
-                                : Icons.play_circle_fill_rounded),
-                            size: 56,
-                            color: Colors.white,
-                          ),
+                    },
+                    child: Container(
+                      color:
+                          Theme.of(context).colorScheme.scrim.withOpacity(0.26),
+                      child: Center(
+                        child: Icon(
+                          ended
+                              ? Icons.replay_rounded
+                              : (playing
+                              ? Icons.pause_circle_filled_rounded
+                              : Icons.play_circle_fill_rounded),
+                          size: 56,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                     ),
                   ),
+                ),
                 ),
 
                 // Bottom progress bar + time
@@ -771,29 +775,37 @@ class _QuestionMediaState extends State<_QuestionMedia> {
                       Expanded(
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(999),
-                          child: LinearProgressIndicator(
-                            minHeight: 4,
-                            value: (dur.inMilliseconds == 0)
-                                ? 0
-                                : pos.inMilliseconds / dur.inMilliseconds,
-                            backgroundColor: Colors.black26,
-                            valueColor:
-                            const AlwaysStoppedAnimation<Color>(Colors.white),
+                        child: LinearProgressIndicator(
+                          minHeight: 4,
+                          value: (dur.inMilliseconds == 0)
+                              ? 0
+                              : pos.inMilliseconds / dur.inMilliseconds,
+                          backgroundColor: Theme.of(context)
+                              .colorScheme
+                              .onSurfaceVariant
+                              .withOpacity(0.3),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Theme.of(context).colorScheme.primary,
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${_fmt(pos)} / ${_fmt(dur)}',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Colors.white,
-                          shadows: [Shadow(blurRadius: 2, color: Colors.black)],
-                        ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${_fmt(pos)} / ${_fmt(dur)}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Theme.of(context).colorScheme.onSurface,
+                        shadows: [
+                          Shadow(
+                              blurRadius: 2,
+                              color: Theme.of(context).colorScheme.scrim),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
+              ),
 
                 // Tap anywhere to toggle during playback (while overlay hidden)
                 if (playing)

@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
@@ -8,6 +10,7 @@ import '../../models/content_models.dart';
 import '../../services/content_api_service.dart';
 import '../../services/home_metrics_service.dart';
 import '../../services/router.dart';
+import '../../services/subscription_service.dart';
 
 class LessonListScreen extends StatefulWidget {
   const LessonListScreen({super.key});
@@ -19,8 +22,10 @@ class LessonListScreen extends StatefulWidget {
 class _LessonListScreenState extends State<LessonListScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
   final ContentApiService _contentApi = ContentApiService();
+  final SubscriptionService _subscriptionService = SubscriptionService();
 
   Future<List<Course>>? _coursesFuture;
+  Future<UserSubscription?>? _subscriptionFuture;
   String _searchQuery = '';
   String _levelFilter = 'all'; // all / beginner / intermediate / advanced
 
@@ -28,6 +33,7 @@ class _LessonListScreenState extends State<LessonListScreen> {
   void initState() {
     super.initState();
     _coursesFuture = _contentApi.fetchCourses();
+    _subscriptionFuture = _loadSubscription();
   }
 
   @override
@@ -37,9 +43,22 @@ class _LessonListScreenState extends State<LessonListScreen> {
   }
 
   Future<void> _refresh() async {
-    final future = _contentApi.fetchCourses();
-    setState(() => _coursesFuture = future);
-    await future;
+    final coursesFuture = _contentApi.fetchCourses();
+    final subscriptionFuture = _loadSubscription();
+    setState(() {
+      _coursesFuture = coursesFuture;
+      _subscriptionFuture = subscriptionFuture;
+    });
+    await Future.wait([coursesFuture, subscriptionFuture]);
+  }
+
+  Future<UserSubscription?> _loadSubscription() async {
+    try {
+      return await _subscriptionService.getMySubscription();
+    } catch (e) {
+      debugPrint('Failed to load subscription: $e');
+      return null;
+    }
   }
 
   void _onLessonTap({
@@ -88,151 +107,177 @@ class _LessonListScreenState extends State<LessonListScreen> {
         centerTitle: true,
         backgroundColor: AppColors.background,
         elevation: 0,
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: Column(
-              children: [
-                TextField(
-                  controller: _searchCtrl,
-                  textInputAction: TextInputAction.search,
-                  decoration: InputDecoration(
-                    hintText: 'Search courses, modules, lessons...',
-                    prefixIcon: const Icon(
-                      Icons.search_rounded,
-                      color: AppColors.primary,
-                    ),
-                    filled: true,
-                    fillColor: Colors.white,
-                    contentPadding:
-                        const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppColors.border, width: 1),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppColors.border, width: 1),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
-                    ),
-                  ),
-                  onChanged: (v) => setState(() => _searchQuery = v.trim()),
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  height: 34,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: [
-                      _LevelChip(
-                        label: 'All levels',
-                        value: 'all',
-                        groupValue: _levelFilter,
-                        onSelected: (v) => setState(() => _levelFilter = v),
-                      ),
-                      const SizedBox(width: 6),
-                      _LevelChip(
-                        label: 'Beginner',
-                        value: 'beginner',
-                        groupValue: _levelFilter,
-                        onSelected: (v) => setState(() => _levelFilter = v),
-                      ),
-                      const SizedBox(width: 6),
-                      _LevelChip(
-                        label: 'Intermediate',
-                        value: 'intermediate',
-                        groupValue: _levelFilter,
-                        onSelected: (v) => setState(() => _levelFilter = v),
-                      ),
-                      const SizedBox(width: 6),
-                      _LevelChip(
-                        label: 'Advanced',
-                        value: 'advanced',
-                        groupValue: _levelFilter,
-                        onSelected: (v) => setState(() => _levelFilter = v),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 4),
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: _refresh,
-              child: FutureBuilder<List<Course>>(
-                future: _coursesFuture,
-                builder: (context, courseSnap) {
-                  if (courseSnap.hasError) {
-                    return const Center(
-                      child: Text(
-                        'Failed to load courses.',
-                        style: TextStyle(color: AppColors.error),
-                      ),
-                    );
-                  }
-
-                  if (courseSnap.connectionState == ConnectionState.waiting) {
-                    return const _CourseSkeletonList();
-                  }
-
-                  final docs = (courseSnap.data ?? [])
-                      .where((c) => _isPublished(c))
-                      .where((c) => _matchesLevel(c.level))
-                      .where((c) {
-                        final title = c.title ?? 'Untitled course';
-                        final description = c.description ?? '';
-                        return _matchesSearch(title) || _matchesSearch(description);
-                      })
-                      .toList();
-
-                  if (docs.isEmpty) {
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Text(
-                          'No lessons found.\nTry a different keyword or filter.',
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ),
-                    );
-                  }
-
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    itemCount: docs.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) {
-                      final course = docs[index];
-                      final title = course.title ?? 'Untitled course';
-                      final desc = course.description ?? 'No description.';
-                      final difficulty = course.level ?? 'beginner';
-
-                      return _CourseExpansionCard(
-                        course: course,
-                        title: title,
-                        description: desc,
-                        level: difficulty,
-                        searchQuery: _searchQuery,
-                        contentApi: _contentApi,
-                        onLessonTap: _onLessonTap,
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
+        actions: [
+          IconButton(
+            tooltip: 'Lesson Attempts',
+            onPressed: () => Navigator.pushNamed(context, Routes.results),
+            icon: const Icon(Icons.insights_outlined),
           ),
         ],
+      ),
+      body: FutureBuilder<UserSubscription?>(
+        future: _subscriptionFuture,
+        builder: (context, subSnap) {
+          final subscription = subSnap.data;
+          final hasPremiumAccess =
+              subscription?.plan?.canAccessPremiumCourses ?? false;
+          final checkingAccess = subSnap.connectionState == ConnectionState.waiting;
+
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: Column(
+                  children: [
+                    TextField(
+                      controller: _searchCtrl,
+                      textInputAction: TextInputAction.search,
+                      decoration: InputDecoration(
+                        hintText: 'Search courses, modules, lessons...',
+                        prefixIcon: Icon(
+                          Icons.search_rounded,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        filled: true,
+                        fillColor:
+                            Theme.of(context).colorScheme.surfaceVariant,
+                        contentPadding: const EdgeInsets.symmetric(
+                            vertical: 12, horizontal: 12),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                              color: Theme.of(context).colorScheme.outline,
+                              width: 1),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                              color: Theme.of(context).colorScheme.outline,
+                              width: 1),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                              color: Theme.of(context).colorScheme.primary,
+                              width: 1.2),
+                        ),
+                      ),
+                      onChanged: (v) => setState(() => _searchQuery = v.trim()),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 34,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        children: [
+                          _LevelChip(
+                            label: 'All levels',
+                            value: 'all',
+                            groupValue: _levelFilter,
+                            onSelected: (v) => setState(() => _levelFilter = v),
+                          ),
+                          const SizedBox(width: 6),
+                          _LevelChip(
+                            label: 'Beginner',
+                            value: 'beginner',
+                            groupValue: _levelFilter,
+                            onSelected: (v) => setState(() => _levelFilter = v),
+                          ),
+                          const SizedBox(width: 6),
+                          _LevelChip(
+                            label: 'Intermediate',
+                            value: 'intermediate',
+                            groupValue: _levelFilter,
+                            onSelected: (v) => setState(() => _levelFilter = v),
+                          ),
+                          const SizedBox(width: 6),
+                          _LevelChip(
+                            label: 'Advanced',
+                            value: 'advanced',
+                            groupValue: _levelFilter,
+                            onSelected: (v) => setState(() => _levelFilter = v),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 4),
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: _refresh,
+                  child: FutureBuilder<List<Course>>(
+                    future: _coursesFuture,
+                    builder: (context, courseSnap) {
+                      if (courseSnap.hasError) {
+                        return const Center(
+                          child: Text(
+                            'Failed to load courses.',
+                            style: TextStyle(color: AppColors.error),
+                          ),
+                        );
+                      }
+
+                      if (courseSnap.connectionState == ConnectionState.waiting) {
+                        return const _CourseSkeletonList();
+                      }
+
+                      final docs = (courseSnap.data ?? [])
+                          .where((c) => _isPublished(c))
+                          .where((c) => _matchesLevel(c.level))
+                          .where((c) {
+                        final title = c.title ?? 'Untitled course';
+                        final description = c.description ?? '';
+                        return _matchesSearch(title) ||
+                            _matchesSearch(description);
+                      }).toList();
+
+                      if (docs.isEmpty) {
+                        return Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text(
+                              'No lessons found.\nTry a different keyword or filter.',
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+
+                      return ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                        itemCount: docs.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        itemBuilder: (context, index) {
+                          final course = docs[index];
+                          final title = course.title ?? 'Untitled course';
+                          final desc = course.description ?? 'No description.';
+                          final difficulty = course.level ?? 'beginner';
+
+                          return _CourseExpansionCard(
+                            course: course,
+                            title: title,
+                            description: desc,
+                            level: difficulty,
+                            searchQuery: _searchQuery,
+                            contentApi: _contentApi,
+                            onLessonTap: _onLessonTap,
+                            hasPremiumAccess: hasPremiumAccess,
+                            checkingAccess: checkingAccess,
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -262,24 +307,32 @@ class _LevelChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: selected ? AppColors.primary.withOpacity(0.12) : Colors.white,
+          color: selected
+              ? Theme.of(context).colorScheme.primary.withOpacity(0.12)
+              : Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
-            color: selected ? AppColors.primary : AppColors.border,
+            color: selected
+                ? Theme.of(context).colorScheme.primary
+                : Theme.of(context).colorScheme.outline,
           ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (selected)
-              const Icon(Icons.check, size: 14, color: AppColors.primary),
+              Icon(Icons.check,
+                  size: 14,
+                  color: Theme.of(context).colorScheme.primary),
             if (selected) const SizedBox(width: 4),
             Text(
               label,
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                color: selected ? AppColors.primary : AppColors.textSecondary,
+                color: selected
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -296,6 +349,8 @@ class _CourseExpansionCard extends StatefulWidget {
   final String level;
   final String searchQuery;
   final ContentApiService contentApi;
+  final bool hasPremiumAccess;
+  final bool checkingAccess;
   final void Function({
     required String courseId,
     required String moduleId,
@@ -309,6 +364,8 @@ class _CourseExpansionCard extends StatefulWidget {
     required this.level,
     required this.searchQuery,
     required this.contentApi,
+    required this.hasPremiumAccess,
+    required this.checkingAccess,
     required this.onLessonTap,
   });
 
@@ -326,130 +383,231 @@ class _CourseExpansionCardState extends State<_CourseExpansionCard> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: _cardDecor(radius: 18),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          initiallyExpanded: false,
-          onExpansionChanged: (v) {
-            setState(() => _expanded = v);
-            if (v) _ensureModules();
-          },
-          tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
-          title: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _CourseMediaThumb(url: widget.course.resolvedThumbnailUrl, height: 72),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
+    final isPremiumCourse = widget.course.isPremium;
+    final showOverlay =
+        isPremiumCourse && (!widget.hasPremiumAccess || widget.checkingAccess);
+
+    return Stack(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: Container(
+            decoration: _cardDecor(radius: 18),
+            child: Theme(
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                initiallyExpanded: false,
+                onExpansionChanged: (v) {
+                  setState(() => _expanded = v);
+                  if (v) _ensureModules();
+                },
+                tilePadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
+                title: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      widget.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                        fontSize: 16,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.flag_outlined,
-                          size: 14,
-                          color: AppColors.textSecondary,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          widget.level,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: AppColors.textSecondary,
+                    _CourseMediaThumb(
+                        url: widget.course.resolvedThumbnailUrl, height: 72),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textPrimary,
+                              fontSize: 16,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      widget.description,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.flag_outlined,
+                                size: 14,
+                                color: AppColors.textSecondary,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                widget.level,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              if (isPremiumCourse) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: const Text(
+                                    'Premium',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            widget.description,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
+                children: [
+                  if (_modulesFuture == null && !_expanded)
+                    const SizedBox.shrink()
+                  else
+                    FutureBuilder<List<Module>>(
+                      future: _modulesFuture,
+                      builder: (context, moduleSnap) {
+                        if (moduleSnap.hasError) {
+                          return const Padding(
+                            padding: EdgeInsets.all(8.0),
+                            child: Text(
+                              'Failed to load modules.',
+                              style: TextStyle(
+                                color: AppColors.error,
+                                fontSize: 12,
+                              ),
+                            ),
+                          );
+                        }
+
+                        if (moduleSnap.connectionState == ConnectionState.waiting) {
+                          return const _ModuleSkeletonList();
+                        }
+
+                        final moduleDocs = moduleSnap.data ?? [];
+
+                        if (moduleDocs.isEmpty) {
+                          return const Padding(
+                            padding: EdgeInsets.all(8.0),
+                            child: Text(
+                              'No modules yet.',
+                              style: TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 12,
+                              ),
+                            ),
+                          );
+                        }
+
+                        return Column(
+                          children: moduleDocs.map((m) {
+                            final moduleTitle = m.title ?? 'Module';
+                            final summary = m.summary ?? '';
+
+                            return _ModuleTile(
+                              courseId: widget.course.id,
+                              module: m,
+                              title: moduleTitle,
+                              summary: summary,
+                              searchQuery: widget.searchQuery,
+                              contentApi: widget.contentApi,
+                              onLessonTap: widget.onLessonTap,
+                            );
+                          }).toList(),
+                        );
+                      },
+                    ),
+                ],
               ),
-            ],
+            ),
           ),
-          children: [
-            if (_modulesFuture == null && !_expanded)
-              const SizedBox.shrink()
-            else
-              FutureBuilder<List<Module>>(
-                future: _modulesFuture,
-                builder: (context, moduleSnap) {
-                  if (moduleSnap.hasError) {
-                    return const Padding(
-                      padding: EdgeInsets.all(8.0),
-                      child: Text(
-                        'Failed to load modules.',
-                        style: TextStyle(
-                          color: AppColors.error,
-                          fontSize: 12,
-                        ),
-                      ),
-                    );
-                  }
-
-                  if (moduleSnap.connectionState == ConnectionState.waiting) {
-                    return const _ModuleSkeletonList();
-                  }
-
-                  final moduleDocs = moduleSnap.data ?? [];
-
-                  if (moduleDocs.isEmpty) {
-                    return const Padding(
-                      padding: EdgeInsets.all(8.0),
-                      child: Text(
-                        'No modules yet.',
-                        style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 12,
-                        ),
-                      ),
-                    );
-                  }
-
-                  return Column(
-                    children: moduleDocs.map((m) {
-                      final moduleTitle = m.title ?? 'Module';
-                      final summary = m.summary ?? '';
-
-                      return _ModuleTile(
-                        courseId: widget.course.id,
-                        module: m,
-                        title: moduleTitle,
-                        summary: summary,
-                        searchQuery: widget.searchQuery,
-                        contentApi: widget.contentApi,
-                        onLessonTap: widget.onLessonTap,
-                      );
-                    }).toList(),
-                  );
-                },
-              ),
-          ],
         ),
-      ),
+        if (showOverlay)
+          Positioned.fill(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: _PremiumOverlay(
+                isLoading: widget.checkingAccess,
+                onTap: () => Navigator.pushNamed(context, Routes.subscription),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _PremiumOverlay extends StatelessWidget {
+  final bool isLoading;
+  final VoidCallback onTap;
+
+  const _PremiumOverlay({
+    required this.isLoading,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
+          child: Container(
+            color: Theme.of(context).colorScheme.scrim.withOpacity(0.3),
+          ),
+        ),
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.lock_outline,
+                      color: Theme.of(context).colorScheme.onSurface,
+                      size: 40),
+                  const SizedBox(height: 8),
+                  Text(
+                    'This is premium content',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurface,
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    isLoading ? 'Checking access...' : 'Upgrade to access',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurface,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -488,9 +646,9 @@ class _ModuleTile extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 8),
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border),
+          border: Border.all(color: Theme.of(context).colorScheme.outline),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -768,9 +926,9 @@ class _CourseSkeletonList extends StatelessWidget {
       itemBuilder: (_, __) => Container(
         height: 96,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.border),
+          border: Border.all(color: Theme.of(context).colorScheme.outline),
         ),
       ),
     );
