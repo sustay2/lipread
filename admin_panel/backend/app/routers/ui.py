@@ -29,6 +29,12 @@ db = get_firestore_client()
 
 router = APIRouter(dependencies=[Depends(require_admin_session)])
 
+TASK_ACTIONS: Dict[str, str] = {
+    "complete_quiz": "Complete a quiz",
+    "finish_practice": "Finish practice",
+    "complete_dictation": "Complete dictation",
+}
+
 
 def _validate_scoring(scoring: Dict[str, Any] | None, default_max: int = 100) -> Dict[str, int]:
     base_max = default_max if default_max is not None else 100
@@ -1039,6 +1045,7 @@ async def analytics_dashboard(
             "engagement": engagement,
             "chart": chart,
             "subscription_chart": subscription_chart,
+            "currency": STRIPE_DEFAULT_CURRENCY.upper(),
         },
     )
 
@@ -1139,6 +1146,35 @@ def _parse_bool(value: Any) -> bool:
     return str(value).lower() in ("true", "1", "on", "yes")
 
 
+def _validate_task_payload(title: str, points: str, frequency: str, action: str) -> tuple[list[str], Dict[str, Any]]:
+    errors: list[str] = []
+    cleaned_title = (title or "").strip()
+    if not cleaned_title:
+        errors.append("Title is required")
+
+    try:
+        points_val = int(points)
+        if points_val < 0:
+            errors.append("Points must be zero or greater")
+    except (TypeError, ValueError):
+        points_val = 0
+        errors.append("Points must be a number")
+
+    if frequency not in ("daily",):
+        errors.append("Frequency must be daily")
+
+    if action not in TASK_ACTIONS:
+        errors.append("Select a valid action")
+
+    payload = {
+        "title": cleaned_title,
+        "points": points_val,
+        "frequency": frequency,
+        "action": action,
+    }
+    return errors, payload
+
+
 @router.get("/subscriptions", response_class=HTMLResponse)
 async def subscription_plans(request: Request, message: Optional[str] = None):
     snaps = (
@@ -1147,10 +1183,73 @@ async def subscription_plans(request: Request, message: Optional[str] = None):
         .stream()
     )
     plans = [_serialize_plan_doc(doc) for doc in snaps]
+    metadata = firestore_admin.get_subscription_metadata()
     return templates.TemplateResponse(
         "subscription_plans.html",
-        {"request": request, "plans": plans, "message": message},
+        {
+            "request": request,
+            "plans": plans,
+            "message": message,
+            "subscription_metadata": metadata,
+        },
     )
+
+
+@router.post("/subscriptions/metadata")
+async def update_subscription_metadata(
+    request: Request,
+    transcription_limit: Optional[str] = Form(None),
+    transcription_unlimited: bool = Form(False),
+    can_access_premium_courses: bool = Form(False),
+    free_trial_days: Optional[str] = Form("0"),
+):
+    errors: list[str] = []
+    limit_val: Any = None
+    if _parse_bool(transcription_unlimited):
+        limit_val = "unlimited"
+    elif transcription_limit is not None and str(transcription_limit).strip() != "":
+        try:
+            limit_val = int(str(transcription_limit).strip())
+            if limit_val < 0:
+                errors.append("Transcription limit cannot be negative")
+        except ValueError:
+            errors.append("Transcription limit must be a number")
+
+    trial_days_val = 0
+    try:
+        trial_days_val = int(str(free_trial_days or 0))
+        if trial_days_val < 0:
+            errors.append("Free trial days cannot be negative")
+    except ValueError:
+        errors.append("Free trial days must be a number")
+
+    payload = {
+        "transcriptionLimit": limit_val,
+        "canAccessPremiumCourses": _parse_bool(can_access_premium_courses),
+        "freeTrialDays": trial_days_val,
+    }
+
+    if errors:
+        snaps = (
+            db.collection("subscription_plans")
+            .order_by("createdAt", direction=admin_firestore.Query.DESCENDING)
+            .stream()
+        )
+        plans = [_serialize_plan_doc(doc) for doc in snaps]
+        return templates.TemplateResponse(
+            "subscription_plans.html",
+            {
+                "request": request,
+                "plans": plans,
+                "message": None,
+                "subscription_metadata": payload,
+                "errors": errors,
+            },
+            status_code=400,
+        )
+
+    firestore_admin.update_subscription_metadata(payload)
+    return RedirectResponse(url="/subscriptions?message=metadata-updated", status_code=303)
 
 
 @router.get("/subscriptions/new", response_class=HTMLResponse)
@@ -1264,3 +1363,99 @@ async def payment_events(
             "has_next": has_next,
         },
     )
+
+
+@router.get("/admin/tasks", response_class=HTMLResponse)
+async def list_tasks(request: Request, message: Optional[str] = None):
+    tasks = firestore_admin.list_user_tasks()
+    return templates.TemplateResponse(
+        "tasks/list.html",
+        {
+            "request": request,
+            "tasks": tasks,
+            "message": message,
+            "actions": TASK_ACTIONS,
+        },
+    )
+
+
+@router.get("/admin/tasks/new", response_class=HTMLResponse)
+async def new_task(request: Request):
+    return templates.TemplateResponse(
+        "tasks/form.html",
+        {
+            "request": request,
+            "task": None,
+            "errors": [],
+            "actions": TASK_ACTIONS,
+        },
+    )
+
+
+@router.post("/admin/tasks")
+async def create_task(
+    request: Request,
+    title: str = Form(""),
+    points: str = Form("0"),
+    frequency: str = Form("daily"),
+    action: str = Form(""),
+):
+    errors, payload = _validate_task_payload(title, points, frequency, action)
+    if errors:
+        return templates.TemplateResponse(
+            "tasks/form.html",
+            {
+                "request": request,
+                "task": payload,
+                "errors": errors,
+                "actions": TASK_ACTIONS,
+            },
+            status_code=400,
+        )
+
+    firestore_admin.create_user_task(payload)
+    return RedirectResponse(url="/admin/tasks?message=task-created", status_code=303)
+
+
+@router.get("/admin/tasks/{task_id}/edit", response_class=HTMLResponse)
+async def edit_task(request: Request, task_id: str):
+    task = firestore_admin.get_user_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return templates.TemplateResponse(
+        "tasks/form.html",
+        {"request": request, "task": task, "errors": [], "actions": TASK_ACTIONS},
+    )
+
+
+@router.post("/admin/tasks/{task_id}/update")
+async def update_task(
+    request: Request,
+    task_id: str,
+    title: str = Form(""),
+    points: str = Form("0"),
+    frequency: str = Form("daily"),
+    action: str = Form(""),
+):
+    errors, payload = _validate_task_payload(title, points, frequency, action)
+    if errors:
+        payload["id"] = task_id
+        return templates.TemplateResponse(
+            "tasks/form.html",
+            {
+                "request": request,
+                "task": payload,
+                "errors": errors,
+                "actions": TASK_ACTIONS,
+            },
+            status_code=400,
+        )
+
+    firestore_admin.update_user_task(task_id, payload)
+    return RedirectResponse(url="/admin/tasks?message=task-updated", status_code=303)
+
+
+@router.post("/admin/tasks/{task_id}/delete")
+async def delete_task(task_id: str):
+    firestore_admin.delete_user_task(task_id)
+    return RedirectResponse(url="/admin/tasks?message=task-deleted", status_code=303)

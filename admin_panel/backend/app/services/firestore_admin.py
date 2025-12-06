@@ -12,6 +12,7 @@ from google.cloud.firestore_v1.base_document import DocumentSnapshot
 
 from app.services.firebase_client import get_firestore_client
 from app.services.activities import activity_service
+from app.services.billing_service import STRIPE_DEFAULT_CURRENCY, stripe
 
 
 db = get_firestore_client()
@@ -778,6 +779,73 @@ def analytics_timeseries(days: int = 14, start_date: Optional[date] = None, end_
     }
 
 
+# Daily tasks ----------------------------------------------------------------
+
+
+def list_user_tasks() -> List[Dict[str, Any]]:
+    tasks: List[Dict[str, Any]] = []
+    snaps = (
+        db.collection("user_tasks")
+        .order_by("createdAt", direction=Query.DESCENDING)
+        .stream()
+    )
+    for snap in snaps:
+        data = snap.to_dict() or {}
+        tasks.append(
+            {
+                "id": snap.id,
+                "title": data.get("title"),
+                "points": int(data.get("points") or 0),
+                "frequency": data.get("frequency", "daily"),
+                "action": data.get("action"),
+                "createdAt": _iso(data.get("createdAt")),
+            }
+        )
+    return tasks
+
+
+def get_user_task(task_id: str) -> Optional[Dict[str, Any]]:
+    snap = db.collection("user_tasks").document(task_id).get()
+    if not snap.exists:
+        return None
+    data = snap.to_dict() or {}
+    return {
+        "id": snap.id,
+        "title": data.get("title"),
+        "points": int(data.get("points") or 0),
+        "frequency": data.get("frequency", "daily"),
+        "action": data.get("action"),
+        "createdAt": _iso(data.get("createdAt")),
+        "updatedAt": _iso(data.get("updatedAt")),
+    }
+
+
+def create_user_task(payload: Dict[str, Any]) -> str:
+    now = datetime.now(timezone.utc)
+    payload.setdefault("createdAt", now)
+    payload.setdefault("frequency", "daily")
+    doc_ref = db.collection("user_tasks").document()
+    doc_ref.set(payload)
+    return doc_ref.id
+
+
+def update_user_task(task_id: str, payload: Dict[str, Any]) -> bool:
+    ref = db.collection("user_tasks").document(task_id)
+    if not ref.get().exists:
+        return False
+    payload = {**payload, "updatedAt": datetime.now(timezone.utc)}
+    ref.update(payload)
+    return True
+
+
+def delete_user_task(task_id: str) -> bool:
+    ref = db.collection("user_tasks").document(task_id)
+    if not ref.get().exists:
+        return False
+    ref.delete()
+    return True
+
+
 # Billing analytics ----------------------------------------------------------
 
 
@@ -805,59 +873,116 @@ def subscription_analytics(months: int = 12) -> Dict[str, Any]:
     start_date = date(month_buckets[0][0], month_buckets[0][1], 1)
     revenue_by_month = {label: 0.0 for label in labels}
     new_subs_by_month = {label: 0 for label in labels}
+    total_revenue = 0.0
 
-    # Revenue from payment events (paid/succeeded only)
+    def _label_for(dt: datetime) -> Optional[str]:
+        lbl = datetime(dt.year, dt.month, 1, tzinfo=timezone.utc).strftime("%b %Y")
+        return lbl if lbl in revenue_by_month else None
+
     start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
-    paid_statuses = {"paid", "succeeded", "completed"}
-    for snap in db.collection("payment_events").where("createdAt", ">=", start_dt).stream():
-        pdata = snap.to_dict() or {}
-        created_at = _to_datetime(pdata.get("createdAt"))
-        if not created_at:
-            continue
-        label = datetime(created_at.year, created_at.month, 1, tzinfo=timezone.utc).strftime("%b %Y")
-        if label not in revenue_by_month:
-            continue
-        status = str(pdata.get("status", "")).lower()
-        if paid_statuses and status and status not in paid_statuses:
-            continue
-        amount = pdata.get("amount_myr")
-        if amount is None:
-            amount = pdata.get("amount")
-        try:
-            revenue_by_month[label] += float(amount or 0)
-        except (TypeError, ValueError):
-            continue
+    start_ts = int(start_dt.timestamp())
+
+    # Stripe-derived revenue and subscription counts (preferred)
+    try:
+        invoices = stripe.Invoice.list(
+            status="paid",
+            created={"gte": start_ts},
+            limit=100,
+        )
+        for inv in invoices.auto_paging_iter():
+            created = inv.get("created")
+            created_at = datetime.fromtimestamp(int(created), tz=timezone.utc) if created else None
+            label = _label_for(created_at) if created_at else None
+            if not label:
+                continue
+            currency = str(inv.get("currency") or "").lower()
+            if currency and currency != STRIPE_DEFAULT_CURRENCY.lower():
+                continue
+            amount_paid = inv.get("amount_paid")
+            if amount_paid is None:
+                amount_paid = inv.get("total")
+            try:
+                amount_val = float(amount_paid or 0) / 100.0
+            except (TypeError, ValueError):
+                continue
+            revenue_by_month[label] += amount_val
+            total_revenue += amount_val
+    except Exception:
+        paid_statuses = {"paid", "succeeded", "completed"}
+        for snap in db.collection("payment_events").where("createdAt", ">=", start_dt).stream():
+            pdata = snap.to_dict() or {}
+            created_at = _to_datetime(pdata.get("createdAt"))
+            label = _label_for(created_at) if created_at else None
+            if not label:
+                continue
+            status = str(pdata.get("status", "")).lower()
+            if paid_statuses and status and status not in paid_statuses:
+                continue
+            amount = pdata.get("amount_myr")
+            if amount is None:
+                amount = pdata.get("amount")
+            try:
+                amount_val = float(amount or 0)
+            except (TypeError, ValueError):
+                continue
+            revenue_by_month[label] += amount_val
+            total_revenue += amount_val
 
     active_count = 0
     canceled_count = 0
     trial_total = 0
     trial_converted = 0
+    trialing_count = 0
 
-    for snap in db.collection("user_subscriptions").stream():
-        sdata = snap.to_dict() or {}
-        status = str(sdata.get("status", "")).lower()
-        created_at = _to_datetime(sdata.get("createdAt"))
-        if created_at:
-            label = datetime(created_at.year, created_at.month, 1, tzinfo=timezone.utc).strftime("%b %Y")
-            if label in new_subs_by_month:
+    try:
+        subs = stripe.Subscription.list(status="all", created={"gte": start_ts}, limit=100)
+        for sub in subs.auto_paging_iter():
+            created = sub.get("created")
+            created_at = datetime.fromtimestamp(int(created), tz=timezone.utc) if created else None
+            label = _label_for(created_at) if created_at else None
+            if label:
+                new_subs_by_month[label] += 1
+            status = str(sub.get("status", "")).lower()
+            if status == "active":
+                active_count += 1
+            elif status == "canceled":
+                canceled_count += 1
+            elif status == "trialing":
+                trialing_count += 1
+            trial_end_val = sub.get("trial_end")
+            if trial_end_val:
+                trial_total += 1
+                if status == "active":
+                    trial_converted += 1
+    except Exception:
+        for snap in db.collection("user_subscriptions").stream():
+            sdata = snap.to_dict() or {}
+            status = str(sdata.get("status", "")).lower()
+            created_at = _to_datetime(sdata.get("createdAt"))
+            label = _label_for(created_at) if created_at else None
+            if label:
                 new_subs_by_month[label] += 1
 
-        if status == "active":
-            active_count += 1
-        elif status == "canceled":
-            canceled_count += 1
-
-        trial_end = _to_datetime(sdata.get("trial_end_at") or sdata.get("trialEndAt"))
-        if trial_end:
-            trial_total += 1
             if status == "active":
-                trial_converted += 1
+                active_count += 1
+            elif status == "canceled":
+                canceled_count += 1
+            elif status == "trialing":
+                trialing_count += 1
+
+            trial_end = _to_datetime(sdata.get("trial_end_at") or sdata.get("trialEndAt"))
+            if trial_end:
+                trial_total += 1
+                if status == "active":
+                    trial_converted += 1
 
     conversion_pct = round((trial_converted / trial_total) * 100, 2) if trial_total else 0.0
+    monthly_revenue_list = [round(revenue_by_month[label], 2) for label in labels]
+    current_month_revenue = revenue_by_month.get(labels[-1], 0.0) if labels else 0.0
 
     return {
         "labels": labels,
-        "monthly_revenue": [round(revenue_by_month[label], 2) for label in labels],
+        "monthly_revenue": monthly_revenue_list,
         "new_subscriptions": [new_subs_by_month[label] for label in labels],
         "status_breakdown": {
             "active": active_count,
@@ -868,7 +993,54 @@ def subscription_analytics(months: int = 12) -> Dict[str, Any]:
             "total_trials": trial_total,
             "percentage": conversion_pct,
         },
+        "subscription_counts": {
+            "active": active_count,
+            "trialing": trialing_count,
+            "canceled": canceled_count,
+        },
+        "total_revenue": round(total_revenue, 2),
+        "current_month_revenue": round(current_month_revenue, 2),
     }
+
+
+# Subscription metadata ------------------------------------------------------
+
+
+def get_subscription_metadata() -> Dict[str, Any]:
+    ref = db.collection("config").document("subscription_metadata")
+    snap = ref.get()
+    defaults = {
+        "transcriptionLimit": None,
+        "canAccessPremiumCourses": False,
+        "freeTrialDays": 0,
+    }
+    if not snap.exists:
+        return defaults
+
+    data = snap.to_dict() or {}
+    limit_val = data.get("transcriptionLimit")
+    if limit_val is None and "transcription_limit" in data:
+        limit_val = data.get("transcription_limit")
+    return {
+        "transcriptionLimit": limit_val,
+        "canAccessPremiumCourses": data.get(
+            "canAccessPremiumCourses", data.get("can_access_premium_courses", False)
+        ),
+        "freeTrialDays": data.get("freeTrialDays", data.get("trial_period_days", 0)),
+        "updatedAt": _iso(data.get("updatedAt")),
+    }
+
+
+def update_subscription_metadata(payload: Dict[str, Any]) -> None:
+    ref = db.collection("config").document("subscription_metadata")
+    ref.set(
+        {
+            **payload,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+            "createdAt": firestore.SERVER_TIMESTAMP,
+        },
+        merge=True,
+    )
 
 
 # Subscriptions & billing ----------------------------------------------------

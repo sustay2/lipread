@@ -5,6 +5,54 @@
 {% if message %}
 <div class="alert alert-success">{{ message.replace('-', ' ') | capitalize }}</div>
 {% endif %}
+{% if errors %}
+<div class="alert alert-danger">
+    <ul class="mb-0">
+        {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+    </ul>
+</div>
+{% endif %}
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+        <div>
+            <h6 class="mb-0">Subscription metadata</h6>
+            <small class="text-muted">Defaults applied to new subscribers</small>
+        </div>
+        {% if subscription_metadata.updatedAt %}
+            <span class="text-muted small">Updated {{ subscription_metadata.updatedAt }}</span>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        <form class="row g-3" method="post" action="/subscriptions/metadata">
+            <div class="col-md-4">
+                <label class="form-label">Transcription limit</label>
+                {% set limit = subscription_metadata.transcriptionLimit %}
+                {% set is_unlimited = limit == 'unlimited' %}
+                <div class="input-group">
+                    <input type="number" class="form-control" id="transcriptionLimit" name="transcription_limit" min="0" value="{{ limit if limit is number else '' }}" {% if is_unlimited %}disabled{% endif %}>
+                    <span class="input-group-text">clips</span>
+                </div>
+                <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox" role="switch" id="metaUnlimited" name="transcription_unlimited" value="true" {% if is_unlimited %}checked{% endif %}>
+                    <label class="form-check-label" for="metaUnlimited">Unlimited</label>
+                </div>
+            </div>
+            <div class="col-md-4 d-flex align-items-center">
+                <div class="form-check form-switch mt-4">
+                    <input class="form-check-input" type="checkbox" role="switch" id="metaPremium" name="can_access_premium_courses" value="true" {% if subscription_metadata.canAccessPremiumCourses %}checked{% endif %}>
+                    <label class="form-check-label" for="metaPremium">Can access premium courses</label>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Free trial days</label>
+                <input type="number" class="form-control" name="free_trial_days" min="0" value="{{ subscription_metadata.freeTrialDays or 0 }}">
+            </div>
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary">Save metadata</button>
+            </div>
+        </form>
+    </div>
+</div>
 <div class="card shadow-sm">
     <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
         <div>
@@ -69,4 +117,19 @@
         </div>
     </div>
 </div>
+<script>
+    const metaUnlimitedToggle = document.getElementById('metaUnlimited');
+    const metaLimitInput = document.getElementById('transcriptionLimit');
+    function toggleMetaLimit(){
+        if(!metaLimitInput || !metaUnlimitedToggle) return;
+        metaLimitInput.disabled = metaUnlimitedToggle.checked;
+        if(metaUnlimitedToggle.checked){
+            metaLimitInput.value = '';
+        }
+    }
+    if(metaUnlimitedToggle){
+        metaUnlimitedToggle.addEventListener('change', toggleMetaLimit);
+        toggleMetaLimit();
+    }
+</script>
 {% endblock %}

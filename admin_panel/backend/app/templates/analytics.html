@@ -51,6 +51,44 @@
         </div>
     </div>
 </div>
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <p class="text-muted mb-1">Total revenue</p>
+                <h4 class="fw-bold">RM {{ (subscription_chart.total_revenue or 0) | round(2) }}</h4>
+                <div class="text-muted small">Currency: {{ currency }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <p class="text-muted mb-1">Current month revenue</p>
+                <h4 class="fw-bold">RM {{ (subscription_chart.current_month_revenue or 0) | round(2) }}</h4>
+                <div class="text-muted small">{{ subscription_chart.labels[-1] if subscription_chart.labels else '' }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <p class="text-muted mb-1">Active subscriptions</p>
+                <h4 class="fw-bold">{{ subscription_chart.subscription_counts.active or 0 }}</h4>
+                <div class="text-muted small">Live Stripe subscriptions</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <p class="text-muted mb-1">Trialing / Canceled</p>
+                <h4 class="fw-bold">{{ subscription_chart.subscription_counts.trialing or 0 }} / {{ subscription_chart.subscription_counts.canceled or 0 }}</h4>
+                <div class="text-muted small">Trialing | Canceled</div>
+            </div>
+        </div>
+    </div>
+</div>
 <div class="card shadow-sm mb-4">
     <div class="card-header bg-white border-0">
         <h6 class="mb-0">Subscription &amp; Revenue</h6>
