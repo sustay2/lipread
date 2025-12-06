@@ -7,6 +7,7 @@ import '../../common/utils/media_utils.dart';
 import '../../models/content_models.dart';
 import '../../services/content_api_service.dart';
 import '../../services/home_metrics_service.dart';
+import '../../services/daily_task_service.dart';
 
 class QuizActivityArgs {
   final String courseId;
@@ -135,6 +136,7 @@ class _QuizActivityPageState extends State<QuizActivityPage> {
     if (uid != null) {
       await HomeMetricsService.onActivityCompleted(uid);
       await HomeMetricsService.onAttemptSubmitted(uid);
+      await DailyTaskService.markTaskCompleted(uid, 'complete_quiz');
     }
 
     if (!mounted) return;

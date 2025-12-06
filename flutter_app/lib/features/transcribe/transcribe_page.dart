@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../../models/transcript_result.dart';
 import '../../services/dio_client.dart';
 import '../../services/router.dart';
+import '../../services/subscription_service.dart';
 import 'widgets/record_card.dart';
 import 'widgets/upload_card.dart';
 import 'widgets/transcript_view.dart';
@@ -27,6 +28,10 @@ class _TranscribePageState extends State<TranscribePage>
   double _progress = 0.0; // 0..1
   late TabController _tab;
   bool _recordTabActive = true;
+  final SubscriptionService _subscriptionService = SubscriptionService();
+  UserSubscription? _subscription;
+  int? _transcriptionLimit;
+  int _transcriptionsThisMonth = 0;
 
   @override
   void initState() {
@@ -39,12 +44,106 @@ class _TranscribePageState extends State<TranscribePage>
         setState(() => _recordTabActive = isRecord);
       }
     });
+
+    _loadSubscription();
   }
 
   @override
   void dispose() {
     _tab.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadSubscription() async {
+    try {
+      final subscription = await _subscriptionService.getMySubscription();
+      setState(() {
+        _subscription = subscription;
+        _transcriptionLimit =
+            subscription?.plan?.transcriptionLimit ?? _transcriptionLimit ?? 10;
+      });
+    } catch (e) {
+      debugPrint('Failed to load subscription for transcription: $e');
+    }
+  }
+
+  Future<int> _countTranscriptionsThisMonth(String uid) async {
+    final now = DateTime.now().toUtc();
+    final startOfMonth = DateTime.utc(now.year, now.month, 1);
+    final snap = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('transcriptions')
+        .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfMonth))
+        .get();
+    return snap.size;
+  }
+
+  int _resolveLimit(UserSubscription? subscription) {
+    if (subscription?.plan?.isTranscriptionUnlimited == true) {
+      return 1 << 30; // effectively unlimited
+    }
+    if (subscription?.plan?.transcriptionLimit != null) {
+      return subscription!.plan!.transcriptionLimit!;
+    }
+    return _transcriptionLimit ?? 10;
+  }
+
+  Future<bool> _checkTranscriptionAllowance() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+
+    UserSubscription? subscription = _subscription;
+    if (subscription == null) {
+      try {
+        subscription = await _subscriptionService.getMySubscription();
+        setState(() => _subscription = subscription);
+      } catch (e) {
+        debugPrint('Unable to refresh subscription: $e');
+      }
+    }
+
+    final limit = _resolveLimit(subscription);
+    final used = await _countTranscriptionsThisMonth(user.uid);
+
+    setState(() {
+      _transcriptionLimit = limit;
+      _transcriptionsThisMonth = used;
+    });
+
+    if (used >= limit && limit < (1 << 29)) {
+      await _showQuotaDialog();
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _showQuotaDialog() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Upgrade to continue'),
+          content: Text(
+            'You have reached your ${_transcriptionLimit ?? 10}-per-month transcription limit. Upgrade your subscription to keep transcribing.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.pushNamed(context, Routes.subscription);
+              },
+              child: const Text('View plans'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _saveTranscription(TranscriptResult r) async {
@@ -81,6 +180,10 @@ class _TranscribePageState extends State<TranscribePage>
   }
 
   Future<void> _onVideoReady(File file) async {
+    if (!await _checkTranscriptionAllowance()) {
+      return;
+    }
+
     setState(() {
       _busy = true;
       _status = 'Uploading…';
@@ -105,6 +208,9 @@ class _TranscribePageState extends State<TranscribePage>
       );
 
       await _saveTranscription(r);
+      setState(() {
+        _transcriptionsThisMonth += 1;
+      });
 
       setState(() {
         _result = r;

@@ -1,8 +1,8 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../common/theme/app_colors.dart';
+import '../../services/daily_task_service.dart';
 
 class TaskListScreen extends StatefulWidget {
   const TaskListScreen({super.key});
@@ -34,12 +34,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
       );
     }
 
-    final tasksQuery = FirebaseFirestore.instance
-        .collection('users')
-        .doc(_uid)
-        .collection('tasks')
-        .orderBy('order')
-        .snapshots();
+    final tasksQuery = DailyTaskService.watchTasksForUser(_uid!);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -64,7 +59,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
             ),
           ),
           Expanded(
-            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            child: StreamBuilder<List<DailyTask>>( 
               stream: tasksQuery,
               builder: (context, snap) {
                 if (snap.hasError) {
@@ -87,8 +82,8 @@ class _TaskListScreenState extends State<TaskListScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                final allDocs = snap.data!.docs;
-                if (allDocs.isEmpty) {
+                final tasks = snap.data ?? [];
+                if (tasks.isEmpty) {
                   return const Center(
                     child: Text(
                       'No tasks for today.\nCome back later!',
@@ -102,19 +97,10 @@ class _TaskListScreenState extends State<TaskListScreen> {
                 }
 
                 // ---- Split into pending / completed ----
-                final pending = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-                final done = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+                final pending = tasks.where((t) => !t.completed).toList();
+                final done = tasks.where((t) => t.completed).toList();
 
-                for (final d in allDocs) {
-                  final completed = (d.data()['completed'] as bool?) ?? false;
-                  if (completed) {
-                    done.add(d);
-                  } else {
-                    pending.add(d);
-                  }
-                }
-
-                final total = allDocs.length;
+                final total = tasks.length;
                 final completedCount = done.length;
 
                 return ListView(
@@ -189,20 +175,16 @@ class _TaskListScreenState extends State<TaskListScreen> {
   }
 
   List<Widget> _tilesFromDocs(
-      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs, {
+      List<DailyTask> docs, {
         required bool completed,
       }) {
     return List.generate(docs.length, (i) {
-      final data = docs[i].data();
-      final title = (data['title'] as String?) ?? 'Task';
-      final points = (data['points'] as num?)?.toInt() ?? 0;
-      final action = (data['action'] as String?) ?? '';
-      final freq = (data['frequency'] as String?) ?? 'daily';
-      final progress = (data['progress'] as num?)?.toInt() ?? 0;
-      final target = (data['target'] as num?)?.toInt();
-
-      final progressLabel =
-      (target != null && target > 0) ? ' ($progress/$target)' : '';
+      final task = docs[i];
+      final title = task.title;
+      final points = task.points;
+      final action = task.action;
+      final freq = task.frequency;
+      final progressLabel = '';
 
       return Padding(
         padding: const EdgeInsets.only(bottom: 10),
@@ -284,12 +266,12 @@ class _TaskListScreenState extends State<TaskListScreen> {
 
   IconData _getActionIcon(String action) {
     switch (action) {
-      case 'lessons':
-        return Icons.menu_book_rounded;
-      case 'transcribe':
-        return Icons.mic_rounded;
-      case 'results':
-        return Icons.article_rounded;
+      case 'complete_quiz':
+        return Icons.quiz_rounded;
+      case 'finish_practice':
+        return Icons.fitness_center_rounded;
+      case 'complete_dictation':
+        return Icons.hearing_rounded;
       default:
         return Icons.task_alt_rounded;
     }

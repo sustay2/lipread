@@ -5,8 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import 'package:flutter_app/services/auth_services.dart';
 import 'package:flutter_app/services/badge_listener.dart';
-import 'package:flutter_app/services/home_metrics_service.dart';
 import 'package:flutter_app/services/xp_service.dart';
+import 'package:flutter_app/services/daily_task_service.dart';
 
 import '../features/auth/login_screen.dart';
 import '../features/auth/register_screen.dart';
@@ -236,8 +236,8 @@ class _SplashDeciderState extends State<_SplashDecider> {
 
       final uid = user.uid;
 
-      // Ensure streak + daily tasks for this user (once per day)
-      await HomeMetricsService.ensureDailyStreak(uid);
+      // Ensure streak reflects last completion (once per day)
+      await DailyTaskService.ensureStreakConsistency(uid);
 
       // Badge Pop-up
       BadgeListener.start(context, uid);
