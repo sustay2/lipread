@@ -8,22 +8,23 @@ from typing import Any, Dict, Optional, Tuple
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
+from reportlab.graphics.charts.barcharts import VerticalBarChart
+from reportlab.graphics.charts.linecharts import HorizontalLineChart
+from reportlab.graphics.charts.piecharts import Pie
+from reportlab.graphics.shapes import Drawing
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, StyleSheet1, getSampleStyleSheet
 from reportlab.pdfgen import canvas
 from reportlab.platypus import (
     Image,
+    KeepTogether,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
     Table,
     TableStyle,
 )
-from reportlab.graphics.shapes import Drawing
-from reportlab.graphics.charts.barcharts import VerticalBarChart
-from reportlab.graphics.charts.lineplots import LinePlot
-from reportlab.graphics.charts.piecharts import Pie
 
 from app.deps.admin_session import require_admin_session
 from app.services import analytics_report_service
@@ -33,8 +34,10 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 router = APIRouter(dependencies=[Depends(require_admin_session)])
 
 PRIMARY_COLOR = colors.HexColor("#0d6efd")
-LIGHT_BG = colors.HexColor("#f8f9fa")
+TEXT_DARK = colors.HexColor("#111827")
 BORDER_COLOR = colors.HexColor("#d1d5db")
+LIGHT_BG = colors.HexColor("#f8f9fa")
+ACCENT_GREY = colors.HexColor("#6c757d")
 
 
 # ---------------------------
@@ -96,8 +99,8 @@ def _build_styles() -> StyleSheet1:
         ParagraphStyle(
             name="H1",
             fontName="Helvetica-Bold",
-            fontSize=20,
-            textColor=colors.HexColor("#111827"),
+            fontSize=22,
+            textColor=TEXT_DARK,
             spaceAfter=8,
         )
     )
@@ -106,8 +109,8 @@ def _build_styles() -> StyleSheet1:
             name="H2",
             fontName="Helvetica-Bold",
             fontSize=16,
-            textColor=colors.HexColor("#111827"),
-            spaceAfter=6,
+            textColor=TEXT_DARK,
+            spaceAfter=8,
         )
     )
     styles.add(
@@ -115,8 +118,8 @@ def _build_styles() -> StyleSheet1:
             name="H3",
             fontName="Helvetica-Bold",
             fontSize=14,
-            textColor=colors.HexColor("#1f2937"),
-            spaceAfter=4,
+            textColor=TEXT_DARK,
+            spaceAfter=6,
         )
     )
     styles.add(
@@ -135,12 +138,13 @@ def _build_styles() -> StyleSheet1:
             fontSize=11,
             textColor=PRIMARY_COLOR,
             spaceAfter=6,
+            alignment=1,
         )
     )
     return styles
 
 
-def _section_spacer(height: float = 12) -> Spacer:
+def _section_spacer(height: float = 14) -> Spacer:
     return Spacer(1, height)
 
 
@@ -173,7 +177,8 @@ def _kpi_rows(metrics: Dict[str, Any]) -> list[list[str]]:
 
 def _build_kpi_table(metrics: Dict[str, Any], styles: StyleSheet1) -> Table:
     rows = [["Metric", "Value"]] + _kpi_rows(metrics)
-    table = Table(rows, colWidths=[240, 240])
+    table = Table(rows, colWidths=[250, 250])
+    table.hAlign = "CENTER"
     table.setStyle(
         TableStyle(
             [
@@ -181,12 +186,16 @@ def _build_kpi_table(metrics: Dict[str, Any], styles: StyleSheet1) -> Table:
                 ("TEXTCOLOR", (0, 0), (-1, 0), PRIMARY_COLOR),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                 ("FONTSIZE", (0, 0), (-1, 0), 12),
-                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("ALIGN", (0, 0), (-1, 0), "LEFT"),
                 ("GRID", (0, 0), (-1, -1), 0.5, BORDER_COLOR),
                 ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#eef2ff")]),
                 ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
                 ("FONTSIZE", (0, 1), (-1, -1), 11),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
             ]
         )
     )
@@ -194,10 +203,10 @@ def _build_kpi_table(metrics: Dict[str, Any], styles: StyleSheet1) -> Table:
 
 
 def _pie_chart(premium_users: int, free_users: int) -> Drawing:
-    drawing = Drawing(400, 200)
+    drawing = Drawing(440, 240)
     pie = Pie()
-    pie.x = 120
-    pie.y = 10
+    pie.x = 140
+    pie.y = 30
     pie.width = 160
     pie.height = 160
     data = [float(premium_users or 0), float(free_users or 0)]
@@ -205,51 +214,65 @@ def _pie_chart(premium_users: int, free_users: int) -> Drawing:
     pie.labels = ["Premium", "Free"]
     pie.slices.strokeWidth = 0.5
     pie.slices[0].fillColor = PRIMARY_COLOR
-    pie.slices[1].fillColor = colors.HexColor("#6c757d")
-    pie.slices[0].popout = 5
+    pie.slices[1].fillColor = ACCENT_GREY
+    pie.slices[0].popout = 6
+    pie.slices[1].popout = 0
+    pie.sideLabels = True
     drawing.add(pie)
+    drawing.hAlign = "CENTER"
     return drawing
 
 
 def _bar_chart(months: list[str], values: list[float]) -> Drawing:
-    drawing = Drawing(400, 240)
+    drawing = Drawing(460, 260)
     chart = VerticalBarChart()
     chart.x = 50
-    chart.y = 40
+    chart.y = 50
     chart.height = 170
-    chart.width = 300
+    chart.width = 360
     chart.data = [values or [0.0]]
-    chart.categoryAxis.categoryNames = months or ["-" ]
-    chart.barSpacing = 4
-    chart.groupSpacing = 8
+    chart.categoryAxis.categoryNames = months or ["-"]
+    chart.barSpacing = 6
+    chart.groupSpacing = 10
     chart.valueAxis.valueMin = 0
-    chart.bars[0].fillColor = PRIMARY_COLOR
+    chart.valueAxis.strokeWidth = 0.5
+    chart.categoryAxis.strokeWidth = 0.5
     chart.valueAxis.labels.fontName = "Helvetica"
+    chart.categoryAxis.labels.fontName = "Helvetica"
     chart.categoryAxis.labels.angle = 30
     chart.categoryAxis.labels.dy = -10
-    chart.categoryAxis.labels.fontName = "Helvetica"
+    chart.bars[0].fillColor = PRIMARY_COLOR
+    chart.bars[0].strokeColor = colors.white
+    chart.bars[0].strokeWidth = 0.2
     drawing.add(chart)
+    drawing.hAlign = "CENTER"
     return drawing
 
 
 def _line_chart(labels: list[str], values: list[float]) -> Drawing:
-    drawing = Drawing(400, 240)
-    line = LinePlot()
-    line.x = 40
-    line.y = 40
-    line.height = 170
-    line.width = 320
-    points = [(idx, val) for idx, val in enumerate(values or [0])]
-    line.data = [points]
-    line.joinedLines = True
-    line.lineLabelFormat = "%.0f"
-    line.lines[0].strokeColor = PRIMARY_COLOR
-    line.categoryAxis.categoryNames = labels or ["-"]
-    line.categoryAxis.labels.angle = 30
-    line.categoryAxis.labels.dy = -10
-    line.categoryAxis.labels.fontName = "Helvetica"
-    line.valueAxis.valueMin = 0
-    drawing.add(line)
+    drawing = Drawing(460, 260)
+    chart = HorizontalLineChart()
+    chart.x = 50
+    chart.y = 50
+    chart.height = 170
+    chart.width = 360
+    chart.data = [values or [0.0]]
+    chart.categoryAxis.categoryNames = labels or ["-"]
+    chart.categoryAxis.labels.fontName = "Helvetica"
+    chart.categoryAxis.labels.angle = 30
+    chart.categoryAxis.labels.dy = -8
+    chart.valueAxis.labels.fontName = "Helvetica"
+    chart.valueAxis.valueMin = 0
+    chart.lines[0].strokeColor = PRIMARY_COLOR
+    chart.lines[0].strokeWidth = 2
+    chart.lines[0].symbol = None
+    chart.joinedLines = True
+    chart.gridFirst = True
+    chart.valueAxis.visibleGrid = True
+    chart.valueAxis.gridStrokeColor = BORDER_COLOR
+    chart.valueAxis.gridStrokeWidth = 0.5
+    drawing.add(chart)
+    drawing.hAlign = "CENTER"
     return drawing
 
 
@@ -267,6 +290,7 @@ def _build_revenue_table(metrics: Dict[str, Any]) -> Table:
         rows.append(["-", "RM 0.00", "0.00%"])
 
     table = Table(rows, colWidths=[200, 140, 140])
+    table.hAlign = "CENTER"
     table.setStyle(
         TableStyle(
             [
@@ -276,6 +300,10 @@ def _build_revenue_table(metrics: Dict[str, Any]) -> Table:
                 ("GRID", (0, 0), (-1, -1), 0.5, BORDER_COLOR),
                 ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#eef2ff")]),
                 ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
             ]
         )
     )
@@ -295,6 +323,7 @@ def _build_user_table(metrics: Dict[str, Any]) -> Table:
         rows.append(["-", f"{user.get('active_users', 0):,}", "0"])
 
     table = Table(rows, colWidths=[200, 140, 140])
+    table.hAlign = "CENTER"
     table.setStyle(
         TableStyle(
             [
@@ -304,6 +333,10 @@ def _build_user_table(metrics: Dict[str, Any]) -> Table:
                 ("GRID", (0, 0), (-1, -1), 0.5, BORDER_COLOR),
                 ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#eef2ff")]),
                 ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
             ]
         )
     )
@@ -325,6 +358,7 @@ def _build_course_table(metrics: Dict[str, Any]) -> Table:
         rows.append(["-", "0", "0"])
 
     table = Table(rows, colWidths=[240, 120, 120])
+    table.hAlign = "CENTER"
     table.setStyle(
         TableStyle(
             [
@@ -334,6 +368,10 @@ def _build_course_table(metrics: Dict[str, Any]) -> Table:
                 ("GRID", (0, 0), (-1, -1), 0.5, BORDER_COLOR),
                 ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#eef2ff")]),
                 ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
             ]
         )
     )
@@ -360,23 +398,27 @@ def build_pdf(metrics: Dict[str, Any], admin_email: str, logo_path: str) -> byte
     story = []
 
     # Header
+    header_items = []
     if Path(logo_path).exists():
-        story.append(Image(logo_path, width=140, height=40))
-        story.append(_section_spacer(10))
-    story.append(Paragraph("LipRead Analytics Report", styles["H1"]))
+        header_logo = Image(logo_path, width=160, kind="proportional")
+        header_logo.hAlign = "CENTER"
+        header_items.extend([header_logo, _section_spacer(10)])
+    header_items.append(Paragraph("LipRead Analytics Report", styles["H1"]))
     generated_on = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-    story.append(
+    header_items.append(
         Paragraph(
             f"Generated on {generated_on}<br/>Admin: {admin_email}",
             styles["Body"],
         )
     )
-    story.append(_section_spacer(16))
+    header_items.append(_section_spacer(16))
+    story.append(KeepTogether(header_items))
 
     # KPI summary
     story.append(Paragraph("Executive Summary", styles["H2"]))
+    story.append(_section_spacer(8))
     story.append(_build_kpi_table(metrics, styles))
-    story.append(_section_spacer(18))
+    story.append(_section_spacer(16))
 
     # Charts
     user_metrics = metrics.get("user", {})
@@ -399,36 +441,60 @@ def build_pdf(metrics: Dict[str, Any], admin_email: str, logo_path: str) -> byte
         activity_labels = revenue_labels or ["Week 1", "Week 2", "Week 3", "Week 4"]
         activity_values = revenue_values or [0, 0, 0, 0]
 
-    story.append(Paragraph("User Distribution", styles["H2"]))
-    story.append(Paragraph("Premium vs Free", styles["Caption"]))
-    story.append(_pie_chart(premium_users, free_users))
-    story.append(_section_spacer(18))
+    story.append(Paragraph("Charts", styles["H2"]))
+    story.append(_section_spacer(12))
 
-    story.append(Paragraph("Revenue Trends", styles["H2"]))
-    story.append(Paragraph("Monthly revenue", styles["Caption"]))
-    story.append(_bar_chart(revenue_labels, revenue_values))
-    story.append(_section_spacer(18))
+    story.append(
+        KeepTogether(
+            [
+                Paragraph("User Distribution", styles["H3"]),
+                Paragraph("Premium vs Free", styles["Caption"]),
+                _pie_chart(premium_users, free_users),
+                _section_spacer(16),
+            ]
+        )
+    )
 
-    story.append(Paragraph("Engagement", styles["H2"]))
-    story.append(Paragraph("Activity / transcription trend", styles["Caption"]))
-    story.append(_line_chart(activity_labels, activity_values))
-    story.append(_section_spacer(20))
+    story.append(
+        KeepTogether(
+            [
+                Paragraph("Revenue Trends", styles["H3"]),
+                Paragraph("Monthly revenue", styles["Caption"]),
+                _bar_chart(revenue_labels, revenue_values),
+                _section_spacer(16),
+            ]
+        )
+    )
+
+    story.append(
+        KeepTogether(
+            [
+                Paragraph("Engagement", styles["H3"]),
+                Paragraph("Activity / transcription trend", styles["Caption"]),
+                _line_chart(activity_labels, activity_values),
+                _section_spacer(16),
+            ]
+        )
+    )
 
     # Detailed tables
     story.append(Paragraph("Detailed Tables", styles["H2"]))
-    story.append(_section_spacer(6))
+    story.append(_section_spacer(12))
 
     story.append(Paragraph("Revenue breakdown", styles["H3"]))
+    story.append(_section_spacer(8))
     story.append(_build_revenue_table(metrics))
-    story.append(_section_spacer(12))
+    story.append(_section_spacer(16))
 
     story.append(Paragraph("User analytics", styles["H3"]))
+    story.append(_section_spacer(8))
     story.append(_build_user_table(metrics))
-    story.append(_section_spacer(12))
+    story.append(_section_spacer(16))
 
     story.append(Paragraph("Course analytics", styles["H3"]))
+    story.append(_section_spacer(8))
     story.append(_build_course_table(metrics))
-    story.append(_section_spacer(12))
+    story.append(_section_spacer(16))
 
     doc.build(story, canvasmaker=NumberedCanvas)
     pdf_bytes = buffer.getvalue()
