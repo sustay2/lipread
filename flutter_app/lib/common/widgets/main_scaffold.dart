@@ -117,7 +117,7 @@ class _MainNavScaffoldState extends State<MainNavScaffold> {
                   key: ValueKey('nav-subscription'),
                   icon: Icon(Icons.credit_card_outlined),
                   selectedIcon: Icon(Icons.credit_card),
-                  label: 'Subscription',
+                  label: 'Premium',
                 ),
                 NavigationDestination(
                   key: ValueKey('nav-profile'),
