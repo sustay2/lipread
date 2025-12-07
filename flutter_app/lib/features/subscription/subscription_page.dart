@@ -227,7 +227,6 @@ class _SubscriptionOverviewCard extends StatelessWidget {
     return ['active', 'trialing', 'past_due'].contains(status);
   }
 
-  /// FIXED: Correct unlimited calculation
   bool get _isUnlimited {
     if (plan?.isTranscriptionUnlimited == true) return true;
     if (metadata.isUnlimited == true) return true;
@@ -249,12 +248,12 @@ class _SubscriptionOverviewCard extends StatelessWidget {
     return 0;
   }
 
-  /// FIXED: Uses metadata AND plan correctly
   String _remainingText() {
     if (_isUnlimited) return 'Unlimited';
 
     final limit = plan?.transcriptionLimit ?? metadata.transcriptionLimit;
-    if (limit == null) return 'Unlimited';
+    
+    if (limit == null || limit < 0) return 'Unlimited';
 
     final used = _usageCount();
     final remaining = max(0, limit - used);
@@ -372,7 +371,9 @@ class _PlanCard extends StatelessWidget {
   }
 
   String _transcriptionText() {
-    if (plan.isTranscriptionUnlimited || plan.transcriptionLimit == null) {
+    if (plan.isTranscriptionUnlimited || 
+        plan.transcriptionLimit == null || 
+        (plan.transcriptionLimit != null && plan.transcriptionLimit! < 0)) {
       return 'Transcriptions: Unlimited';
     }
     return 'Transcriptions: ${plan.transcriptionLimit} / month';

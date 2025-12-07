@@ -124,7 +124,6 @@ class SubscriptionMetadata {
   factory SubscriptionMetadata.fromJson(Map<String, dynamic> json) {
     final rawLimit = json['transcriptionLimit'] ?? json['transcription_limit'];
 
-    // FIXED: Determine unlimited without crashing on int
     bool isUnlimited = false;
     int? limit;
 
@@ -135,10 +134,14 @@ class SubscriptionMetadata {
         limit = int.tryParse(rawLimit);
       }
     } else if (rawLimit is int) {
-      limit = rawLimit;
+      if (rawLimit < 0) {
+        isUnlimited = true;
+        limit = null;
+      } else {
+        limit = rawLimit;
+      }
     } else {
-      // fallback: no limit means unlimited? NO — free plan should be LIMITED
-      limit = null;
+      limit = 0; 
     }
 
     return SubscriptionMetadata(
@@ -278,17 +281,27 @@ class SubscriptionService {
     if (_metadataCache != null) return _metadataCache!;
 
     try {
-      final snap = await FirebaseFirestore.instance
-          .collection('config')
-          .doc('subscription_metadata')
-          .get();
-      final data = snap.data() ?? {};
+      final res = await _dio.get(
+        '/metadata',
+        options: Options(headers: await _authHeaders()),
+      );
+      
+      final data = _asMap(res.data);
+      
       _metadataCache = SubscriptionMetadata.fromJson(_decodeFirestoreDocument(data));
       _freePlanCache = _buildFreePlanFromMetadata(_metadataCache!);
+      
       return _metadataCache!;
     } catch (e) {
-      debugPrint('Failed to load subscription metadata: $e');
-      return SubscriptionMetadata();
+      debugPrint('Failed to load subscription metadata via API: $e');
+      
+      // Return safe default on error
+      return SubscriptionMetadata(
+        transcriptionLimit: 0,
+        isUnlimited: false,
+        canAccessPremiumCourses: false,
+        freeTrialDays: 0,
+      );
     }
   }
 

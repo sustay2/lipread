@@ -27,19 +27,35 @@ class _BillingInfoPageState extends State<BillingInfoPage> {
   }
 
   Future<_BillingPayload> _load() async {
-    final subscription = await _service.getMySubscription();
-    final plans = await _service.getPlans();
-    final plan = _resolvePlan(plans, subscription);
+    // FIXED: Fetch Free Plan alongside subscription and paid plans
+    final results = await Future.wait([
+      _service.getMySubscription(),
+      _service.getPlans(),
+      _service.getFreePlan(),
+    ]);
+
+    final subscription = results[0] as UserSubscription?;
+    final plans = results[1] as List<Plan>;
+    final freePlan = results[2] as Plan;
+
+    // FIXED: Pass freePlan to resolver
+    final plan = _resolvePlan(plans, subscription, freePlan);
+    
     return _BillingPayload(plan: plan, subscription: subscription);
   }
 
-  Plan? _resolvePlan(List<Plan> plans, UserSubscription? subscription) {
+  // FIXED: Logic to fallback to freePlan if subscription is null
+  Plan? _resolvePlan(List<Plan> plans, UserSubscription? subscription, Plan freePlan) {
     if (subscription?.plan != null) return subscription!.plan;
-    if (subscription == null) return null;
+    
+    // If no subscription exists, the user is on the Free Plan
+    if (subscription == null) return freePlan;
+    
     try {
       return plans.firstWhere((p) => p.id == subscription.planId);
     } catch (_) {
-      return null;
+      // If the plan ID from subscription isn't found in paid plans, assume Free Plan
+      return freePlan;
     }
   }
 
@@ -259,8 +275,7 @@ class _BillingSummaryCard extends StatelessWidget {
                           width: 16,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color:
-                                Theme.of(context).colorScheme.onPrimary,
+                            color: Theme.of(context).colorScheme.onPrimary,
                           ),
                         )
                       : const Icon(Icons.open_in_new),
@@ -281,7 +296,13 @@ class _QuotaCard extends StatelessWidget {
   final Plan? plan;
   final UserSubscription? subscription;
 
-  bool get _isUnlimited => plan?.isTranscriptionUnlimited ?? false;
+  /// Check for negative numbers or explicit flag
+  bool get _isUnlimited {
+    if (plan?.isTranscriptionUnlimited == true) return true;
+    final limit = plan?.transcriptionLimit;
+    if (limit != null && limit < 0) return true;
+    return false;
+  }
 
   int _limit() => plan?.transcriptionLimit ?? 0;
 
@@ -302,12 +323,12 @@ class _QuotaCard extends StatelessWidget {
   }
 
   String get _limitText {
-    if (_isUnlimited || _limit() <= 0) return 'Unlimited';
+    if (_isUnlimited) return 'Unlimited';
     return '${_limit()} transcriptions';
   }
 
   String get _remainingText {
-    if (_isUnlimited || _limit() <= 0) return 'Unlimited';
+    if (_isUnlimited) return 'Unlimited';
     final remaining = max(0, _limit() - _usageCount());
     return '$remaining remaining';
   }

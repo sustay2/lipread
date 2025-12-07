@@ -168,3 +168,19 @@ async def get_billing_history(user=Depends(get_current_user)) -> Dict[str, List[
         )
 
     return {"items": items}
+
+@router.get("/metadata")
+async def get_subscription_metadata() -> Dict[str, Any]:
+    doc_ref = db.collection("config").document("subscription_metadata")
+    doc = doc_ref.get()
+    
+    if not doc.exists:
+        # Return a safe default if the config is missing
+        return {
+            "transcription_limit": 0,
+            "is_unlimited": False,
+            "can_access_premium_courses": False,
+            "trial_period_days": 0
+        }
+        
+    return doc.to_dict() or {}
