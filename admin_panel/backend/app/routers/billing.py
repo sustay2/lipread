@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException
 from google.api_core.exceptions import FailedPrecondition
@@ -10,6 +10,7 @@ from app.services.firebase_client import get_firestore_client
 
 router = APIRouter(prefix="/api/billing")
 db = get_firestore_client()
+ACTIVE_SUBSCRIPTION_STATUSES = {"active", "trialing", "past_due", "incomplete"}
 
 
 def _serialize_timestamp(value: Any) -> Any:
@@ -22,6 +23,8 @@ def _serialize_timestamp(value: Any) -> Any:
 
 
 def _serialize_plan(doc_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    created_at = _serialize_timestamp(data.get("created_at") or data.get("createdAt"))
+    updated_at = _serialize_timestamp(data.get("updated_at") or data.get("updatedAt"))
     return {
         "id": doc_id,
         "name": data.get("name"),
@@ -33,12 +36,16 @@ def _serialize_plan(doc_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         "can_access_premium_courses": data.get("can_access_premium_courses", False),
         "trial_period_days": data.get("trial_period_days", 0),
         "is_active": data.get("is_active", False),
-        "createdAt": _serialize_timestamp(data.get("createdAt")),
-        "updatedAt": _serialize_timestamp(data.get("updatedAt")),
+        "created_at": created_at,
+        "updated_at": updated_at,
+        "createdAt": created_at,
+        "updatedAt": updated_at,
     }
 
 
 def _serialize_subscription(doc_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    created_at = _serialize_timestamp(data.get("created_at") or data.get("createdAt"))
+    updated_at = _serialize_timestamp(data.get("updated_at") or data.get("updatedAt"))
     return {
         "id": doc_id,
         "plan_id": data.get("plan_id"),
@@ -49,9 +56,41 @@ def _serialize_subscription(doc_id: str, data: Dict[str, Any]) -> Dict[str, Any]
         "trial_end_at": _serialize_timestamp(data.get("trial_end_at")),
         "current_period_end": _serialize_timestamp(data.get("current_period_end")),
         "usage_counters": data.get("usage_counters", {}),
-        "createdAt": _serialize_timestamp(data.get("createdAt")),
-        "updatedAt": _serialize_timestamp(data.get("updatedAt")),
+        "created_at": created_at,
+        "updated_at": updated_at,
+        "createdAt": created_at,
+        "updatedAt": updated_at,
     }
+
+
+def _is_active_subscription_status(status: Optional[str]) -> bool:
+    if not status:
+        # Treat missing status as active to avoid incorrectly downgrading users
+        return True
+    return status.lower() in ACTIVE_SUBSCRIPTION_STATUSES
+
+
+def _load_user_subscription(uid: str) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    sub_ref = db.collection("user_subscriptions").document(uid)
+    sub_snap = sub_ref.get()
+    if not sub_snap.exists:
+        return None, None
+
+    sub_data = sub_snap.to_dict() or {}
+    status = (sub_data.get("status") or "").lower()
+    if not _is_active_subscription_status(status):
+        return None, None
+
+    plan_id = sub_data.get("plan_id")
+    plan_data: Optional[Dict[str, Any]] = None
+    if plan_id:
+        plan_snap = db.collection("subscription_plans").document(plan_id).get()
+        if plan_snap.exists:
+            plan_source = plan_snap.to_dict() or {}
+            if plan_source.get("is_active", False):
+                plan_data = _serialize_plan(plan_snap.id, plan_source)
+
+    return _serialize_subscription(sub_snap.id, sub_data), plan_data
 
 
 @router.get("/plans")
@@ -69,23 +108,8 @@ async def list_plans() -> Dict[str, List[Dict[str, Any]]]:
 @router.get("/me")
 async def get_my_subscription(user=Depends(get_current_user)) -> Dict[str, Any]:
     uid = user.get("uid")
-    sub_ref = db.collection("user_subscriptions").document(uid)
-    sub_snap = sub_ref.get()
-    if not sub_snap.exists:
-        return {"subscription": None, "plan": None}
-
-    sub_data = sub_snap.to_dict() or {}
-    plan_id = sub_data.get("plan_id")
-    plan_data: Optional[Dict[str, Any]] = None
-    if plan_id:
-        plan_snap = db.collection("subscription_plans").document(plan_id).get()
-        if plan_snap.exists:
-            plan_data = _serialize_plan(plan_snap.id, plan_snap.to_dict() or {})
-
-    return {
-        "subscription": _serialize_subscription(sub_snap.id, sub_data),
-        "plan": plan_data,
-    }
+    subscription_payload, plan_payload = _load_user_subscription(uid)
+    return {"subscription": subscription_payload, "plan": plan_payload}
 
 
 @router.post("/checkout-session")
@@ -182,5 +206,5 @@ async def get_subscription_metadata() -> Dict[str, Any]:
             "can_access_premium_courses": False,
             "trial_period_days": 0
         }
-        
+
     return doc.to_dict() or {}

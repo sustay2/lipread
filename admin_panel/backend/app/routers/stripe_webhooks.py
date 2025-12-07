@@ -54,6 +54,28 @@ def _extract_firebase_uid(obj: Dict[str, Any], subscription: Optional[Dict[str, 
         uid = sub_metadata.get("firebase_uid")
         if uid:
             return uid
+
+    customer_id = obj.get("customer") or obj.get("customer_id")
+    if customer_id:
+        try:
+            customer = stripe.Customer.retrieve(customer_id)
+            customer_meta = customer.get("metadata") or {}
+            return customer_meta.get("firebase_uid")
+        except Exception as exc:
+            logger.error("Failed to load Stripe customer %s: %s", customer_id, exc)
+    return None
+
+
+def _lookup_plan_id_for_price(price_id: Optional[str]) -> Optional[str]:
+    if not price_id:
+        return None
+
+    plans_ref = db.collection("subscription_plans").where("stripe_price_id", "==", price_id).limit(1)
+    docs = list(plans_ref.stream())
+    if docs:
+        return docs[0].id
+
+    logger.warning("No plan found in Firestore with stripe_price_id='%s'", price_id)
     return None
 
 
@@ -69,31 +91,25 @@ def _update_user_subscription(
     # Extract price_id to find the corresponding internal Plan ID
     plan_id = None
     price_id = None
-    
+
     if subscription:
         items = subscription.get("items", {}).get("data", [])
         if items:
             price_id = items[0].get("price", {}).get("id")
-            if price_id:
-                logger.info(f"Looking up plan for Stripe Price ID: {price_id}")
-                # Query Firestore to find the plan with this stripe_price_id
-                plans_ref = db.collection("subscription_plans").where("stripe_price_id", "==", price_id).limit(1)
-                docs = list(plans_ref.stream())
-                if docs:
-                    plan_id = docs[0].id
-                    logger.info(f"Found matching Plan ID: {plan_id}")
-                else:
-                    logger.warning(f"CRITICAL: No plan found in Firestore with stripe_price_id='{price_id}'. User subscription will not link to a plan.")
-            else:
-                logger.warning("No price ID found in subscription items.")
         else:
             logger.warning("Subscription has no items.")
+
+    plan_id = _lookup_plan_id_for_price(price_id)
+    if plan_id:
+        logger.info("Resolved plan %s for price %s", plan_id, price_id)
 
     data: Dict[str, Any] = {
         "stripe_subscription_id": subscription_id or subscription.get("id"),
         "status": status_override or subscription.get("status"),
+        "stripe_customer_id": subscription.get("customer") or subscription.get("customer_id"),
         "trial_end_at": _timestamp_from_unix(subscription.get("trial_end")),
         "current_period_end": _timestamp_from_unix(subscription.get("current_period_end")),
+        "is_trialing": subscription.get("status") == "trialing",
         "updatedAt": SERVER_TIMESTAMP,
     }
     
@@ -103,7 +119,11 @@ def _update_user_subscription(
         # If we can't find the plan, we might want to log this specifically
         logger.error(f"Updating user {uid} subscription WITHOUT plan_id. Status: {data['status']}")
 
-    db.collection("user_subscriptions").document(uid).set(data, merge=True)
+    sub_ref = db.collection("user_subscriptions").document(uid)
+    if not sub_ref.get().exists:
+        data["createdAt"] = SERVER_TIMESTAMP
+
+    sub_ref.set(data, merge=True)
     logger.info(f"Successfully updated subscription for user {uid}")
 
 
@@ -145,7 +165,7 @@ async def handle_stripe_webhook(request: Request) -> Dict[str, bool]:
         if uid and subscription_id:
             _update_user_subscription(uid, subscription, subscription_id)
 
-    elif event_type == "customer.subscription.updated":
+    elif event_type in {"customer.subscription.updated", "customer.subscription.created"}:
         subscription = event_object
         subscription_id = subscription.get("id")
         uid = _extract_firebase_uid(event_object, subscription)
