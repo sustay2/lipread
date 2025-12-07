@@ -68,6 +68,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
   }
 
   void _navigateToBillingInfo() {
+    if (!mounted) return;
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const BillingInfoPage()),
@@ -75,6 +76,10 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
   }
 
   Future<void> _launchUrl(String url) async {
+    if (url.isEmpty) {
+      _showSnack('Billing URL is empty');
+      return;
+    }
     final uri = Uri.tryParse(url);
     if (uri == null) {
       _showSnack('Invalid URL');

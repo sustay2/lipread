@@ -67,6 +67,8 @@ class UserSubscription {
     required this.planId,
     this.stripeCustomerId,
     this.stripeSubscriptionId,
+    this.stripePriceId,
+    this.stripeProductId,
     this.status,
     this.isTrialing = false,
     this.trialEndAt,
@@ -87,6 +89,8 @@ class UserSubscription {
       planId: normalized['plan_id']?.toString() ?? normalized['planId']?.toString() ?? '',
       stripeCustomerId: normalized['stripe_customer_id']?.toString(),
       stripeSubscriptionId: normalized['stripe_subscription_id']?.toString(),
+      stripePriceId: normalized['stripe_price_id']?.toString(),
+      stripeProductId: normalized['stripe_product_id']?.toString(),
       status: normalized['status']?.toString(),
       isTrialing: _asBool(normalized['is_trialing'] ?? normalized['trialing']) ?? false,
       trialEndAt: _asDate(normalized['trial_end_at'] ?? normalized['trialEndAt']),
@@ -103,6 +107,8 @@ class UserSubscription {
   final String planId;
   final String? stripeCustomerId;
   final String? stripeSubscriptionId;
+  final String? stripePriceId;
+  final String? stripeProductId;
   final String? status;
   final bool isTrialing;
   final DateTime? trialEndAt;
@@ -261,7 +267,7 @@ class SubscriptionService {
     final data = _asMap(res.data);
     final url = data['url']?.toString();
     if (url == null || url.isEmpty) {
-      throw Exception('Checkout session did not return a URL');
+      throw Exception('Billing URL is empty');
     }
     return url;
   }
@@ -279,7 +285,7 @@ class SubscriptionService {
     final data = _asMap(res.data);
     final url = data['url']?.toString();
     if (url == null || url.isEmpty) {
-      throw Exception('Billing portal session did not return a URL');
+      throw Exception('Billing URL is empty');
     }
     await refreshAllCaches();
     return url;
