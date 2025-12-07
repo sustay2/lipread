@@ -102,7 +102,7 @@ class _AccountPageState extends State<AccountPage> {
     if (!mounted) return;
 
     setState(() {
-      _biometricsAvailable = available;
+      _biometricsAvailable = available || hasFp || hasFace;
       _hasFingerprint = hasFp;
       _hasFace = hasFace;
 

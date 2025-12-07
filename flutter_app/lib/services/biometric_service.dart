@@ -1,14 +1,29 @@
+import 'dart:io';
+
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
 
 class BiometricService {
   static final LocalAuthentication _auth = LocalAuthentication();
+  static const MethodChannel _channel = MethodChannel('local_auth_plugin');
 
   /// Returns true if device supports any biometric and is allowed to use it.
   static Future<bool> canUseBiometrics() async {
     try {
-      final canCheck = await _auth.canCheckBiometrics;
       final supported = await _auth.isDeviceSupported();
-      return canCheck && supported;
+      final canCheck = await _auth.canCheckBiometrics;
+
+      if (supported && canCheck) {
+        return true;
+      }
+
+      if (await _isXiaomiHyperOS()) {
+        final fallback = await _getFallbackBiometricTypes();
+        return fallback.isNotEmpty;
+      }
+
+      return false;
     } catch (_) {
       return false;
     }
@@ -19,7 +34,18 @@ class BiometricService {
   ///  - face: whether face recognition is available
   static Future<(bool fingerprint, bool face)> getBiometricTypes() async {
     try {
-      final types = await _auth.getAvailableBiometrics();
+      final supported = await _auth.isDeviceSupported();
+      final canCheck = await _auth.canCheckBiometrics;
+
+      List<BiometricType> types = [];
+
+      if (supported && canCheck) {
+        types = await _auth.getAvailableBiometrics();
+      }
+
+      if (types.isEmpty && await _isXiaomiHyperOS()) {
+        types = await _getFallbackBiometricTypes();
+      }
 
       final hasFingerprint = types.contains(BiometricType.fingerprint);
       final hasFace = types.contains(BiometricType.face);
@@ -37,6 +63,10 @@ class BiometricService {
     required String reason,
   }) async {
     try {
+      final supported = await _auth.isDeviceSupported();
+      final canCheck = await _auth.canCheckBiometrics;
+      if (!supported || !canCheck) return false;
+
       return await _auth.authenticate(
         localizedReason: reason,
         options: const AuthenticationOptions(
@@ -58,6 +88,10 @@ class BiometricService {
     required String reason,
   }) async {
     try {
+      final supported = await _auth.isDeviceSupported();
+      final canCheck = await _auth.canCheckBiometrics;
+      if (!supported || !canCheck) return false;
+
       final types = await _auth.getAvailableBiometrics();
       if (!types.contains(BiometricType.fingerprint)) {
         return false;
@@ -83,6 +117,10 @@ class BiometricService {
     required String reason,
   }) async {
     try {
+      final supported = await _auth.isDeviceSupported();
+      final canCheck = await _auth.canCheckBiometrics;
+      if (!supported || !canCheck) return false;
+
       final types = await _auth.getAvailableBiometrics();
       if (!types.contains(BiometricType.face)) {
         return false;
@@ -99,6 +137,74 @@ class BiometricService {
       );
     } catch (e) {
       print('BiometricService.authenticateWithFace error: $e');
+      return false;
+    }
+  }
+
+  static Future<List<BiometricType>> _getFallbackBiometricTypes() async {
+    try {
+      final result = await _channel.invokeMethod<List<dynamic>>(
+        'getAvailableBiometricTypes',
+      );
+
+      if (result == null) return [];
+
+      return result
+          .map(_mapToBiometricType)
+          .whereType<BiometricType>()
+          .toSet()
+          .toList();
+    } catch (e) {
+      print('Fallback getAvailableBiometricTypes error: $e');
+      return [];
+    }
+  }
+
+  static BiometricType? _mapToBiometricType(dynamic value) {
+    if (value is BiometricType) return value;
+    if (value is int) {
+      switch (value) {
+        case 0:
+          return BiometricType.weak;
+        case 1:
+          return BiometricType.strong;
+      }
+    }
+
+    if (value is String) {
+      final normalized = value.toLowerCase();
+      if (normalized.contains('finger')) return BiometricType.fingerprint;
+      if (normalized.contains('face')) return BiometricType.face;
+      if (normalized.contains('iris')) return BiometricType.iris;
+      if (normalized.contains('strong')) return BiometricType.strong;
+      if (normalized.contains('weak')) return BiometricType.weak;
+    }
+
+    return null;
+  }
+
+  static Future<bool> _isXiaomiHyperOS() async {
+    if (!Platform.isAndroid) return false;
+
+    try {
+      final androidInfo = await DeviceInfoPlugin().androidInfo;
+      final brand = androidInfo.brand?.toLowerCase() ?? '';
+      final manufacturer = androidInfo.manufacturer?.toLowerCase() ?? '';
+      final display = androidInfo.display?.toLowerCase() ?? '';
+      final baseOs = androidInfo.version.baseOS?.toLowerCase() ?? '';
+      final release = androidInfo.version.release?.toLowerCase() ?? '';
+      final codeName = androidInfo.version.codename?.toLowerCase() ?? '';
+
+      final isXiaomiBrand = brand.contains('xiaomi') ||
+          brand.contains('redmi') ||
+          brand.contains('poco') ||
+          manufacturer.contains('xiaomi');
+
+      final osDescriptor = '$baseOs $release $codeName $display';
+      final isHyperOs = osDescriptor.contains('hyperos');
+
+      return isXiaomiBrand && isHyperOs;
+    } catch (_) {
       return false;
     }
   }
