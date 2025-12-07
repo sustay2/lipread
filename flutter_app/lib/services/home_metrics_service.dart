@@ -301,19 +301,31 @@ class HomeMetricsService {
 
   /// Call when a lesson is watched / started (e.g. from LessonDetail).
   static Future<void> onLessonWatched(String uid) async {
-    // Template ID must match a doc in /user_tasks (e.g. "watch_lesson").
-    await _completeTaskOnce(uid: uid, templateId: 'watch_lesson');
+    // Legacy hook kept for backward compatibility; new task engine is driven
+    // through DailyTaskService actions.
   }
 
-  /// Call when a practice activity is completed.
-  static Future<void> onActivityCompleted(String uid) async {
-    await _completeTaskOnce(uid: uid, templateId: 'complete_activity');
+  /// Call when an activity is completed. Provide the action type so the new
+  /// DailyTaskService can update streaks, progress, and XP consistently across
+  /// daily/weekly tasks.
+  static Future<void> onActivityCompleted(
+    String uid, {
+    String? actionType,
+  }) async {
+    if (actionType != null && actionType.isNotEmpty) {
+      await DailyTaskService.markTaskCompleted(uid, actionType);
+    }
   }
 
-  /// Call when a transcribe attempt is submitted.
-  static Future<void> onAttemptSubmitted(String uid) async {
-    await _completeTaskOnce(uid: uid, templateId: 'submit_attempt');
-    // Add any weekly/aggregate task logic here later if needed.
+  /// Call when a submission/attempt is completed. Optionally forward an action
+  /// type so the new task system can track it (e.g., dictation submissions).
+  static Future<void> onAttemptSubmitted(
+    String uid, {
+    String? actionType,
+  }) async {
+    if (actionType != null && actionType.isNotEmpty) {
+      await DailyTaskService.markTaskCompleted(uid, actionType);
+    }
   }
 
   /// Full attempt recording helper.
@@ -378,9 +390,16 @@ class HomeMetricsService {
     await addXp(uid, baseXp + bonus);
 
     // Update related metrics/tasks.
+    final actionKey = switch (activityType.toLowerCase()) {
+      'quiz' => 'complete_quiz',
+      'dictation' => 'complete_dictation',
+      'practice' => 'finish_practice',
+      _ => null,
+    };
+
     await Future.wait([
       ensureDailyStreak(uid),
-      onActivityCompleted(uid),
+      onActivityCompleted(uid, actionType: actionKey),
       onAttemptSubmitted(uid),
     ]);
 

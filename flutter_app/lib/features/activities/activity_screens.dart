@@ -86,8 +86,10 @@ class _DictationActivityScreenState extends State<DictationActivityScreen> {
 
     if (uid != null) {
       await HomeMetricsService.onActivityCompleted(uid);
-      await HomeMetricsService.onAttemptSubmitted(uid);
-      await DailyTaskService.markTaskCompleted(uid, 'complete_dictation');
+      await HomeMetricsService.onAttemptSubmitted(
+        uid,
+        actionType: 'complete_dictation',
+      );
     }
 
     if (!mounted) return;
@@ -300,9 +302,11 @@ class _PracticeActivityScreenState extends State<PracticeActivityScreen> {
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
-      await HomeMetricsService.onActivityCompleted(uid);
+      await HomeMetricsService.onActivityCompleted(
+        uid,
+        actionType: 'finish_practice',
+      );
       await HomeMetricsService.onAttemptSubmitted(uid);
-      await DailyTaskService.markTaskCompleted(uid, 'finish_practice');
     }
 
     if (!mounted) return;

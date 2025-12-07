@@ -22,6 +22,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Stream<DocumentSnapshot<Map<String, dynamic>>>? _userDocStream;
   Stream<QuerySnapshot<Map<String, dynamic>>>? _enrollmentsStream;
   Stream<QuerySnapshot<Map<String, dynamic>>>? _publishedCoursesStream;
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _streakStream;
   Stream<List<DailyTask>>? _tasksStream;
 
   @override
@@ -39,6 +40,12 @@ class _HomeScreenState extends State<HomeScreen> {
       _enrollmentsStream = userDoc
           .collection('enrollments')
           .orderBy('updatedAt', descending: true)
+          .snapshots();
+
+      _streakStream = userDoc
+          .collection('streaks')
+          .orderBy('lastDayAt', descending: true)
+          .limit(1)
           .snapshots();
 
       _tasksStream = DailyTaskService.watchTasksForUser(_uid!);
@@ -144,6 +151,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 16),
                 _StatsRow(
                   userStream: _userDocStream,
+                  streakStream: _streakStream,
                 ),
                 const SizedBox(height: 16),
                 _SectionHeader(
@@ -160,12 +168,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // Daily Tasks + See all inline
+                // Tasks + See all inline
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text(
-                      'Daily Tasks',
+                      'Tasks',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -185,9 +193,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 _DailyTasksList(
                   tasksStream: _tasksStream,
                   onQuickAction: (action) {
-                    if (action == 'complete_dictation') _goTranscribe();
-                    if (action == 'complete_quiz') _goLessons();
-                    if (action == 'finish_practice') _goLessons();
+                    if (action == 'dictation') _goTranscribe();
+                    if (action == 'quiz') _goLessons();
+                    if (action == 'practice') _goLessons();
                   },
                 ),
               ],
@@ -490,9 +498,11 @@ class _ContinueCourseRow extends StatelessWidget {
 //
 class _StatsRow extends StatelessWidget {
   final Stream<DocumentSnapshot<Map<String, dynamic>>>? userStream;
+  final Stream<QuerySnapshot<Map<String, dynamic>>>? streakStream;
 
   const _StatsRow({
     required this.userStream,
+    required this.streakStream,
   });
 
   @override
@@ -500,7 +510,9 @@ class _StatsRow extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: _StreakChip(userStream: userStream),
+          child: _StreakChip(
+            streakStream: streakStream,
+          ),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -512,13 +524,15 @@ class _StatsRow extends StatelessWidget {
 }
 
 class _StreakChip extends StatelessWidget {
-  final Stream<DocumentSnapshot<Map<String, dynamic>>>? userStream;
+  final Stream<QuerySnapshot<Map<String, dynamic>>>? streakStream;
 
-  const _StreakChip({required this.userStream});
+  const _StreakChip({
+    required this.streakStream,
+  });
 
   @override
   Widget build(BuildContext context) {
-    if (userStream == null) {
+    if (streakStream == null) {
       return const _StatChip(
         icon: Icons.local_fire_department_rounded,
         label: 'Streak',
@@ -526,14 +540,25 @@ class _StreakChip extends StatelessWidget {
       );
     }
 
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: userStream,
-      builder: (context, snap) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: streakStream,
+      builder: (context, streakSnap) {
         int streak = 0;
 
-        if (snap.hasData && snap.data?.data() != null) {
-          final d = snap.data!.data()!;
-          streak = (d['streakCurrent'] as num?)?.toInt() ?? 0;
+        if (streakSnap.hasData && streakSnap.data!.docs.isNotEmpty) {
+          final data = streakSnap.data!.docs.first.data();
+          streak = (data['count'] as num?)?.toInt() ?? 0;
+
+          final ts = data['lastDayAt'] as Timestamp?;
+          final lastDay = ts?.toDate().toUtc();
+          if (lastDay != null) {
+            final today = DateTime.now().toUtc();
+            final todayDate = DateTime.utc(today.year, today.month, today.day);
+            final lastDate =
+                DateTime.utc(lastDay.year, lastDay.month, lastDay.day);
+            final diff = todayDate.difference(lastDate).inDays;
+            if (diff > 1) streak = 0;
+          }
         }
 
         final label = streak == 1 ? '1 day' : '$streak days';
@@ -1348,7 +1373,7 @@ class _EmptyCourses extends StatelessWidget {
 }
 
 //
-// Daily tasks (from /users/{uid}/tasks) — show only incomplete (client-side)
+// Tasks (daily + weekly) — show only incomplete (client-side)
 //
 class _DailyTasksList extends StatelessWidget {
   final Stream<List<DailyTask>>? tasksStream;
@@ -1425,11 +1450,13 @@ class _DailyTasksList extends StatelessWidget {
 
         return Column(
           children: pending.map((task) {
+            final progressLabel =
+                task.actionCount > 1 ? ' (${task.progress}/${task.actionCount})' : '';
             return Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: InkWell(
                 borderRadius: BorderRadius.circular(16),
-                onTap: () => onQuickAction(task.action),
+                onTap: () => onQuickAction(task.actionType),
                 child: Container(
                   padding: const EdgeInsets.all(14),
                   decoration: _cardDecor(),
@@ -1446,19 +1473,32 @@ class _DailyTasksList extends StatelessWidget {
                           ),
                         ),
                         child: Icon(
-                          _taskIconForAction(task.action),
+                          _taskIconForAction(task.actionType),
                           color: AppColors.primaryVariant,
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: Text(
-                          task.title,
-                          style: const TextStyle(
-                            color: AppColors.textPrimary,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              task.title + progressLabel,
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${task.frequency.toUpperCase()} • ${_actionLabel(task.actionType)}',
+                              style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -1487,14 +1527,27 @@ class _DailyTasksList extends StatelessWidget {
 
   static IconData _taskIconForAction(String action) {
     switch (action) {
-      case 'complete_quiz':
+      case 'quiz':
         return Icons.quiz_rounded;
-      case 'finish_practice':
+      case 'practice':
         return Icons.fitness_center_rounded;
-      case 'complete_dictation':
+      case 'dictation':
         return Icons.hearing_rounded;
       default:
         return Icons.flag_rounded;
+    }
+  }
+
+  static String _actionLabel(String action) {
+    switch (action) {
+      case 'quiz':
+        return 'Quiz';
+      case 'practice':
+        return 'Practice';
+      case 'dictation':
+        return 'Dictation';
+      default:
+        return action.isNotEmpty ? action : 'Task';
     }
   }
 }

@@ -27,9 +27,19 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
   }
 
   Future<_SubscriptionPayload> _loadData() async {
-    final plans = await _service.getPlans();
-    final subscription = await _service.getMySubscription();
-    return _SubscriptionPayload(plans: plans, subscription: subscription);
+    final results = await Future.wait([
+      _service.getPlans(),
+      _service.getMySubscription(),
+      _service.getFreePlan(),
+      _service.getSubscriptionMetadata(),
+    ]);
+
+    return _SubscriptionPayload(
+      plans: results[0] as List<Plan>,
+      subscription: results[1] as UserSubscription?,
+      freePlan: results[2] as Plan,
+      metadata: results[3] as SubscriptionMetadata,
+    );
   }
 
   Future<void> _refresh() async {
@@ -88,6 +98,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -113,14 +124,14 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
               );
             }
 
-            if (snapshot.connectionState == ConnectionState.waiting ||
-                !snapshot.hasData) {
+            if (!snapshot.hasData) {
               return const _LoadingList();
             }
 
             final payload = snapshot.data!;
             final subscription = payload.subscription;
-            final currentPlan = _resolveCurrentPlan(payload.plans, subscription);
+            final currentPlan =
+                _resolveCurrentPlan(payload.plans, subscription, payload.freePlan);
 
             return ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
@@ -128,9 +139,10 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                 _SubscriptionOverviewCard(
                   subscription: subscription,
                   plan: currentPlan,
+                  freePlan: payload.freePlan,
+                  metadata: payload.metadata,
                   colorScheme: colorScheme,
-                  onManageBilling:
-                      subscription != null ? _openBillingPortal : null,
+                  onManageBilling: subscription != null ? _openBillingPortal : null,
                   launchingPortal: _launchingPortal,
                 ),
                 const SizedBox(height: 16),
@@ -159,43 +171,68 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     );
   }
 
-  Plan? _resolveCurrentPlan(List<Plan> plans, UserSubscription? subscription) {
-    if (subscription?.plan != null) return subscription!.plan;
-    if (subscription == null) return null;
+  Plan? _resolveCurrentPlan(List<Plan> plans, UserSubscription? subscription, Plan freePlan) {
+    if (subscription == null) return freePlan;
+
+    if (subscription.plan != null) return subscription.plan!;
+
     try {
       return plans.firstWhere((p) => p.id == subscription.planId);
     } catch (_) {
-      return null;
+      return freePlan;
     }
   }
 }
 
 class _SubscriptionPayload {
-  const _SubscriptionPayload({required this.plans, required this.subscription});
+  const _SubscriptionPayload({
+    required this.plans,
+    required this.subscription,
+    required this.freePlan,
+    required this.metadata,
+  });
 
   final List<Plan> plans;
   final UserSubscription? subscription;
+  final Plan freePlan;
+  final SubscriptionMetadata metadata;
 }
+
+/* -------------------------------------------------------------------------- */
+/*                            FIXED OVERVIEW CARD                             */
+/* -------------------------------------------------------------------------- */
 
 class _SubscriptionOverviewCard extends StatelessWidget {
   const _SubscriptionOverviewCard({
     required this.subscription,
     required this.plan,
+    required this.freePlan,
     required this.colorScheme,
+    required this.metadata,
     this.onManageBilling,
     this.launchingPortal = false,
   });
 
   final UserSubscription? subscription;
   final Plan? plan;
+  final Plan freePlan;
   final ColorScheme colorScheme;
+  final SubscriptionMetadata metadata;
   final VoidCallback? onManageBilling;
   final bool launchingPortal;
 
   bool get _isActive {
     final status = subscription?.status?.toLowerCase();
-    if (status == null) return false;
+    if (status == null) return plan?.id == freePlan.id;
     return ['active', 'trialing', 'past_due'].contains(status);
+  }
+
+  /// FIXED: Correct unlimited calculation
+  bool get _isUnlimited {
+    if (plan?.isTranscriptionUnlimited == true) return true;
+    if (metadata.isUnlimited == true) return true;
+
+    return false;
   }
 
   int _usageCount() {
@@ -209,28 +246,27 @@ class _SubscriptionOverviewCard extends StatelessWidget {
     for (final key in keys) {
       if (counters.containsKey(key)) return counters[key] ?? 0;
     }
-    return counters.values.isEmpty
-        ? 0
-        : counters.values.reduce((a, b) => a + b);
+    return 0;
   }
 
+  /// FIXED: Uses metadata AND plan correctly
   String _remainingText() {
-    if (plan == null || plan!.isTranscriptionUnlimited ||
-        plan!.transcriptionLimit == null) {
-      return 'Unlimited';
-    }
-    final limit = plan!.transcriptionLimit!;
-    final remaining = max(0, limit - _usageCount());
+    if (_isUnlimited) return 'Unlimited';
+
+    final limit = plan?.transcriptionLimit ?? metadata.transcriptionLimit;
+    if (limit == null) return 'Unlimited';
+
+    final used = _usageCount();
+    final remaining = max(0, limit - used);
+
     return '$remaining of $limit remaining';
   }
 
   @override
   Widget build(BuildContext context) {
-    final isUnlimited = plan?.isTranscriptionUnlimited ?? true;
     return Card(
       elevation: 0,
       color: AppColors.surface,
-      shadowColor: AppColors.softShadow,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -245,10 +281,7 @@ class _SubscriptionOverviewCard extends StatelessWidget {
                     color: colorScheme.primary.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(
-                    Icons.workspace_premium,
-                    color: colorScheme.primary,
-                  ),
+                  child: Icon(Icons.workspace_premium, color: colorScheme.primary),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -256,7 +289,7 @@ class _SubscriptionOverviewCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        plan?.name ?? 'No active plan',
+                        plan?.name ?? 'Free Plan',
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
                               color: AppColors.textPrimary,
                               fontWeight: FontWeight.w600,
@@ -264,9 +297,7 @@ class _SubscriptionOverviewCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        _isActive
-                            ? 'Status: ${subscription!.status ?? 'active'}'
-                            : 'Not subscribed',
+                        _isActive ? 'Status: ${subscription?.status ?? 'active'}' : 'Not subscribed',
                         style: Theme.of(context)
                             .textTheme
                             .bodyMedium
@@ -284,9 +315,7 @@ class _SubscriptionOverviewCard extends StatelessWidget {
               children: [
                 _InfoChip(
                   icon: Icons.notes_outlined,
-                  label: isUnlimited
-                      ? 'Transcriptions: Unlimited'
-                      : 'Transcriptions: ${_remainingText()}',
+                  label: 'Transcriptions: ${_remainingText()}',
                 ),
                 _InfoChip(
                   icon: plan?.canAccessPremiumCourses == true
@@ -301,27 +330,18 @@ class _SubscriptionOverviewCard extends StatelessWidget {
             if (_isActive && onManageBilling != null) ...[
               const SizedBox(height: 16),
               FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(44),
-                ),
+                style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(44)),
                 onPressed: launchingPortal ? null : onManageBilling,
-                icon: const Icon(Icons.receipt_long_outlined),
-                label: Text(
-                  launchingPortal ? 'Opening Billing Portal…' : 'Manage Billing',
-                ),
+                icon: launchingPortal
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2.2),
+                      )
+                    : const Icon(Icons.receipt_long_outlined),
+                label: Text(launchingPortal ? 'Opening Billing Portal…' : 'Manage Billing'),
               ),
             ],
-            if (!_isActive)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Text(
-                  'Choose a plan below to get started.',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodyMedium
-                      ?.copyWith(color: AppColors.textSecondary),
-                ),
-              ),
           ],
         ),
       ),
@@ -364,7 +384,6 @@ class _PlanCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 0,
       color: AppColors.surface,
-      shadowColor: AppColors.softShadow,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: Padding(
         padding: const EdgeInsets.all(16),
