@@ -58,6 +58,8 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     try {
       final url = await _service.createCheckoutSession(plan.stripePriceId!);
       await _launchUrl(url);
+      await _service.refreshAllCaches();
+      await _refresh();
     } catch (e) {
       _showSnack('Unable to start checkout: $e');
     } finally {
@@ -212,13 +214,13 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
 
   Plan? _resolveCurrentPlan(List<Plan> plans, UserSubscription? subscription, Plan freePlan) {
     if (subscription == null) return freePlan;
-    if (subscription.plan != null) return subscription.plan!;
 
-    try {
-      return plans.firstWhere((p) => p.id == subscription.planId);
-    } catch (_) {
-      return freePlan;
-    }
+    if (subscription.plan != null) return subscription.plan;
+
+    final match = plans.where((p) => p.id == subscription.planId);
+    if (match.isNotEmpty) return match.first;
+
+    return freePlan;
   }
 }
 
