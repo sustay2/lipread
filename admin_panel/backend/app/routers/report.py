@@ -13,6 +13,7 @@ from reportlab.graphics.charts.linecharts import HorizontalLineChart
 from reportlab.graphics.charts.piecharts import Pie
 from reportlab.graphics.shapes import Drawing
 from reportlab.lib import colors
+from reportlab.lib.utils import ImageReader
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, StyleSheet1, getSampleStyleSheet
 from reportlab.pdfgen import canvas
@@ -43,6 +44,20 @@ ACCENT_GREY = colors.HexColor("#6c757d")
 # ---------------------------
 # Helpers
 # ---------------------------
+def _safe_logo(path: str, target_width: int = 80) -> Image:
+    """Load a logo preserving aspect ratio without triggering ReportLab scaling bugs."""
+    img = ImageReader(path)
+    orig_width, orig_height = img.getSize()
+
+    # Compute proportional height
+    ratio = target_width / float(orig_width)
+    target_height = orig_height * ratio
+
+    logo = Image(path, width=target_width, height=target_height)
+    logo.hAlign = "CENTER"
+    return logo
+
+
 class NumberedCanvas(canvas.Canvas):
     """Canvas that records page states to render 'Page X of Y' footers."""
 
@@ -251,28 +266,48 @@ def _bar_chart(months: list[str], values: list[float]) -> Drawing:
 
 def _line_chart(labels: list[str], values: list[float]) -> Drawing:
     drawing = Drawing(460, 260)
+
     chart = HorizontalLineChart()
     chart.x = 50
     chart.y = 50
     chart.height = 170
     chart.width = 360
+
+    # dataset
     chart.data = [values or [0.0]]
+
+    # category axis
     chart.categoryAxis.categoryNames = labels or ["-"]
     chart.categoryAxis.labels.fontName = "Helvetica"
     chart.categoryAxis.labels.angle = 30
     chart.categoryAxis.labels.dy = -8
-    chart.valueAxis.labels.fontName = "Helvetica"
+    chart.categoryAxis.strokeWidth = 0.5
+    chart.categoryAxis.strokeColor = BORDER_COLOR
+
+    # value axis
     chart.valueAxis.valueMin = 0
+    chart.valueAxis.labels.fontName = "Helvetica"
+    chart.valueAxis.strokeWidth = 0.5
+    chart.valueAxis.strokeColor = BORDER_COLOR
+
+    # grid lines (allowed attributes)
+    chart.valueAxis.gridStrokeColor = BORDER_COLOR
+    chart.valueAxis.gridStrokeWidth = 0.3
+    chart.valueAxis.gridStrokeDashArray = [1, 3]  # subtle dotted grid
+
+    # optional: define start and end of grid (works in HL chart)
+    chart.valueAxis.gridStart = chart.y
+    chart.valueAxis.gridEnd = chart.y + chart.height
+
+    # style line appearance
     chart.lines[0].strokeColor = PRIMARY_COLOR
     chart.lines[0].strokeWidth = 2
     chart.lines[0].symbol = None
     chart.joinedLines = True
-    chart.gridFirst = True
-    chart.valueAxis.visibleGrid = True
-    chart.valueAxis.gridStrokeColor = BORDER_COLOR
-    chart.valueAxis.gridStrokeWidth = 0.5
+
     drawing.add(chart)
     drawing.hAlign = "CENTER"
+
     return drawing
 
 
@@ -400,8 +435,7 @@ def build_pdf(metrics: Dict[str, Any], admin_email: str, logo_path: str) -> byte
     # Header
     header_items = []
     if Path(logo_path).exists():
-        header_logo = Image(logo_path, width=160, kind="proportional")
-        header_logo.hAlign = "CENTER"
+        header_logo = _safe_logo(logo_path)
         header_items.extend([header_logo, _section_spacer(10)])
     header_items.append(Paragraph("LipRead Analytics Report", styles["H1"]))
     generated_on = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
