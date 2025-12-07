@@ -82,6 +82,7 @@ app.include_router(health.router, prefix="/health", tags=["health"])
 # Public/mobile API
 app.include_router(public_api.router, prefix="/api", tags=["public-api"])
 app.include_router(billing.router, tags=["billing"])
+app.include_router(billing.admin_router, tags=["billing"])
 app.include_router(stripe_webhooks.router, tags=["billing"])
 
 

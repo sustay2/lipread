@@ -1257,8 +1257,10 @@ async def update_subscription_plan(
 
 @router.get("/billing", response_class=HTMLResponse)
 async def billing(request: Request):
-    payments = firestore_admin.list_payments(limit=200)
-    return templates.TemplateResponse("billing.html", {"request": request, "payments": payments})
+    logs = firestore_admin.list_revenue_logs(limit=200)
+    return templates.TemplateResponse(
+        "billing/index.html", {"request": request, "transactions": logs}
+    )
 
 
 @router.get("/admin/payments", response_class=HTMLResponse)

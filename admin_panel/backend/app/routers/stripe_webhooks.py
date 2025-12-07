@@ -101,11 +101,25 @@ def _extract_price_and_product(subscription: Dict[str, Any]) -> Dict[str, Option
     return {"price_id": price_id, "product_id": product_id}
 
 
+def _resolve_plan_and_price(
+    subscription: Optional[Dict[str, Any]], price_id: Optional[str]
+) -> Dict[str, Optional[str]]:
+    pricing = _extract_price_and_product(subscription or {})
+    price_id = price_id or pricing.get("price_id")
+    product_id = pricing.get("product_id")
+    if not price_id:
+        return {"price_id": None, "product_id": product_id, "plan_id": None}
+
+    plan_id = _lookup_plan_id_for_price(price_id)
+    return {"price_id": price_id, "product_id": product_id, "plan_id": plan_id}
+
+
 def _update_user_subscription(
     uid: str,
     subscription: Optional[Dict[str, Any]],
     subscription_id: Optional[str],
     status_override: Optional[str] = None,
+    checkout_price_id: Optional[str] = None,
 ) -> None:
     if not uid:
         logger.error("Cannot update subscription: No UID provided")
@@ -113,10 +127,10 @@ def _update_user_subscription(
 
     subscription = subscription or {}
 
-    prices = _extract_price_and_product(subscription)
-    price_id = prices.get("price_id")
-    product_id = prices.get("product_id")
-    plan_id = _lookup_plan_id_for_price(price_id)
+    pricing = _resolve_plan_and_price(subscription, checkout_price_id)
+    price_id = pricing.get("price_id")
+    product_id = pricing.get("product_id")
+    plan_id = pricing.get("plan_id")
     if plan_id:
         logger.info("Resolved plan %s for price %s", plan_id, price_id)
 
@@ -128,7 +142,7 @@ def _update_user_subscription(
     data: Dict[str, Any] = {
         "stripe_subscription_id": subscription_id or subscription.get("id"),
         "stripe_customer_id": subscription.get("customer") or subscription.get("customer_id"),
-        "status": status_override or subscription.get("status"),
+        "status": status_override or subscription.get("status") or "active",
         "trial_end_at": _timestamp_from_unix(subscription.get("trial_end")),
         "current_period_end": _timestamp_from_unix(subscription.get("current_period_end")),
         "is_trialing": subscription.get("status") == "trialing",
@@ -173,11 +187,18 @@ async def handle_stripe_webhook(request: Request) -> Dict[str, bool]:
         subscription_id = event_object.get("subscription")
         subscription = _retrieve_subscription(subscription_id) if subscription_id else None
         uid = _extract_firebase_uid(event_object, subscription)
-        
+        checkout_price_id = (event_object.get("metadata") or {}).get("price_id")
+
         logger.info(f"Processing checkout.session.completed for uid: {uid}, sub: {subscription_id}")
-        
+
         if subscription_id and subscription and uid:
-            _update_user_subscription(uid, subscription, subscription_id)
+            _update_user_subscription(
+                uid,
+                subscription,
+                subscription_id,
+                checkout_price_id=checkout_price_id,
+                status_override="active",
+            )
         else:
             logger.warning("Missing data for checkout completion")
 

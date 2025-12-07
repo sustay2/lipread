@@ -37,6 +37,7 @@ class _BillingInfoPageState extends State<BillingInfoPage> {
   }
 
   Future<_BillingPayload> _load() async {
+    await _service.refreshAllCaches();
     final results = await Future.wait([
       _service.getMySubscription(),
       _service.getPlans(),
@@ -72,6 +73,7 @@ class _BillingInfoPageState extends State<BillingInfoPage> {
     setState(() => _openingPortal = true);
     try {
       final url = await _service.createBillingPortalSession();
+      if (!mounted) return;
       await _launchUrl(url);
     } catch (e) {
       _showSnack('Unable to open billing portal: $e');
