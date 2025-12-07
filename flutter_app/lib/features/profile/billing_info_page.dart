@@ -9,7 +9,10 @@ import '../../services/router.dart';
 import '../../services/subscription_service.dart';
 
 class BillingInfoPage extends StatefulWidget {
-  const BillingInfoPage({super.key});
+  // FIX: Add paymentSuccess parameter
+  const BillingInfoPage({super.key, this.paymentSuccess = false});
+
+  final bool paymentSuccess;
 
   @override
   State<BillingInfoPage> createState() => _BillingInfoPageState();
@@ -24,10 +27,16 @@ class _BillingInfoPageState extends State<BillingInfoPage> {
   void initState() {
     super.initState();
     _future = _load();
+
+    // FIX: Show success message if redirected from payment
+    if (widget.paymentSuccess) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showSnack('Payment successful! Your plan has been updated.');
+      });
+    }
   }
 
   Future<_BillingPayload> _load() async {
-    // FIXED: Fetch Free Plan alongside subscription and paid plans
     final results = await Future.wait([
       _service.getMySubscription(),
       _service.getPlans(),
@@ -38,23 +47,17 @@ class _BillingInfoPageState extends State<BillingInfoPage> {
     final plans = results[1] as List<Plan>;
     final freePlan = results[2] as Plan;
 
-    // FIXED: Pass freePlan to resolver
     final plan = _resolvePlan(plans, subscription, freePlan);
     
     return _BillingPayload(plan: plan, subscription: subscription);
   }
 
-  // FIXED: Logic to fallback to freePlan if subscription is null
   Plan? _resolvePlan(List<Plan> plans, UserSubscription? subscription, Plan freePlan) {
     if (subscription?.plan != null) return subscription!.plan;
-    
-    // If no subscription exists, the user is on the Free Plan
     if (subscription == null) return freePlan;
-    
     try {
       return plans.firstWhere((p) => p.id == subscription.planId);
     } catch (_) {
-      // If the plan ID from subscription isn't found in paid plans, assume Free Plan
       return freePlan;
     }
   }
@@ -296,7 +299,6 @@ class _QuotaCard extends StatelessWidget {
   final Plan? plan;
   final UserSubscription? subscription;
 
-  /// Check for negative numbers or explicit flag
   bool get _isUnlimited {
     if (plan?.isTranscriptionUnlimited == true) return true;
     final limit = plan?.transcriptionLimit;
