@@ -134,9 +134,11 @@ class _QuizActivityPageState extends State<QuizActivityPage> {
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
-      await HomeMetricsService.onActivityCompleted(uid);
+      await HomeMetricsService.onActivityCompleted(
+        uid,
+        actionType: 'complete_quiz',
+      );
       await HomeMetricsService.onAttemptSubmitted(uid);
-      await DailyTaskService.markTaskCompleted(uid, 'complete_quiz');
     }
 
     if (!mounted) return;
