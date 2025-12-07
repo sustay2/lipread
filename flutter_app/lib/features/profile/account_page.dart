@@ -83,7 +83,7 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   // ---------------------------------------------------------------------------
-  // BIOMETRICS INITIALIZATION
+  // BIOMETRICS INITIALIZATION (FIXED)
   // ---------------------------------------------------------------------------
   Future<void> _initBiometrics() async {
     final available = await BiometricService.canUseBiometrics();
@@ -107,9 +107,12 @@ class _AccountPageState extends State<AccountPage> {
       _hasFace = hasFace;
 
       final credsOk = hasCredsForUser;
-      _fingerprintEnabled =
-          credsOk && hasFp && (savedFingerprint ?? (hasFp && credsOk));
-      _faceEnabled = credsOk && hasFace && (savedFace ?? (hasFace && credsOk));
+
+      // FIX: Strictly respect the saved preference.
+      // Do NOT fallback to 'true' just because credentials exist.
+      // This prevents enabling one biometric from auto-enabling the other.
+      _fingerprintEnabled = credsOk && hasFp && (savedFingerprint == true);
+      _faceEnabled = credsOk && hasFace && (savedFace == true);
     });
   }
 
@@ -195,6 +198,7 @@ class _AccountPageState extends State<AccountPage> {
       final password = await _requestPassword();
       if (password == null || password.isEmpty) return;
 
+      // Small delay to allow dialog to close smoothly before biometric prompt
       await Future.delayed(const Duration(milliseconds: 120));
 
       final ok = await BiometricService.authenticateWithFingerprint(
@@ -202,7 +206,7 @@ class _AccountPageState extends State<AccountPage> {
       );
 
       if (!ok) {
-        _show("Fingerprint authentication failed.");
+        _show("Authentication failed.");
         return;
       }
 
@@ -219,14 +223,14 @@ class _AccountPageState extends State<AccountPage> {
 
       setState(() {
         _fingerprintEnabled = true;
-        // keep faceEnabled as-is; user controls it separately
+        // Don't touch faceEnabled state here
       });
 
       _show("Fingerprint login enabled.");
     } else {
       setState(() => _fingerprintEnabled = false);
 
-      // If neither modality is enabled anymore, clear creds for this user.
+      // If both are now disabled, clear credentials
       if (!_faceEnabled) {
         await SecureStorageService.clearBiometricCredentialsForUser(_uid);
         await SecureStorageService.clearBiometricPreferencesForUser(_uid);
@@ -248,12 +252,14 @@ class _AccountPageState extends State<AccountPage> {
 
       await Future.delayed(const Duration(milliseconds: 120));
 
+      // Note: On Android, this prompt might still show a fingerprint icon/option
+      // because the system dialog is shared. This is normal.
       final ok = await BiometricService.authenticateWithFace(
         reason: "Confirm face recognition to enable login",
       );
 
       if (!ok) {
-        _show("Face authentication failed.");
+        _show("Authentication failed.");
         return;
       }
 
@@ -270,6 +276,7 @@ class _AccountPageState extends State<AccountPage> {
 
       setState(() {
         _faceEnabled = true;
+        // Don't touch fingerprintEnabled state here
       });
 
       _show("Face login enabled.");
@@ -299,7 +306,7 @@ class _AccountPageState extends State<AccountPage> {
       builder: (ctx) => AlertDialog(
         title: const Text("Not supported"),
         content: Text(
-          "Your device does not support $label login on this device.",
+          "Your device does not support $label login.",
           style: Theme.of(context).textTheme.bodyMedium,
         ),
         actions: [
