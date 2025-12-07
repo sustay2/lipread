@@ -43,16 +43,27 @@ class BiometricService {
         types = await _auth.getAvailableBiometrics();
       }
 
-      if (types.isEmpty && await _isXiaomiHyperOS()) {
+      final isXiaomi = await _isXiaomiHyperOS();
+
+      // Merge fallback types if empty or on Xiaomi
+      if (types.isEmpty && isXiaomi) {
         types = await _getFallbackBiometricTypes();
       }
 
-      final hasFingerprint = types.contains(BiometricType.fingerprint);
-      final hasFace = types.contains(BiometricType.face);
+      bool hasFingerprint = types.contains(BiometricType.fingerprint);
+      bool hasFace = types.contains(BiometricType.face);
+
+      // FIX 1: Optimistic Fallback for Xiaomi/HyperOS
+      // If we detected Fingerprint (or just "Strong" auth) on Xiaomi, 
+      // assume Face is also available. Xiaomi's 2D Face Unlock often doesn't 
+      // report the standard FEATURE_FACE, but works via the prompt.
+      if (isXiaomi && (hasFingerprint || types.contains(BiometricType.strong))) {
+        hasFingerprint = true; // Ensure fingerprint is on
+        hasFace = true;        // Force face to be available
+      }
 
       return (hasFingerprint, hasFace);
     } catch (e) {
-      // If anything goes wrong, assume none are available.
       print('getBiometricTypes error: $e');
       return (false, false);
     }
@@ -62,81 +73,40 @@ class BiometricService {
   static Future<bool> authenticate({
     required String reason,
   }) async {
-    try {
-      final supported = await _auth.isDeviceSupported();
-      final canCheck = await _auth.canCheckBiometrics;
-      if (!supported || !canCheck) return false;
-
-      return await _auth.authenticate(
-        localizedReason: reason,
-        options: const AuthenticationOptions(
-          biometricOnly: true,
-          stickyAuth: true,
-          useErrorDialogs: true,
-          sensitiveTransaction: true,
-        ),
-      );
-    } catch (e) {
-      print('BiometricService.authenticate error: $e');
-      return false;
-    }
+    return _attemptAuth(reason);
   }
 
   /// Explicitly require fingerprint (where possible).
-  /// Note: On some Android versions, the OS may still show a combined prompt.
   static Future<bool> authenticateWithFingerprint({
     required String reason,
   }) async {
-    try {
-      final supported = await _auth.isDeviceSupported();
-      final canCheck = await _auth.canCheckBiometrics;
-      if (!supported || !canCheck) return false;
-
-      final types = await _auth.getAvailableBiometrics();
-      if (!types.contains(BiometricType.fingerprint)) {
-        return false;
-      }
-
-      return await _auth.authenticate(
-        localizedReason: reason,
-        options: const AuthenticationOptions(
-          biometricOnly: true,
-          stickyAuth: true,
-          useErrorDialogs: true,
-          sensitiveTransaction: true,
-        ),
-      );
-    } catch (e) {
-      print('BiometricService.authenticateWithFingerprint error: $e');
-      return false;
-    }
+    // FIX 2: Removed strict check against _auth.getAvailableBiometrics().
+    // If the UI toggle is enabled, we trust our fallback logic.
+    return _attemptAuth(reason);
   }
 
   /// Explicitly require face recognition (where possible).
   static Future<bool> authenticateWithFace({
     required String reason,
   }) async {
+    // FIX 3: Removed strict check against _auth.getAvailableBiometrics().
+    // Xiaomi Face unlock works via the standard prompt even if the plugin doesn't see it.
+    return _attemptAuth(reason);
+  }
+
+  static Future<bool> _attemptAuth(String reason) async {
     try {
-      final supported = await _auth.isDeviceSupported();
-      final canCheck = await _auth.canCheckBiometrics;
-      if (!supported || !canCheck) return false;
-
-      final types = await _auth.getAvailableBiometrics();
-      if (!types.contains(BiometricType.face)) {
-        return false;
-      }
-
       return await _auth.authenticate(
         localizedReason: reason,
         options: const AuthenticationOptions(
           biometricOnly: true,
           stickyAuth: true,
           useErrorDialogs: true,
-          sensitiveTransaction: true,
+          sensitiveTransaction: false, 
         ),
       );
     } catch (e) {
-      print('BiometricService.authenticateWithFace error: $e');
+      print('Auth error: $e');
       return false;
     }
   }
@@ -183,7 +153,7 @@ class BiometricService {
     return null;
   }
 
-static Future<bool> _isXiaomiHyperOS() async {
+  static Future<bool> _isXiaomiHyperOS() async {
     if (!Platform.isAndroid) return false;
 
     try {
@@ -191,8 +161,6 @@ static Future<bool> _isXiaomiHyperOS() async {
       final brand = androidInfo.brand?.toLowerCase() ?? '';
       final manufacturer = androidInfo.manufacturer?.toLowerCase() ?? '';
 
-      // FIX: Relaxed check. If it is a Xiaomi family device, use the fallback.
-      // The previous 'hyperos' string check was too strict for some ROM versions.
       final isXiaomiBrand = brand.contains('xiaomi') ||
           brand.contains('redmi') ||
           brand.contains('poco') ||

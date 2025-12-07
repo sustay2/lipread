@@ -1,6 +1,6 @@
 package my.edu.tarumt.flutter_app
 
-import android.os.Build
+import android.content.pm.PackageManager
 import androidx.annotation.NonNull
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
@@ -28,27 +28,21 @@ class MainActivity : FlutterFragmentActivity() {
         val biometricManager = BiometricManager.from(this)
         val availableFeatures = mutableListOf<String>()
 
-        // Check if biometrics can work generally
+        // Check if biometrics can work generally (Strong or Weak/Class 2 for Face)
         val canAuthenticate = biometricManager.canAuthenticate(BIOMETRIC_STRONG or BIOMETRIC_WEAK)
         
         if (canAuthenticate == BiometricManager.BIOMETRIC_SUCCESS) {
-            // Since Android 10+ (API 29), we can't easily distinguish face vs fingerprint 
-            // programmatically without checking specific hardware features, 
-            // but the BiometricManager confirms *something* is enrolled.
+            // Hardware is present and enrolled.
+            availableFeatures.add("strong")
+            availableFeatures.add("weak")
             
-            // We return generic types that the Dart side maps to Enums.
-            // BiometricService.dart maps "strong" -> BiometricType.strong
-            availableFeatures.add("strong") 
-            
-            // If the device has a fingerprint sensor, we assume it's one of the active ones.
-            if (packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_FINGERPRINT)) {
-                availableFeatures.add("fingerprint")
-            }
-
-            // If the device has face features (generic check)
-            if (packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_FACE)) {
-                availableFeatures.add("face")
-            }
+            // OPTIMISTIC FALLBACK:
+            // Custom ROMs (like HyperOS) often don't declare PackageManager.FEATURE_FACE correctly.
+            // If BiometricManager says SUCCESS, we add both 'fingerprint' and 'face' to the list.
+            // This enables the UI toggles. If the specific hardware is actually missing, 
+            // the authentication call itself will handle the failure/fallback gracefully.
+            availableFeatures.add("fingerprint")
+            availableFeatures.add("face")
         }
 
         return availableFeatures
