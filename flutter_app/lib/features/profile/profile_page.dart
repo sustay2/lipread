@@ -267,6 +267,21 @@ class ProfilePage extends StatelessWidget {
                             final data = streakSnap.data!.docs.first.data();
                             latestStreak =
                                 (data['count'] as num?)?.toInt() ?? latestStreak;
+
+                            final ts = data['lastDayAt'] as Timestamp?;
+                            final lastDay = ts?.toDate().toUtc();
+                            if (lastDay != null) {
+                              final today = DateTime.now().toUtc();
+                              final todayDate =
+                                  DateTime.utc(today.year, today.month, today.day);
+                              final lastDate = DateTime.utc(
+                                lastDay.year,
+                                lastDay.month,
+                                lastDay.day,
+                              );
+                              final diff = todayDate.difference(lastDate).inDays;
+                              if (diff > 1) latestStreak = 0;
+                            }
                           }
 
                           final label =

@@ -184,89 +184,12 @@ class DailyTaskService {
     await _updateStreakForCompletion(uid);
   }
 
-  /// Reset streak if the user missed a day.
+  /// Ensure a streak record exists for the current week.
   static Future<void> ensureStreakConsistency(String uid) async {
-    final userRef = _db.collection('users').doc(uid);
-    final snap = await userRef.get(const GetOptions());
-    final data = snap.data() ?? {};
-    Timestamp? lastTs;
-    if (data['streakLastHit'] is Timestamp) {
-      lastTs = data['streakLastHit'] as Timestamp;
-    }
-    final now = DateTime.now().toUtc();
-    final today = DateTime.utc(now.year, now.month, now.day);
-    if (lastTs == null) {
-      await userRef.set({
-        'streakCurrent': 0,
-      }, SetOptions(merge: true));
-      return;
-    }
-    final last = lastTs.toDate().toUtc();
-    final lastDay = DateTime.utc(last.year, last.month, last.day);
-    final diff = today.difference(lastDay).inDays;
-    if (diff > 1) {
-      await userRef.set({
-        'streakCurrent': 0,
-      }, SetOptions(merge: true));
-    }
+    await XpService.ensureStreakForToday(uid);
   }
 
   static Future<void> _updateStreakForCompletion(String uid) async {
-    final userRef = _db.collection('users').doc(uid);
-    final streakRef = userRef
-        .collection('streaks')
-        .doc(_dayKey(DateTime.now()));
-
-    await _db.runTransaction((tx) async {
-      final snap = await tx.get(userRef);
-      int streak = 0;
-      DateTime? lastDay;
-      if (snap.exists && snap.data() != null) {
-        final data = snap.data()!;
-        if (data['streakCurrent'] is num) {
-          streak = (data['streakCurrent'] as num).toInt();
-        }
-        if (data['streakLastHit'] is Timestamp) {
-          final ts = data['streakLastHit'] as Timestamp;
-          final d = ts.toDate().toUtc();
-          lastDay = DateTime.utc(d.year, d.month, d.day);
-        }
-      }
-
-      final now = DateTime.now().toUtc();
-      final today = DateTime.utc(now.year, now.month, now.day);
-
-      if (lastDay == null) {
-        streak = 1;
-      } else {
-        final diff = today.difference(lastDay).inDays;
-        if (diff == 0) {
-          // already counted today
-          return;
-        } else if (diff == 1) {
-          streak += 1;
-        } else {
-          streak = 1;
-        }
-      }
-
-      tx.set(
-        userRef,
-        {
-          'streakCurrent': streak,
-          'streakLastHit': Timestamp.fromDate(today),
-        },
-        SetOptions(merge: true),
-      );
-      tx.set(
-        streakRef,
-        {
-          'streak': streak,
-          'lastDayAt': Timestamp.fromDate(today),
-          'createdAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
-    });
+    await XpService.updateStreakAfterActivity(uid);
   }
 }

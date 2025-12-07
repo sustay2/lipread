@@ -22,6 +22,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Stream<DocumentSnapshot<Map<String, dynamic>>>? _userDocStream;
   Stream<QuerySnapshot<Map<String, dynamic>>>? _enrollmentsStream;
   Stream<QuerySnapshot<Map<String, dynamic>>>? _publishedCoursesStream;
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _streakStream;
   Stream<List<DailyTask>>? _tasksStream;
 
   @override
@@ -39,6 +40,12 @@ class _HomeScreenState extends State<HomeScreen> {
       _enrollmentsStream = userDoc
           .collection('enrollments')
           .orderBy('updatedAt', descending: true)
+          .snapshots();
+
+      _streakStream = userDoc
+          .collection('streaks')
+          .orderBy('lastDayAt', descending: true)
+          .limit(1)
           .snapshots();
 
       _tasksStream = DailyTaskService.watchTasksForUser(_uid!);
@@ -144,6 +151,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 16),
                 _StatsRow(
                   userStream: _userDocStream,
+                  streakStream: _streakStream,
                 ),
                 const SizedBox(height: 16),
                 _SectionHeader(
@@ -490,9 +498,11 @@ class _ContinueCourseRow extends StatelessWidget {
 //
 class _StatsRow extends StatelessWidget {
   final Stream<DocumentSnapshot<Map<String, dynamic>>>? userStream;
+  final Stream<QuerySnapshot<Map<String, dynamic>>>? streakStream;
 
   const _StatsRow({
     required this.userStream,
+    required this.streakStream,
   });
 
   @override
@@ -500,7 +510,9 @@ class _StatsRow extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: _StreakChip(userStream: userStream),
+          child: _StreakChip(
+            streakStream: streakStream,
+          ),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -512,13 +524,15 @@ class _StatsRow extends StatelessWidget {
 }
 
 class _StreakChip extends StatelessWidget {
-  final Stream<DocumentSnapshot<Map<String, dynamic>>>? userStream;
+  final Stream<QuerySnapshot<Map<String, dynamic>>>? streakStream;
 
-  const _StreakChip({required this.userStream});
+  const _StreakChip({
+    required this.streakStream,
+  });
 
   @override
   Widget build(BuildContext context) {
-    if (userStream == null) {
+    if (streakStream == null) {
       return const _StatChip(
         icon: Icons.local_fire_department_rounded,
         label: 'Streak',
@@ -526,14 +540,25 @@ class _StreakChip extends StatelessWidget {
       );
     }
 
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: userStream,
-      builder: (context, snap) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: streakStream,
+      builder: (context, streakSnap) {
         int streak = 0;
 
-        if (snap.hasData && snap.data?.data() != null) {
-          final d = snap.data!.data()!;
-          streak = (d['streakCurrent'] as num?)?.toInt() ?? 0;
+        if (streakSnap.hasData && streakSnap.data!.docs.isNotEmpty) {
+          final data = streakSnap.data!.docs.first.data();
+          streak = (data['count'] as num?)?.toInt() ?? 0;
+
+          final ts = data['lastDayAt'] as Timestamp?;
+          final lastDay = ts?.toDate().toUtc();
+          if (lastDay != null) {
+            final today = DateTime.now().toUtc();
+            final todayDate = DateTime.utc(today.year, today.month, today.day);
+            final lastDate =
+                DateTime.utc(lastDay.year, lastDay.month, lastDay.day);
+            final diff = todayDate.difference(lastDate).inDays;
+            if (diff > 1) streak = 0;
+          }
         }
 
         final label = streak == 1 ? '1 day' : '$streak days';

@@ -3,6 +3,24 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class XpService {
   static final _users = FirebaseFirestore.instance.collection('users');
 
+  static DocumentReference<Map<String, dynamic>> _streakRef(
+    String uid,
+    DateTime date,
+  ) {
+    return _users.doc(uid).collection('streaks').doc(_yearWeekKey(date));
+  }
+
+  /// Convert a date to a `yyyy-ww` bucket (ISO week number, padded).
+  static String _yearWeekKey(DateTime date) {
+    final d = DateTime.utc(date.year, date.month, date.day);
+    final monday = d.subtract(Duration(days: d.weekday - 1));
+    final firstMonday =
+        DateTime.utc(d.year, 1, 1).subtract(Duration(days: DateTime.utc(d.year, 1, 1).weekday - 1));
+    final diffWeeks = monday.difference(firstMonday).inDays ~/ 7;
+    final week = diffWeeks + 1;
+    return '${d.year}-${week.toString().padLeft(2, '0')}';
+  }
+
   /// Formula: XP required to reach the next level
   /// Tweak this as you like.
   static int xpNeededForLevel(int level) {
@@ -57,6 +75,118 @@ class XpService {
       reason: reason,
       metadata: metadata,
     );
+  }
+
+  /// Ensure a streak document exists for the current week.
+  /// Creates it with `count=1` and `lastDayAt=now` if missing.
+  static Future<int> ensureStreakForToday(String uid) async {
+    final now = DateTime.now().toUtc();
+    final today = DateTime.utc(now.year, now.month, now.day);
+    final streakRef = _streakRef(uid, today);
+
+    return FirebaseFirestore.instance.runTransaction((tx) async {
+      final snap = await tx.get(streakRef);
+
+      if (!snap.exists || snap.data() == null) {
+        tx.set(
+          streakRef,
+          {
+            'count': 1,
+            'lastDayAt': Timestamp.fromDate(today),
+            'createdAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+
+        tx.set(
+          _users.doc(uid),
+          {
+            'streakCurrent': 1,
+            'streakLastHit': Timestamp.fromDate(today),
+          },
+          SetOptions(merge: true),
+        );
+
+        return 1;
+      }
+
+      final data = snap.data()!;
+      final count = (data['count'] as num?)?.toInt() ?? 0;
+      final ts = data['lastDayAt'] as Timestamp?;
+      final lastDay = ts?.toDate().toUtc();
+      final normalizedLast = lastDay == null
+          ? null
+          : DateTime.utc(lastDay.year, lastDay.month, lastDay.day);
+
+      tx.set(
+        _users.doc(uid),
+        {
+          'streakCurrent': count,
+          'streakLastHit': Timestamp.fromDate(normalizedLast ?? today),
+        },
+        SetOptions(merge: true),
+      );
+
+      return count;
+    });
+  }
+
+  /// Update the streak after an activity completion.
+  /// - If the last hit was yesterday → increment.
+  /// - If gap > 1 day → reset to 1.
+  /// - If already counted today → keep current.
+  static Future<int> updateStreakAfterActivity(String uid) async {
+    final now = DateTime.now().toUtc();
+    final today = DateTime.utc(now.year, now.month, now.day);
+    final userRef = _users.doc(uid);
+    final todayRef = _streakRef(uid, today);
+
+    return FirebaseFirestore.instance.runTransaction((tx) async {
+      final userSnap = await tx.get(userRef);
+
+      int streak = (userSnap.data()?['streakCurrent'] as num?)?.toInt() ?? 0;
+      DateTime? lastDay;
+
+      if (userSnap.data()?['streakLastHit'] is Timestamp) {
+        final ts = userSnap.data()!['streakLastHit'] as Timestamp;
+        final d = ts.toDate().toUtc();
+        lastDay = DateTime.utc(d.year, d.month, d.day);
+      }
+
+      if (lastDay == null) {
+        streak = 1;
+      } else {
+        final diff = today.difference(lastDay).inDays;
+        if (diff == 0) {
+          return streak; // already counted today
+        } else if (diff == 1) {
+          streak += 1;
+        } else {
+          streak = 1;
+        }
+      }
+
+      tx.set(
+        userRef,
+        {
+          'streakCurrent': streak,
+          'streakLastHit': Timestamp.fromDate(today),
+        },
+        SetOptions(merge: true),
+      );
+
+      tx.set(
+        todayRef,
+        {
+          'count': streak,
+          'lastDayAt': Timestamp.fromDate(today),
+          'createdAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+
+      return streak;
+    });
   }
 
   /// Ensures stats exist when user signs in for the first time
