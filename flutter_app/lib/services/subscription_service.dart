@@ -123,17 +123,34 @@ class SubscriptionMetadata {
 
   factory SubscriptionMetadata.fromJson(Map<String, dynamic> json) {
     final rawLimit = json['transcriptionLimit'] ?? json['transcription_limit'];
-    final limitStr = rawLimit?.toString().toLowerCase();
-    final unlimited = limitStr == 'unlimited';
-    final limitVal = _asInt(rawLimit);
+
+    // FIXED: Determine unlimited without crashing on int
+    bool isUnlimited = false;
+    int? limit;
+
+    if (rawLimit is String) {
+      if (rawLimit.toLowerCase() == 'unlimited') {
+        isUnlimited = true;
+      } else {
+        limit = int.tryParse(rawLimit);
+      }
+    } else if (rawLimit is int) {
+      limit = rawLimit;
+    } else {
+      // fallback: no limit means unlimited? NO — free plan should be LIMITED
+      limit = null;
+    }
 
     return SubscriptionMetadata(
-      transcriptionLimit: unlimited ? null : limitVal,
-      isUnlimited: unlimited,
+      transcriptionLimit: isUnlimited ? null : limit,
+      isUnlimited: isUnlimited,
       canAccessPremiumCourses:
-          _asBool(json['canAccessPremiumCourses'] ?? json['can_access_premium_courses']) ??
+          _asBool(json['canAccessPremiumCourses'] ??
+                  json['can_access_premium_courses']) ??
               false,
-      freeTrialDays: _asInt(json['freeTrialDays'] ?? json['trial_period_days']) ?? 0,
+      freeTrialDays: _asInt(json['freeTrialDays'] ??
+              json['trial_period_days']) ??
+          0,
     );
   }
 

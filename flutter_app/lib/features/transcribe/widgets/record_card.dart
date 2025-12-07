@@ -53,18 +53,25 @@ class _RecordCardState extends State<RecordCard>
   Future<void> _startCamera() async {
     if (_initializing) return;
 
-    // Request camera permission only (no mic)
+    // Request CAMERA
     final camStatus = await Permission.camera.request();
     if (!camStatus.isGranted) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Camera permission required.')),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Camera permission required.")),
+      );
       return;
     }
 
-    // Dispose old camera if exists
+    // Request MICROPHONE (needed even with enableAudio=false)
+    final micStatus = await Permission.microphone.request();
+    if (!micStatus.isGranted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Microphone permission required.")),
+      );
+      return;
+    }
+
+    // Dispose existing controller
     if (_ctrl != null) {
       try {
         await _ctrl!.dispose();
@@ -76,26 +83,24 @@ class _RecordCardState extends State<RecordCard>
 
     try {
       final cams = await availableCameras();
-      if (cams.isEmpty) {
-        throw Exception("No cameras available");
-      }
+      if (cams.isEmpty) throw Exception("No cameras available");
 
       CameraDescription selected;
       if (_usingFront) {
         selected = cams.firstWhere(
-              (c) => c.lensDirection == CameraLensDirection.front,
+          (c) => c.lensDirection == CameraLensDirection.front,
           orElse: () => cams.first,
         );
       } else {
         selected = cams.firstWhere(
-              (c) => c.lensDirection == CameraLensDirection.back,
+          (c) => c.lensDirection == CameraLensDirection.back,
           orElse: () => cams.first,
         );
       }
 
       final ctrl = CameraController(
         selected,
-        ResolutionPreset.medium,
+        ResolutionPreset.high,
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.yuv420,
       );
@@ -110,9 +115,8 @@ class _RecordCardState extends State<RecordCard>
       setState(() => _ctrl = ctrl);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Camera init failed: $e')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text("Camera init failed: $e")));
       }
     } finally {
       _initializing = false;
@@ -135,9 +139,7 @@ class _RecordCardState extends State<RecordCard>
     }
 
     if (mounted) {
-      setState(() {
-        _recording = false;
-      });
+      setState(() => _recording = false);
     }
   }
 
@@ -181,6 +183,7 @@ class _RecordCardState extends State<RecordCard>
           _lastFile = null;
         });
 
+        // Auto stop after 5 sec
         _autoStopTimer = Timer(const Duration(seconds: 5), () async {
           if (mounted && ctrl.value.isRecordingVideo) {
             await _stopRecordingInternal();
@@ -191,9 +194,8 @@ class _RecordCardState extends State<RecordCard>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Recording error: $e')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text("Recording error: $e")));
       }
     }
   }
@@ -207,9 +209,11 @@ class _RecordCardState extends State<RecordCard>
     try {
       final x = await ctrl.stopVideoRecording();
       final tmpDir = await getTemporaryDirectory();
+
       final file = File(
-        '${tmpDir.path}/lipread_${DateTime.now().millisecondsSinceEpoch}.mp4',
+        "${tmpDir.path}/lipread_${DateTime.now().millisecondsSinceEpoch}.mp4",
       );
+
       await File(x.path).copy(file.path);
 
       if (!mounted) return;
@@ -220,9 +224,8 @@ class _RecordCardState extends State<RecordCard>
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Stop error: $e')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text("Stop error: $e")));
       }
     } finally {
       await _stopAndDisposeCamera();
@@ -232,19 +235,35 @@ class _RecordCardState extends State<RecordCard>
   void _cancelAutoStopTimer() {
     _autoStopTimer?.cancel();
     _autoStopTimer = null;
-  }
+    }
 
   // ------------------------------------------------------------
   // UI
   // ------------------------------------------------------------
 
+  Widget _cameraPreview() {
+    if (_ctrl == null || !_ctrl!.value.isInitialized) {
+      return const Center(
+        child: Icon(Icons.videocam_outlined, size: 40, color: AppColors.textSecondary),
+      );
+    }
+
+    final size = _ctrl!.value.previewSize!;
+    final aspect = size.width / size.height;
+
+    return FittedBox(
+      fit: BoxFit.contain,
+      child: SizedBox(
+        width: size.height,
+        height: size.width,
+        child: CameraPreview(_ctrl!),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final canSubmit =
-        widget.enabled && !_recording && _lastFile != null;
-
-    final hasPreview =
-        _ctrl != null && _ctrl!.value.isInitialized;
+    final canSubmit = widget.enabled && !_recording && _lastFile != null;
 
     return Column(
       children: [
@@ -255,15 +274,11 @@ class _RecordCardState extends State<RecordCard>
               alignment: Alignment.centerLeft,
               child: Text(
                 widget.hint!,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textSecondary,
-                ),
+                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
               ),
             ),
           ),
 
-        // CAMERA PREVIEW
         Expanded(
           child: Container(
             margin: const EdgeInsets.all(16),
@@ -283,38 +298,18 @@ class _RecordCardState extends State<RecordCard>
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  if (hasPreview)
-                    Center(
-                      child: AspectRatio(
-                        aspectRatio: _ctrl!.value.aspectRatio,
-                        child: CameraPreview(_ctrl!),
-                      ),
-                    )
-                  else
-                    const Center(
-                      child: Icon(
-                        Icons.videocam_outlined,
-                        size: 40,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
+                  _cameraPreview(),
 
-                  // Switch camera button (top-right)
                   Positioned(
                     top: 8,
                     right: 8,
                     child: IconButton(
                       style: IconButton.styleFrom(
-                        backgroundColor: Theme.of(context)
-                            .colorScheme
-                            .scrim
-                            .withOpacity(0.35),
+                        backgroundColor:
+                            Colors.black.withOpacity(0.25),
                       ),
                       onPressed: widget.enabled ? _switchCamera : null,
-                      icon: Icon(
-                        Icons.cameraswitch_rounded,
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
+                      icon: const Icon(Icons.cameraswitch_rounded, color: Colors.white),
                     ),
                   ),
                 ],
@@ -323,7 +318,6 @@ class _RecordCardState extends State<RecordCard>
           ),
         ),
 
-        // BUTTONS
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           child: Column(
@@ -332,23 +326,18 @@ class _RecordCardState extends State<RecordCard>
                 width: double.infinity,
                 child: FilledButton.icon(
                   style: FilledButton.styleFrom(
-                    backgroundColor: _recording
-                        ? Colors.red.shade300   // lighter red while recording
-                        : Colors.red.shade600,  // strong red when idle
+                    backgroundColor:
+                        _recording ? Colors.red.shade300 : Colors.red.shade600,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
                   onPressed: widget.enabled ? _onRecordPressed : null,
-                  icon: Icon(
-                    _recording
-                        ? Icons.stop_rounded
-                        : Icons.fiber_manual_record_rounded,
-                  ),
-                  label: Text(
-                    _recording ? 'Stop Recording' : 'Record',
-                  ),
+                  icon: Icon(_recording
+                      ? Icons.stop_rounded
+                      : Icons.fiber_manual_record_rounded),
+                  label: Text(_recording ? "Stop Recording" : "Record"),
                 ),
               ),
               const SizedBox(height: 12),
@@ -362,9 +351,9 @@ class _RecordCardState extends State<RecordCard>
                     ),
                   ),
                   onPressed:
-                  canSubmit ? () => widget.onSubmit(_lastFile!) : null,
+                      canSubmit ? () => widget.onSubmit(_lastFile!) : null,
                   icon: const Icon(Icons.cloud_upload_outlined),
-                  label: const Text('Upload & Transcribe'),
+                  label: const Text("Upload & Transcribe"),
                 ),
               ),
             ],
