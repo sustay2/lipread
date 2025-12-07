@@ -1,4 +1,3 @@
-"""Stripe webhook handler for subscription lifecycle events."""
 from __future__ import annotations
 
 import logging
@@ -74,7 +73,7 @@ def _update_user_subscription(
     db.collection("user_subscriptions").document(uid).set(data, merge=True)
 
 
-@router.post("/stripe/webhook")
+@router.post("/webhook")
 async def handle_stripe_webhook(request: Request) -> Dict[str, bool]:
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature")

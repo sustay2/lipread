@@ -103,6 +103,7 @@ app.include_router(import_export.router, prefix="/admin", tags=["import_export"]
 app.include_router(tasks.router, tags=["tasks"])
 app.include_router(ui.router, tags=["ui"])
 app.include_router(report.router, tags=["reports"])
+app.include_router(stripe_webhooks.router, prefix="/api/stripe", tags=["Stripe Webhooks"])
 
 
 @app.exception_handler(HTTPException)

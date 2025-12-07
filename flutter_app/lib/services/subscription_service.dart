@@ -176,9 +176,9 @@ class SubscriptionService {
         _apiBase = _normalizeBase(apiBase ?? kApiBase),
         _publishableKey = stripePublishableKey ??
             const String.fromEnvironment('STRIPE_PUBLISHABLE_KEY'),
-        _successUrl = successUrl ?? 'https://lipread.app/stripe/success',
-        _cancelUrl = cancelUrl ?? 'https://lipread.app/stripe/cancel',
-        _portalReturnUrl = portalReturnUrl ?? 'https://lipread.app/account',
+        _successUrl = successUrl ?? 'lipread://stripe/success',
+        _cancelUrl = cancelUrl ?? 'lipread://stripe/cancel',
+        _portalReturnUrl = portalReturnUrl ?? 'lipread://account',
         _dio = dio ?? Dio() {
     _dio.options.baseUrl = '$_apiBase/api/billing';
     _dio.options = _dio.options.copyWith(
