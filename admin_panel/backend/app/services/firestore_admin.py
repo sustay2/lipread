@@ -1196,3 +1196,69 @@ def list_payment_events(page: int = 1, page_size: int = 20) -> tuple[List[Dict[s
         )
 
     return events, has_next
+
+
+def list_revenue_logs(limit: int = 500) -> Dict[str, Any]:
+    """Return revenue log entries ordered by creation time (newest first)."""
+
+    try:
+        plan_snaps = list(db.collection("subscription_plans").stream())
+    except Exception:
+        plan_snaps = []
+
+    price_plan_map: Dict[str, Dict[str, Any]] = {}
+    for snap in plan_snaps:
+        pdata = snap.to_dict() or {}
+        price_id = pdata.get("stripe_price_id")
+        if price_id:
+            price_plan_map[price_id] = {"id": snap.id, "name": pdata.get("name")}
+
+    try:
+        snaps = (
+            db.collection("revenue_logs")
+            .order_by("createdAt", direction=Query.DESCENDING)
+            .limit(limit)
+            .stream()
+        )
+    except FailedPrecondition as exc:
+        raise FailedPrecondition(
+            f"Firestore index required for revenue_logs.createdAt: {exc.message}"
+        )
+
+    user_cache: Dict[str, Optional[str]] = {}
+    logs: List[Dict[str, Any]] = []
+    revenue_total = 0.0
+
+    for snap in snaps:
+        data = snap.to_dict() or {}
+        user_id = data.get("userId") or data.get("user_id")
+        price_id = data.get("priceId") or data.get("price_id")
+        amount = data.get("amount") or 0
+        try:
+            amount_val = float(amount)
+        except (TypeError, ValueError):
+            amount_val = 0.0
+        revenue_total += amount_val
+
+        if user_id not in user_cache:
+            user_snap = db.collection("users").document(str(user_id)).get()
+            user_cache[user_id] = (user_snap.to_dict() or {}).get("email") if user_snap.exists else None
+
+        plan_info = price_plan_map.get(price_id) or {}
+        logs.append(
+            {
+                "id": snap.id,
+                "user_id": user_id,
+                "user_email": user_cache.get(user_id),
+                "price_id": price_id,
+                "plan_name": plan_info.get("name"),
+                "plan_id": plan_info.get("id"),
+                "amount": amount_val,
+                "currency": data.get("currency", "MYR"),
+                "stripe_subscription_id": data.get("stripeSubscriptionId")
+                or data.get("stripe_subscription_id"),
+                "createdAt": _iso(data.get("createdAt")),
+            }
+        )
+
+    return {"items": logs, "total_myr": revenue_total}

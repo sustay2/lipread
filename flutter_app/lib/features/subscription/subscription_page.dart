@@ -17,16 +17,34 @@ class SubscriptionPage extends StatefulWidget {
   State<SubscriptionPage> createState() => _SubscriptionPageState();
 }
 
-class _SubscriptionPageState extends State<SubscriptionPage> {
+class _SubscriptionPageState extends State<SubscriptionPage>
+    with WidgetsBindingObserver {
   final SubscriptionService _service = SubscriptionService();
   Future<_StaticDataPayload>? _loadFuture;
   String? _processingPriceId;
   bool _launchingPortal = false;
+  bool _pendingCheckoutRefresh = false;
+  bool _refreshingAfterResume = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadFuture = _loadStaticData();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _pendingCheckoutRefresh) {
+      _pendingCheckoutRefresh = false;
+      _refreshAfterCheckout();
+    }
   }
 
   Future<_StaticDataPayload> _loadStaticData() async {
@@ -55,13 +73,14 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
       return;
     }
     setState(() => _processingPriceId = plan.id);
+    _pendingCheckoutRefresh = true;
     try {
       final url = await _service.createCheckoutSession(plan.stripePriceId!);
       await _launchUrl(url);
       await _service.refreshAllCaches();
-      await _refresh();
     } catch (e) {
       _showSnack('Unable to start checkout: $e');
+      _pendingCheckoutRefresh = false;
     } finally {
       if (mounted) setState(() => _processingPriceId = null);
     }
@@ -72,7 +91,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const BillingInfoPage()),
-    );
+    ).then((_) => _refresh());
   }
 
   Future<void> _launchUrl(String url) async {
@@ -96,6 +115,21 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
     );
+  }
+
+  Future<void> _refreshAfterCheckout() async {
+    if (_refreshingAfterResume) return;
+    _refreshingAfterResume = true;
+    try {
+      await _service.refreshAllCaches();
+      await _service.getMySubscription();
+      if (!mounted) return;
+      await _refresh();
+    } catch (e) {
+      _showSnack('Unable to refresh subscription: $e');
+    } finally {
+      _refreshingAfterResume = false;
+    }
   }
 
   @override

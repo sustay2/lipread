@@ -1,14 +1,16 @@
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from google.api_core.exceptions import FailedPrecondition
 from google.cloud.firestore_v1 import Query
 
 from app.deps.auth import get_current_user
-from app.services import billing_service
+from app.services import billing_service, firestore_admin
 from app.services.firebase_client import get_firestore_client
 
 router = APIRouter(prefix="/api/billing")
+admin_router = APIRouter(prefix="/admin/billing")
 db = get_firestore_client()
 ACTIVE_SUBSCRIPTION_STATUSES = {"active", "trialing", "past_due", "incomplete"}
 
@@ -80,6 +82,19 @@ def _load_user_subscription(uid: str) -> Tuple[Optional[Dict[str, Any]], Optiona
 
     sub_data = sub_snap.to_dict() or {}
     plan_id = sub_data.get("plan_id")
+    if not plan_id and sub_data.get("stripe_price_id"):
+        # Backfill plan_id using the Stripe price mapping for historical docs
+        mapping = (
+            db.collection("subscription_plans")
+            .where("stripe_price_id", "==", sub_data.get("stripe_price_id"))
+            .limit(1)
+        )
+        docs = list(mapping.stream())
+        if docs:
+            plan_id = docs[0].id
+    if plan_id:
+        sub_data["plan_id"] = plan_id
+
     plan_data: Optional[Dict[str, Any]] = None
     if plan_id:
         plan_snap = db.collection("subscription_plans").document(plan_id).get()
@@ -189,6 +204,18 @@ async def get_billing_history(user=Depends(get_current_user)) -> Dict[str, List[
         )
 
     return {"items": items}
+
+
+@admin_router.get("/transactions")
+async def list_revenue_transactions() -> JSONResponse:
+    """Return Stripe revenue logs for admin billing dashboard."""
+
+    try:
+        payload = firestore_admin.list_revenue_logs()
+    except FailedPrecondition as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    return JSONResponse(payload)
 
 @router.get("/metadata")
 async def get_subscription_metadata() -> Dict[str, Any]:

@@ -1,0 +1,30 @@
+<div class="table-responsive">
+    <table class="table table-striped align-middle mb-0">
+        <thead class="table-light">
+            <tr>
+                <th>Date</th>
+                <th>Amount (MYR)</th>
+                <th>Plan</th>
+                <th>Stripe Price ID</th>
+                <th>Stripe Subscription ID</th>
+                <th>User Email</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for tx in transactions['items'] %}
+            <tr>
+                <td class="text-muted small">{{ tx.createdAt or '-' }}</td>
+                <td class="fw-semibold">RM {{ (tx.amount or 0) | round(2) }}</td>
+                <td>{{ tx.plan_name or 'N/A' }}</td>
+                <td><code>{{ tx.price_id or '-' }}</code></td>
+                <td class="small">{{ tx.stripe_subscription_id or '-' }}</td>
+                <td>{{ tx.user_email or tx.user_id or 'Unknown' }}</td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="6" class="text-center text-muted py-4">No revenue transactions yet.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
