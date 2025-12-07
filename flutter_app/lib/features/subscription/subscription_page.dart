@@ -27,9 +27,23 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
   }
 
   Future<_SubscriptionPayload> _loadData() async {
-    final plans = await _service.getPlans();
-    final subscription = await _service.getMySubscription();
-    return _SubscriptionPayload(plans: plans, subscription: subscription);
+    final results = await Future.wait([
+      _service.getPlans(),
+      _service.getMySubscription(),
+      _service.getFreePlan(),
+      _service.getSubscriptionMetadata(),
+    ]);
+
+    final plans = results[0] as List<Plan>;
+    final subscription = results[1] as UserSubscription?;
+    final freePlan = results[2] as Plan;
+    final metadata = results[3] as SubscriptionMetadata;
+    return _SubscriptionPayload(
+      plans: plans,
+      subscription: subscription,
+      freePlan: freePlan,
+      metadata: metadata,
+    );
   }
 
   Future<void> _refresh() async {
@@ -120,7 +134,8 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
 
             final payload = snapshot.data!;
             final subscription = payload.subscription;
-            final currentPlan = _resolveCurrentPlan(payload.plans, subscription);
+            final currentPlan =
+                _resolveCurrentPlan(payload.plans, subscription, payload.freePlan);
 
             return ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
@@ -128,10 +143,12 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                 _SubscriptionOverviewCard(
                   subscription: subscription,
                   plan: currentPlan,
+                  freePlan: payload.freePlan,
                   colorScheme: colorScheme,
                   onManageBilling:
                       subscription != null ? _openBillingPortal : null,
                   launchingPortal: _launchingPortal,
+                  metadata: payload.metadata,
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -159,42 +176,54 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     );
   }
 
-  Plan? _resolveCurrentPlan(List<Plan> plans, UserSubscription? subscription) {
+  Plan? _resolveCurrentPlan(
+      List<Plan> plans, UserSubscription? subscription, Plan freePlan) {
     if (subscription?.plan != null) return subscription!.plan;
-    if (subscription == null) return null;
+    if (subscription == null) return freePlan;
     try {
       return plans.firstWhere((p) => p.id == subscription.planId);
     } catch (_) {
-      return null;
+      return freePlan;
     }
   }
 }
 
 class _SubscriptionPayload {
-  const _SubscriptionPayload({required this.plans, required this.subscription});
+  const _SubscriptionPayload({
+    required this.plans,
+    required this.subscription,
+    required this.freePlan,
+    required this.metadata,
+  });
 
   final List<Plan> plans;
   final UserSubscription? subscription;
+  final Plan freePlan;
+  final SubscriptionMetadata metadata;
 }
 
 class _SubscriptionOverviewCard extends StatelessWidget {
   const _SubscriptionOverviewCard({
     required this.subscription,
     required this.plan,
+    required this.freePlan,
     required this.colorScheme,
     this.onManageBilling,
     this.launchingPortal = false,
+    this.metadata,
   });
 
   final UserSubscription? subscription;
   final Plan? plan;
+  final Plan freePlan;
   final ColorScheme colorScheme;
   final VoidCallback? onManageBilling;
   final bool launchingPortal;
+  final SubscriptionMetadata? metadata;
 
   bool get _isActive {
     final status = subscription?.status?.toLowerCase();
-    if (status == null) return false;
+    if (status == null) return plan?.id == freePlan.id;
     return ['active', 'trialing', 'past_due'].contains(status);
   }
 
@@ -226,7 +255,8 @@ class _SubscriptionOverviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isUnlimited = plan?.isTranscriptionUnlimited ?? true;
+    final isUnlimited =
+        plan?.isTranscriptionUnlimited ?? metadata?.isUnlimited ?? true;
     return Card(
       elevation: 0,
       color: AppColors.surface,
@@ -256,7 +286,7 @@ class _SubscriptionOverviewCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        plan?.name ?? 'No active plan',
+                        plan?.name ?? 'Free Plan',
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
                               color: AppColors.textPrimary,
                               fontWeight: FontWeight.w600,
@@ -265,7 +295,7 @@ class _SubscriptionOverviewCard extends StatelessWidget {
                       const SizedBox(height: 4),
                       Text(
                         _isActive
-                            ? 'Status: ${subscription!.status ?? 'active'}'
+                            ? 'Status: ${subscription?.status ?? 'active'}'
                             : 'Not subscribed',
                         style: Theme.of(context)
                             .textTheme

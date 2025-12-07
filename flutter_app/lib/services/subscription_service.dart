@@ -128,7 +128,7 @@ class SubscriptionMetadata {
     final limitVal = _asInt(rawLimit);
 
     return SubscriptionMetadata(
-      transcriptionLimit: unlimited ? null : (limitVal ?? 10),
+      transcriptionLimit: unlimited ? null : limitVal,
       isUnlimited: unlimited,
       canAccessPremiumCourses:
           _asBool(json['canAccessPremiumCourses'] ?? json['can_access_premium_courses']) ??
@@ -180,6 +180,8 @@ class SubscriptionService {
   final String _successUrl;
   final String _cancelUrl;
   final String _portalReturnUrl;
+  SubscriptionMetadata? _metadataCache;
+  Plan? _freePlanCache;
 
   Future<List<Plan>> getPlans() async {
     final res = await _dio.get(
@@ -256,17 +258,29 @@ class SubscriptionService {
   }
 
   Future<SubscriptionMetadata> getSubscriptionMetadata() async {
+    if (_metadataCache != null) return _metadataCache!;
+
     try {
       final snap = await FirebaseFirestore.instance
           .collection('config')
           .doc('subscription_metadata')
           .get();
       final data = snap.data() ?? {};
-      return SubscriptionMetadata.fromJson(_decodeFirestoreDocument(data));
+      _metadataCache = SubscriptionMetadata.fromJson(_decodeFirestoreDocument(data));
+      _freePlanCache = _buildFreePlanFromMetadata(_metadataCache!);
+      return _metadataCache!;
     } catch (e) {
       debugPrint('Failed to load subscription metadata: $e');
       return SubscriptionMetadata();
     }
+  }
+
+  Future<Plan> getFreePlan() async {
+    if (_freePlanCache != null) return _freePlanCache!;
+
+    final metadata = await getSubscriptionMetadata();
+    _freePlanCache = _buildFreePlanFromMetadata(metadata);
+    return _freePlanCache!;
   }
 
   Future<Map<String, String>> _authHeaders() async {
@@ -279,6 +293,19 @@ class SubscriptionService {
       'Accept': 'application/json',
       'Content-Type': 'application/json',
     };
+  }
+
+  Plan _buildFreePlanFromMetadata(SubscriptionMetadata metadata) {
+    return Plan(
+      id: 'free',
+      name: 'Free Plan',
+      priceMyr: 0.0,
+      transcriptionLimit: metadata.transcriptionLimit,
+      isTranscriptionUnlimited: metadata.isUnlimited,
+      canAccessPremiumCourses: metadata.canAccessPremiumCourses,
+      trialPeriodDays: metadata.freeTrialDays,
+      isActive: true,
+    );
   }
 }
 
