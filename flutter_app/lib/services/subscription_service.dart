@@ -29,21 +29,39 @@ class Plan {
     return Plan(
       id: normalized['id']?.toString() ?? '',
       name: normalized['name']?.toString() ?? '',
-      priceMyr: _asDouble(normalized['price_myr'] ?? normalized['priceMyr']),
+      priceMyr: _asDouble(
+        normalized['price_myr'] ?? normalized['priceMyr'],
+      ),
       stripeProductId: normalized['stripe_product_id']?.toString(),
       stripePriceId: normalized['stripe_price_id']?.toString(),
-      transcriptionLimit:
-          _asInt(normalized['transcription_limit'] ?? normalized['transcriptionLimit']),
+      transcriptionLimit: _asInt(
+        normalized['transcription_limit'] ?? normalized['transcriptionLimit'],
+      ),
       isTranscriptionUnlimited:
-          _asBool(normalized['is_transcription_unlimited'] ?? normalized['isTranscriptionUnlimited']) ??
+          _asBool(
+                normalized['is_transcription_unlimited'] ??
+                    normalized['isTranscriptionUnlimited'],
+              ) ??
               false,
       canAccessPremiumCourses:
-          _asBool(normalized['can_access_premium_courses'] ?? normalized['canAccessPremiumCourses']) ??
+          _asBool(
+                normalized['can_access_premium_courses'] ??
+                    normalized['canAccessPremiumCourses'],
+              ) ??
               false,
-      trialPeriodDays: _asInt(normalized['trial_period_days'] ?? normalized['trialPeriodDays']) ?? 0,
-      isActive: _asBool(normalized['is_active'] ?? normalized['isActive']) ?? false,
-      createdAt: _asDate(normalized['createdAt'] ?? normalized['created_at']),
-      updatedAt: _asDate(normalized['updatedAt'] ?? normalized['updated_at']),
+      trialPeriodDays: _asInt(
+            normalized['trial_period_days'] ??
+                normalized['trialPeriodDays'],
+          ) ??
+          0,
+      isActive:
+          _asBool(normalized['is_active'] ?? normalized['isActive']) ?? false,
+      createdAt: _asDate(
+        normalized['createdAt'] ?? normalized['created_at'],
+      ),
+      updatedAt: _asDate(
+        normalized['updatedAt'] ?? normalized['updated_at'],
+      ),
     );
   }
 
@@ -86,20 +104,33 @@ class UserSubscription {
     final normalized = _decodeFirestoreDocument(json);
     return UserSubscription(
       id: normalized['id']?.toString() ?? '',
-      planId: normalized['plan_id']?.toString() ?? normalized['planId']?.toString() ?? '',
+      planId: normalized['plan_id']?.toString() ??
+          normalized['planId']?.toString() ??
+          '',
       stripeCustomerId: normalized['stripe_customer_id']?.toString(),
       stripeSubscriptionId: normalized['stripe_subscription_id']?.toString(),
       stripePriceId: normalized['stripe_price_id']?.toString(),
       stripeProductId: normalized['stripe_product_id']?.toString(),
       status: normalized['status']?.toString(),
-      isTrialing: _asBool(normalized['is_trialing'] ?? normalized['trialing']) ?? false,
-      trialEndAt: _asDate(normalized['trial_end_at'] ?? normalized['trialEndAt']),
-      currentPeriodEnd:
-          _asDate(normalized['current_period_end'] ?? normalized['currentPeriodEnd']),
-      usageCounters: _asStringIntMap(normalized['usage_counters'] ?? normalized['usageCounters']),
+      isTrialing:
+          _asBool(normalized['is_trialing'] ?? normalized['trialing']) ??
+              false,
+      trialEndAt: _asDate(
+        normalized['trial_end_at'] ?? normalized['trialEndAt'],
+      ),
+      currentPeriodEnd: _asDate(
+        normalized['current_period_end'] ?? normalized['currentPeriodEnd'],
+      ),
+      usageCounters: _asStringIntMap(
+        normalized['usage_counters'] ?? normalized['usageCounters'],
+      ),
       plan: plan,
-      createdAt: _asDate(normalized['createdAt'] ?? normalized['created_at']),
-      updatedAt: _asDate(normalized['updatedAt'] ?? normalized['updated_at']),
+      createdAt: _asDate(
+        normalized['createdAt'] ?? normalized['created_at'],
+      ),
+      updatedAt: _asDate(
+        normalized['updatedAt'] ?? normalized['updated_at'],
+      ),
     );
   }
 
@@ -147,18 +178,21 @@ class SubscriptionMetadata {
         limit = rawLimit;
       }
     } else {
-      limit = 0; 
+      // Safe default if field missing or unexpected
+      limit = 0;
     }
 
     return SubscriptionMetadata(
       transcriptionLimit: isUnlimited ? null : limit,
       isUnlimited: isUnlimited,
-      canAccessPremiumCourses:
-          _asBool(json['canAccessPremiumCourses'] ??
-                  json['can_access_premium_courses']) ??
-              false,
-      freeTrialDays: _asInt(json['freeTrialDays'] ??
-              json['trial_period_days']) ??
+      canAccessPremiumCourses: _asBool(
+            json['canAccessPremiumCourses'] ??
+                json['can_access_premium_courses'],
+          ) ??
+          false,
+      freeTrialDays: _asInt(
+            json['freeTrialDays'] ?? json['trial_period_days'],
+          ) ??
           0,
     );
   }
@@ -214,83 +248,157 @@ class SubscriptionService {
     _freePlanCache = null;
   }
 
+  // ---------------------------------------------------------------------------
+  // PLANS
+  // ---------------------------------------------------------------------------
   Future<List<Plan>> getPlans() async {
-    final res = await _dio.get(
-      '/plans',
-      options: Options(headers: await _authHeaders()),
-    );
-    final data = res.data;
-    final rawList = (data is Map<String, dynamic>)
-        ? (data['items'] as List?) ?? (data['documents'] as List?) ?? []
-        : [];
-    return rawList
-        .whereType<dynamic>()
-        .map((item) => Plan.fromJson(_decodeFirestoreDocument(_asMap(item))))
-        .toList();
+    try {
+      final res = await _dio.get(
+        '/plans',
+        options: Options(headers: await _authHeaders()),
+      );
+      final data = res.data;
+      final rawList = (data is Map<String, dynamic>)
+          ? (data['items'] as List?) ?? (data['documents'] as List?) ?? []
+          : [];
+
+      return rawList
+          .whereType<dynamic>()
+          .map(
+            (item) =>
+                Plan.fromJson(_decodeFirestoreDocument(_asMap(item))),
+          )
+          .toList();
+    } on DioException catch (e) {
+      debugPrint(
+        '[SubscriptionService] getPlans DioException: ${e.message} status=${e.response?.statusCode}',
+      );
+      return [];
+    } catch (e) {
+      debugPrint('[SubscriptionService] getPlans error: $e');
+      return [];
+    }
   }
 
+  // ---------------------------------------------------------------------------
+  // CURRENT USER SUBSCRIPTION
+  // ---------------------------------------------------------------------------
   Future<UserSubscription?> getMySubscription() async {
-    await refreshAllCaches();
+    try {
+      final res = await _dio.get(
+        '/me',
+        options: Options(headers: await _authHeaders()),
+      );
 
-    final res = await _dio.get(
-      '/me',
-      options: Options(headers: await _authHeaders()),
-    );
-    final data = _asMap(res.data);
-    final rawSubscription = data['subscription'];
-    if (rawSubscription == null) return null;
+      if (res.data == null) {
+        debugPrint('[SubscriptionService] /me returned null body');
+        return null;
+      }
 
-    final planData = data['plan'];
-    final plan = planData != null
-        ? Plan.fromJson(_decodeFirestoreDocument(_asMap(planData)))
-        : null;
-    return UserSubscription.fromJson(
-      _decodeFirestoreDocument(_asMap(rawSubscription)),
-      plan: plan,
-    );
+      final data = _asMap(res.data);
+      debugPrint('[SubscriptionService] /me payload: $data');
+
+      final rawSubscription = data['subscription'];
+      if (rawSubscription == null) {
+        debugPrint(
+          '[SubscriptionService] /me has no subscription, falling back to free',
+        );
+        return null;
+      }
+
+      final planData = data['plan'];
+      final plan = planData != null
+          ? Plan.fromJson(
+              _decodeFirestoreDocument(_asMap(planData)),
+            )
+          : null;
+
+      return UserSubscription.fromJson(
+        _decodeFirestoreDocument(_asMap(rawSubscription)),
+        plan: plan,
+      );
+    } on DioException catch (e) {
+      debugPrint(
+        '[SubscriptionService] getMySubscription DioException: ${e.message} status=${e.response?.statusCode} data=${e.response?.data}',
+      );
+      return null;
+    } catch (e) {
+      debugPrint('[SubscriptionService] getMySubscription error: $e');
+      return null;
+    }
   }
 
+  // ---------------------------------------------------------------------------
+  // CHECKOUT + PORTAL
+  // ---------------------------------------------------------------------------
   Future<String> createCheckoutSession(String priceId) async {
     final payload = {
       'price_id': priceId,
       'success_url': _successUrl,
       'cancel_url': _cancelUrl,
     };
-    final res = await _dio.post(
-      '/checkout-session',
-      data: jsonEncode(payload),
-      options: Options(
-        headers: await _authHeaders(),
-        contentType: Headers.jsonContentType,
-      ),
-    );
-    final data = _asMap(res.data);
-    final url = data['url']?.toString();
-    if (url == null || url.isEmpty) {
-      throw Exception('Billing URL is empty');
+
+    try {
+      final res = await _dio.post(
+        '/checkout-session',
+        data: jsonEncode(payload),
+        options: Options(
+          headers: await _authHeaders(),
+          contentType: Headers.jsonContentType,
+        ),
+      );
+      final data = _asMap(res.data);
+      final url = data['url']?.toString();
+      if (url == null || url.isEmpty) {
+        throw Exception('Billing URL is empty');
+      }
+      return url;
+    } on DioException catch (e) {
+      debugPrint(
+        '[SubscriptionService] createCheckoutSession DioException: ${e.message} status=${e.response?.statusCode} data=${e.response?.data}',
+      );
+      rethrow;
+    } catch (e) {
+      debugPrint('[SubscriptionService] createCheckoutSession error: $e');
+      rethrow;
     }
-    return url;
   }
 
   Future<String> createBillingPortalSession() async {
     final payload = {'return_url': _portalReturnUrl};
-    final res = await _dio.post(
-      '/customer-portal',
-      data: jsonEncode(payload),
-      options: Options(
-        headers: await _authHeaders(),
-        contentType: Headers.jsonContentType,
-      ),
-    );
-    final data = _asMap(res.data);
-    final url = data['url']?.toString();
-    if (url == null || url.isEmpty) {
-      throw Exception('Billing URL is empty');
+
+    try {
+      final res = await _dio.post(
+        '/customer-portal',
+        data: jsonEncode(payload),
+        options: Options(
+          headers: await _authHeaders(),
+          contentType: Headers.jsonContentType,
+        ),
+      );
+      final data = _asMap(res.data);
+      final url = data['url']?.toString();
+      if (url == null || url.isEmpty) {
+        throw Exception('Billing URL is empty');
+      }
+
+      // Explicitly clear caches so next load re-reads subscription/metadata
+      await refreshAllCaches();
+      return url;
+    } on DioException catch (e) {
+      debugPrint(
+        '[SubscriptionService] createBillingPortalSession DioException: ${e.message} status=${e.response?.statusCode} data=${e.response?.data}',
+      );
+      rethrow;
+    } catch (e) {
+      debugPrint('[SubscriptionService] createBillingPortalSession error: $e');
+      rethrow;
     }
-    await refreshAllCaches();
-    return url;
   }
 
+  // ---------------------------------------------------------------------------
+  // METADATA / FREE PLAN
+  // ---------------------------------------------------------------------------
   Future<SubscriptionMetadata> getSubscriptionMetadata() async {
     if (_metadataCache != null) return _metadataCache!;
 
@@ -299,17 +407,43 @@ class SubscriptionService {
         '/metadata',
         options: Options(headers: await _authHeaders()),
       );
-      
+
       final data = _asMap(res.data);
-      
-      _metadataCache = SubscriptionMetadata.fromJson(_decodeFirestoreDocument(data));
+      debugPrint('[SubscriptionService] /metadata payload: $data');
+
+      _metadataCache = SubscriptionMetadata.fromJson(
+        _decodeFirestoreDocument(data),
+      );
       _freePlanCache = _buildFreePlanFromMetadata(_metadataCache!);
-      
+
+      return _metadataCache!;
+    } on DioException catch (e) {
+      debugPrint(
+        '[SubscriptionService] getSubscriptionMetadata DioException: ${e.message} status=${e.response?.statusCode} data=${e.response?.data}',
+      );
+    } catch (e) {
+      debugPrint('[SubscriptionService] getSubscriptionMetadata error: $e');
+    }
+
+    // Fallback to Firestore direct read if API fails
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('config')
+          .doc('subscription_metadata')
+          .get();
+      final data = snap.data() ?? {};
+      debugPrint(
+        '[SubscriptionService] Firestore subscription_metadata fallback: $data',
+      );
+
+      _metadataCache = SubscriptionMetadata.fromJson(data);
+      _freePlanCache = _buildFreePlanFromMetadata(_metadataCache!);
       return _metadataCache!;
     } catch (e) {
-      debugPrint('Failed to load subscription metadata via API: $e');
-      
-      // Return safe default on error
+      debugPrint(
+        '[SubscriptionService] Firestore metadata fallback failed: $e',
+      );
+      // Safe final default
       return SubscriptionMetadata(
         transcriptionLimit: 0,
         isUnlimited: false,
@@ -327,6 +461,9 @@ class SubscriptionService {
     return _freePlanCache!;
   }
 
+  // ---------------------------------------------------------------------------
+  // INTERNAL HELPERS
+  // ---------------------------------------------------------------------------
   Future<Map<String, String>> _authHeaders() async {
     final user = _auth.currentUser;
     if (user == null) throw Exception('User not signed in');
@@ -353,9 +490,14 @@ class SubscriptionService {
   }
 }
 
+// ============================================================================
+// JSON / Firestore decoding helpers
+// ============================================================================
 Map<String, dynamic> _decodeFirestoreDocument(dynamic raw) {
   if (raw is! Map<String, dynamic>) return {};
-  if (!raw.containsKey('fields')) return Map<String, dynamic>.from(raw);
+  if (!raw.containsKey('fields')) {
+    return Map<String, dynamic>.from(raw);
+  }
 
   final fields = raw['fields'];
   final decodedFields = fields is Map<String, dynamic>
@@ -389,10 +531,18 @@ Map<String, dynamic> _decodeFirestoreFields(Map<String, dynamic> fields) {
 dynamic _decodeFirestoreValue(dynamic value) {
   if (value is Map<String, dynamic>) {
     if (value.containsKey('stringValue')) return value['stringValue'];
-    if (value.containsKey('integerValue')) return int.tryParse(value['integerValue'].toString());
-    if (value.containsKey('doubleValue')) return (value['doubleValue'] as num?)?.toDouble();
-    if (value.containsKey('booleanValue')) return value['booleanValue'] as bool?;
-    if (value.containsKey('timestampValue')) return value['timestampValue'];
+    if (value.containsKey('integerValue')) {
+      return int.tryParse(value['integerValue'].toString());
+    }
+    if (value.containsKey('doubleValue')) {
+      return (value['doubleValue'] as num?)?.toDouble();
+    }
+    if (value.containsKey('booleanValue')) {
+      return value['booleanValue'] as bool?;
+    }
+    if (value.containsKey('timestampValue')) {
+      return value['timestampValue'];
+    }
     if (value.containsKey('nullValue')) return null;
     if (value.containsKey('mapValue')) {
       final mapFields = value['mapValue']['fields'];
@@ -405,7 +555,9 @@ dynamic _decodeFirestoreValue(dynamic value) {
       return arr?.map(_decodeFirestoreValue).toList();
     }
     if (value.containsKey('fields')) {
-      return _decodeFirestoreFields(value['fields'] as Map<String, dynamic>);
+      return _decodeFirestoreFields(
+        value['fields'] as Map<String, dynamic>,
+      );
     }
   }
   return value;
@@ -413,7 +565,11 @@ dynamic _decodeFirestoreValue(dynamic value) {
 
 Map<String, dynamic> _asMap(dynamic value) {
   if (value is Map<String, dynamic>) return value;
-  if (value is Map) return value.map((key, val) => MapEntry(key.toString(), val));
+  if (value is Map) {
+    return value.map(
+      (key, val) => MapEntry(key.toString(), val),
+    );
+  }
   return {};
 }
 
@@ -440,16 +596,22 @@ DateTime? _asDate(dynamic value) {
   if (value == null) return null;
   if (value is DateTime) return value;
   if (value is String) return DateTime.tryParse(value);
-  if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
+  if (value is int) {
+    return DateTime.fromMillisecondsSinceEpoch(value);
+  }
   return null;
 }
 
 Map<String, int> _asStringIntMap(dynamic value) {
   if (value is Map<String, dynamic>) {
-    return value.map((key, val) => MapEntry(key, _asInt(val) ?? 0));
+    return value.map(
+      (key, val) => MapEntry(key, _asInt(val) ?? 0),
+    );
   }
   if (value is Map) {
-    return value.map((key, val) => MapEntry(key.toString(), _asInt(val) ?? 0));
+    return value.map(
+      (key, val) => MapEntry(key.toString(), _asInt(val) ?? 0),
+    );
   }
   return {};
 }
