@@ -183,27 +183,22 @@ class BiometricService {
     return null;
   }
 
-  static Future<bool> _isXiaomiHyperOS() async {
+static Future<bool> _isXiaomiHyperOS() async {
     if (!Platform.isAndroid) return false;
 
     try {
       final androidInfo = await DeviceInfoPlugin().androidInfo;
       final brand = androidInfo.brand?.toLowerCase() ?? '';
       final manufacturer = androidInfo.manufacturer?.toLowerCase() ?? '';
-      final display = androidInfo.display?.toLowerCase() ?? '';
-      final baseOs = androidInfo.version.baseOS?.toLowerCase() ?? '';
-      final release = androidInfo.version.release?.toLowerCase() ?? '';
-      final codeName = androidInfo.version.codename?.toLowerCase() ?? '';
 
+      // FIX: Relaxed check. If it is a Xiaomi family device, use the fallback.
+      // The previous 'hyperos' string check was too strict for some ROM versions.
       final isXiaomiBrand = brand.contains('xiaomi') ||
           brand.contains('redmi') ||
           brand.contains('poco') ||
           manufacturer.contains('xiaomi');
 
-      final osDescriptor = '$baseOs $release $codeName $display';
-      final isHyperOs = osDescriptor.contains('hyperos');
-
-      return isXiaomiBrand && isHyperOs;
+      return isXiaomiBrand; 
     } catch (_) {
       return false;
     }
