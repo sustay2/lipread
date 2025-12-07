@@ -62,6 +62,23 @@ def _update_user_subscription(
         return
 
     subscription = subscription or {}
+    
+    # Extract price_id to find the corresponding internal Plan ID
+    plan_id = None
+    if subscription:
+        # Stripe subscriptions have 'items', usually the first one contains the price
+        items = subscription.get("items", {}).get("data", [])
+        if items:
+            price_id = items[0].get("price", {}).get("id")
+            if price_id:
+                # Query Firestore to find the plan with this stripe_price_id
+                # This is inefficient if you have many plans, but safe for now.
+                # Ideally, store a map or cache this.
+                plans_ref = db.collection("subscription_plans").where("stripe_price_id", "==", price_id).limit(1)
+                docs = list(plans_ref.stream())
+                if docs:
+                    plan_id = docs[0].id
+
     data: Dict[str, Any] = {
         "stripe_subscription_id": subscription_id or subscription.get("id"),
         "status": status_override or subscription.get("status"),
@@ -69,6 +86,10 @@ def _update_user_subscription(
         "current_period_end": _timestamp_from_unix(subscription.get("current_period_end")),
         "updatedAt": SERVER_TIMESTAMP,
     }
+    
+    # Save plan_id if found
+    if plan_id:
+        data["plan_id"] = plan_id
 
     db.collection("user_subscriptions").document(uid).set(data, merge=True)
 
