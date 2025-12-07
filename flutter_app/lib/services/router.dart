@@ -191,11 +191,11 @@ class AppNavigator {
         ));
 
       // Handle Stripe Success
-      case Routes.stripeSuccess:
-        return _material(const BillingInfoPage());
+      case '/success':
+        return _material(const BillingInfoPage(paymentSuccess: true));
 
       // Handle Stripe Cancel
-      case Routes.stripeCancel:
+      case '/cancel':
         return _material(const SubscriptionPage());
 
       default:

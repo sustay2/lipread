@@ -11,7 +11,9 @@ from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
 from app.services.firebase_client import get_firestore_client
 
-logger = logging.getLogger(__name__)
+# Configure logging to show up in your terminal
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("stripe_webhook")
 
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
@@ -36,7 +38,7 @@ def _timestamp_from_unix(value: Optional[int]) -> Optional[datetime]:
 def _retrieve_subscription(subscription_id: str) -> Optional[Dict[str, Any]]:
     try:
         return stripe.Subscription.retrieve(subscription_id)
-    except Exception as exc:  # pragma: no cover - network/Stripe handled at runtime
+    except Exception as exc:
         logger.error("Failed to retrieve subscription %s: %s", subscription_id, exc)
         return None
 
@@ -59,25 +61,33 @@ def _update_user_subscription(
     uid: str, subscription: Optional[Dict[str, Any]], subscription_id: Optional[str], status_override: Optional[str] = None
 ) -> None:
     if not uid:
+        logger.error("Cannot update subscription: No UID provided")
         return
 
     subscription = subscription or {}
     
     # Extract price_id to find the corresponding internal Plan ID
     plan_id = None
+    price_id = None
+    
     if subscription:
-        # Stripe subscriptions have 'items', usually the first one contains the price
         items = subscription.get("items", {}).get("data", [])
         if items:
             price_id = items[0].get("price", {}).get("id")
             if price_id:
+                logger.info(f"Looking up plan for Stripe Price ID: {price_id}")
                 # Query Firestore to find the plan with this stripe_price_id
-                # This is inefficient if you have many plans, but safe for now.
-                # Ideally, store a map or cache this.
                 plans_ref = db.collection("subscription_plans").where("stripe_price_id", "==", price_id).limit(1)
                 docs = list(plans_ref.stream())
                 if docs:
                     plan_id = docs[0].id
+                    logger.info(f"Found matching Plan ID: {plan_id}")
+                else:
+                    logger.warning(f"CRITICAL: No plan found in Firestore with stripe_price_id='{price_id}'. User subscription will not link to a plan.")
+            else:
+                logger.warning("No price ID found in subscription items.")
+        else:
+            logger.warning("Subscription has no items.")
 
     data: Dict[str, Any] = {
         "stripe_subscription_id": subscription_id or subscription.get("id"),
@@ -87,11 +97,14 @@ def _update_user_subscription(
         "updatedAt": SERVER_TIMESTAMP,
     }
     
-    # Save plan_id if found
     if plan_id:
         data["plan_id"] = plan_id
+    else:
+        # If we can't find the plan, we might want to log this specifically
+        logger.error(f"Updating user {uid} subscription WITHOUT plan_id. Status: {data['status']}")
 
     db.collection("user_subscriptions").document(uid).set(data, merge=True)
+    logger.info(f"Successfully updated subscription for user {uid}")
 
 
 @router.post("/webhook")
@@ -102,27 +115,28 @@ async def handle_stripe_webhook(request: Request) -> Dict[str, bool]:
     try:
         event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
     except ValueError as exc:
-        logger.error("Invalid payload for Stripe webhook: %s", exc)
+        logger.error("Invalid payload: %s", exc)
         raise HTTPException(status_code=400, detail="Invalid payload")
     except stripe.error.SignatureVerificationError as exc:
-        logger.error("Stripe signature verification failed: %s", exc)
+        logger.error("Invalid signature: %s", exc)
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     event_type = event.get("type")
     event_object: Dict[str, Any] = event.get("data", {}).get("object", {})
+    
+    logger.info(f"Received Stripe event: {event_type}")
 
     if event_type == "checkout.session.completed":
         subscription_id = event_object.get("subscription")
         subscription = _retrieve_subscription(subscription_id) if subscription_id else None
         uid = _extract_firebase_uid(event_object, subscription)
+        
+        logger.info(f"Processing checkout.session.completed for uid: {uid}, sub: {subscription_id}")
+        
         if subscription_id and subscription and uid:
             _update_user_subscription(uid, subscription, subscription_id)
         else:
-            logger.warning(
-                "checkout.session.completed missing uid/subscription (uid=%s, subscription_id=%s)",
-                uid,
-                subscription_id,
-            )
+            logger.warning("Missing data for checkout completion")
 
     elif event_type == "invoice.paid":
         subscription_id = event_object.get("subscription")
@@ -130,8 +144,6 @@ async def handle_stripe_webhook(request: Request) -> Dict[str, bool]:
         uid = _extract_firebase_uid(event_object, subscription)
         if uid and subscription_id:
             _update_user_subscription(uid, subscription, subscription_id)
-        else:
-            logger.warning("invoice.paid missing uid/subscription (uid=%s, subscription_id=%s)", uid, subscription_id)
 
     elif event_type == "customer.subscription.updated":
         subscription = event_object
@@ -139,12 +151,6 @@ async def handle_stripe_webhook(request: Request) -> Dict[str, bool]:
         uid = _extract_firebase_uid(event_object, subscription)
         if uid and subscription_id:
             _update_user_subscription(uid, subscription, subscription_id)
-        else:
-            logger.warning(
-                "customer.subscription.updated missing uid/subscription (uid=%s, subscription_id=%s)",
-                uid,
-                subscription_id,
-            )
 
     elif event_type == "customer.subscription.deleted":
         subscription = event_object
@@ -152,14 +158,5 @@ async def handle_stripe_webhook(request: Request) -> Dict[str, bool]:
         uid = _extract_firebase_uid(event_object, subscription)
         if uid and subscription_id:
             _update_user_subscription(uid, subscription, subscription_id, status_override="canceled")
-        else:
-            logger.warning(
-                "customer.subscription.deleted missing uid/subscription (uid=%s, subscription_id=%s)",
-                uid,
-                subscription_id,
-            )
-
-    else:
-        logger.info("Unhandled Stripe event type: %s", event_type)
 
     return {"received": True}
