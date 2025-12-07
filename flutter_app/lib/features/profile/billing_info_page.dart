@@ -195,7 +195,9 @@ class _BillingSummaryCard extends StatelessWidget {
   }
 
   String get _nextBilling {
-    final end = subscription?.currentPeriodEnd ?? subscription?.trialEndAt;
+    final end = subscription?.currentPeriodEnd ??
+            subscription?.trialEndAt ??
+            subscription?.billingCycleAnchor;
     if (end == null) return 'Not scheduled';
     return DateFormat('d MMM y').format(end.toLocal());
   }
