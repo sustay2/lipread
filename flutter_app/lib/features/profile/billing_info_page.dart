@@ -81,6 +81,10 @@ class _BillingInfoPageState extends State<BillingInfoPage> {
   }
 
   Future<void> _launchUrl(String url) async {
+    if (url.isEmpty) {
+      _showSnack('Billing URL is empty');
+      return;
+    }
     final uri = Uri.tryParse(url);
     if (uri == null) {
       _showSnack('Invalid URL');

@@ -51,6 +51,8 @@ def _serialize_subscription(doc_id: str, data: Dict[str, Any]) -> Dict[str, Any]
         "plan_id": data.get("plan_id"),
         "stripe_customer_id": data.get("stripe_customer_id"),
         "stripe_subscription_id": data.get("stripe_subscription_id"),
+        "stripe_price_id": data.get("stripe_price_id"),
+        "stripe_product_id": data.get("stripe_product_id"),
         "status": data.get("status"),
         "is_trialing": data.get("is_trialing", False),
         "trial_end_at": _serialize_timestamp(data.get("trial_end_at")),
@@ -77,18 +79,13 @@ def _load_user_subscription(uid: str) -> Tuple[Optional[Dict[str, Any]], Optiona
         return None, None
 
     sub_data = sub_snap.to_dict() or {}
-    status = (sub_data.get("status") or "").lower()
-    if not _is_active_subscription_status(status):
-        return None, None
-
     plan_id = sub_data.get("plan_id")
     plan_data: Optional[Dict[str, Any]] = None
     if plan_id:
         plan_snap = db.collection("subscription_plans").document(plan_id).get()
         if plan_snap.exists:
             plan_source = plan_snap.to_dict() or {}
-            if plan_source.get("is_active", False):
-                plan_data = _serialize_plan(plan_snap.id, plan_source)
+            plan_data = _serialize_plan(plan_snap.id, plan_source)
 
     return _serialize_subscription(sub_snap.id, sub_data), plan_data
 

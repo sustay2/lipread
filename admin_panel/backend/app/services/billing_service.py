@@ -75,8 +75,8 @@ def create_checkout_session(
         line_items=[{"price": price_id, "quantity": 1}],
         success_url=success_url,
         cancel_url=cancel_url,
-        metadata={"firebase_uid": firebase_uid},
-        subscription_data={"metadata": {"firebase_uid": firebase_uid}},
+        metadata={"firebase_uid": firebase_uid, "uid": firebase_uid, "price_id": price_id},
+        subscription_data={"metadata": {"firebase_uid": firebase_uid, "uid": firebase_uid}},
     )
 
     return {
