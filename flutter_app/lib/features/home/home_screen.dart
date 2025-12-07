@@ -168,12 +168,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // Daily Tasks + See all inline
+                // Tasks + See all inline
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text(
-                      'Daily Tasks',
+                      'Tasks',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -193,9 +193,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 _DailyTasksList(
                   tasksStream: _tasksStream,
                   onQuickAction: (action) {
-                    if (action == 'complete_dictation') _goTranscribe();
-                    if (action == 'complete_quiz') _goLessons();
-                    if (action == 'finish_practice') _goLessons();
+                    if (action == 'dictation') _goTranscribe();
+                    if (action == 'quiz') _goLessons();
+                    if (action == 'practice') _goLessons();
                   },
                 ),
               ],
@@ -1373,7 +1373,7 @@ class _EmptyCourses extends StatelessWidget {
 }
 
 //
-// Daily tasks (from /users/{uid}/tasks) — show only incomplete (client-side)
+// Tasks (daily + weekly) — show only incomplete (client-side)
 //
 class _DailyTasksList extends StatelessWidget {
   final Stream<List<DailyTask>>? tasksStream;
@@ -1450,11 +1450,13 @@ class _DailyTasksList extends StatelessWidget {
 
         return Column(
           children: pending.map((task) {
+            final progressLabel =
+                task.actionCount > 1 ? ' (${task.progress}/${task.actionCount})' : '';
             return Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: InkWell(
                 borderRadius: BorderRadius.circular(16),
-                onTap: () => onQuickAction(task.action),
+                onTap: () => onQuickAction(task.actionType),
                 child: Container(
                   padding: const EdgeInsets.all(14),
                   decoration: _cardDecor(),
@@ -1471,19 +1473,32 @@ class _DailyTasksList extends StatelessWidget {
                           ),
                         ),
                         child: Icon(
-                          _taskIconForAction(task.action),
+                          _taskIconForAction(task.actionType),
                           color: AppColors.primaryVariant,
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: Text(
-                          task.title,
-                          style: const TextStyle(
-                            color: AppColors.textPrimary,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              task.title + progressLabel,
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${task.frequency.toUpperCase()} • ${_actionLabel(task.actionType)}',
+                              style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -1512,14 +1527,27 @@ class _DailyTasksList extends StatelessWidget {
 
   static IconData _taskIconForAction(String action) {
     switch (action) {
-      case 'complete_quiz':
+      case 'quiz':
         return Icons.quiz_rounded;
-      case 'finish_practice':
+      case 'practice':
         return Icons.fitness_center_rounded;
-      case 'complete_dictation':
+      case 'dictation':
         return Icons.hearing_rounded;
       default:
         return Icons.flag_rounded;
+    }
+  }
+
+  static String _actionLabel(String action) {
+    switch (action) {
+      case 'quiz':
+        return 'Quiz';
+      case 'practice':
+        return 'Practice';
+      case 'dictation':
+        return 'Dictation';
+      default:
+        return action.isNotEmpty ? action : 'Task';
     }
   }
 }

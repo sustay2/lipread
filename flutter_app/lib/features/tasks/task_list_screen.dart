@@ -43,7 +43,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
         backgroundColor: AppColors.background,
         elevation: 0,
         centerTitle: true,
-        title: const Text('Daily Tasks'),
+        title: const Text('Tasks'),
       ),
       body: Column(
         children: [
@@ -183,9 +183,10 @@ class _TaskListScreenState extends State<TaskListScreen> {
       final task = docs[i];
       final title = task.title;
       final points = task.points;
-      final action = task.action;
+      final action = task.actionType;
       final freq = task.frequency;
-      final progressLabel = '';
+      final progressLabel =
+          task.actionCount > 1 ? ' (${task.progress}/${task.actionCount})' : '';
 
       return Padding(
         padding: const EdgeInsets.only(bottom: 10),
@@ -239,12 +240,24 @@ class _TaskListScreenState extends State<TaskListScreen> {
                         ),
                       ),
                       const SizedBox(height: 2),
-                      Text(
-                        freq.toUpperCase(),
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textSecondary,
-                        ),
+                      Row(
+                        children: [
+                          Text(
+                            freq.toUpperCase(),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            _actionLabel(action),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -267,14 +280,27 @@ class _TaskListScreenState extends State<TaskListScreen> {
 
   IconData _getActionIcon(String action) {
     switch (action) {
-      case 'complete_quiz':
+      case 'quiz':
         return Icons.quiz_rounded;
-      case 'finish_practice':
+      case 'practice':
         return Icons.fitness_center_rounded;
-      case 'complete_dictation':
+      case 'dictation':
         return Icons.hearing_rounded;
       default:
         return Icons.task_alt_rounded;
+    }
+  }
+
+  String _actionLabel(String action) {
+    switch (action) {
+      case 'quiz':
+        return 'Quiz';
+      case 'practice':
+        return 'Practice';
+      case 'dictation':
+        return 'Dictation';
+      default:
+        return action.isNotEmpty ? action : 'Task';
     }
   }
 }

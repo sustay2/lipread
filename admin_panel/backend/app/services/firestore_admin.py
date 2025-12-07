@@ -782,6 +782,21 @@ def analytics_timeseries(days: int = 14, start_date: Optional[date] = None, end_
 # Daily tasks ----------------------------------------------------------------
 
 
+def _normalize_task_action(action: Any) -> tuple[Any, int]:
+    action_type = None
+    action_count = 1
+    if isinstance(action, dict):
+        action_type = action.get("type") or action.get("action")
+        try:
+            action_count = int(action.get("count") or 1)
+        except (TypeError, ValueError):
+            action_count = 1
+    else:
+        action_type = action
+
+    return action_type, max(action_count, 1)
+
+
 def list_user_tasks() -> List[Dict[str, Any]]:
     tasks: List[Dict[str, Any]] = []
     snaps = (
@@ -791,13 +806,15 @@ def list_user_tasks() -> List[Dict[str, Any]]:
     )
     for snap in snaps:
         data = snap.to_dict() or {}
+        action_raw = data.get("action")
+        action_type, action_count = _normalize_task_action(action_raw)
         tasks.append(
             {
                 "id": snap.id,
                 "title": data.get("title"),
                 "points": int(data.get("points") or 0),
                 "frequency": data.get("frequency", "daily"),
-                "action": data.get("action"),
+                "action": {"type": action_type, "count": action_count},
                 "createdAt": _iso(data.get("createdAt")),
             }
         )
@@ -809,12 +826,14 @@ def get_user_task(task_id: str) -> Optional[Dict[str, Any]]:
     if not snap.exists:
         return None
     data = snap.to_dict() or {}
+    action_raw = data.get("action")
+    action_type, action_count = _normalize_task_action(action_raw)
     return {
         "id": snap.id,
         "title": data.get("title"),
         "points": int(data.get("points") or 0),
         "frequency": data.get("frequency", "daily"),
-        "action": data.get("action"),
+        "action": {"type": action_type, "count": action_count},
         "createdAt": _iso(data.get("createdAt")),
         "updatedAt": _iso(data.get("updatedAt")),
     }
@@ -824,6 +843,9 @@ def create_user_task(payload: Dict[str, Any]) -> str:
     now = datetime.now(timezone.utc)
     payload.setdefault("createdAt", now)
     payload.setdefault("frequency", "daily")
+    action_raw = payload.get("action") or {}
+    action_type, action_count = _normalize_task_action(action_raw)
+    payload["action"] = {"type": action_type, "count": action_count}
     doc_ref = db.collection("user_tasks").document()
     doc_ref.set(payload)
     return doc_ref.id
@@ -833,7 +855,13 @@ def update_user_task(task_id: str, payload: Dict[str, Any]) -> bool:
     ref = db.collection("user_tasks").document(task_id)
     if not ref.get().exists:
         return False
-    payload = {**payload, "updatedAt": datetime.now(timezone.utc)}
+    action_raw = payload.get("action") or {}
+    action_type, action_count = _normalize_task_action(action_raw)
+    payload = {
+        **payload,
+        "updatedAt": datetime.now(timezone.utc),
+        "action": {"type": action_type, "count": action_count},
+    }
     ref.update(payload)
     return True
 

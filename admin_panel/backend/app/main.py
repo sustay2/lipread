@@ -21,6 +21,7 @@ from app.routers import (
     feedback,
     flags,
     import_export,
+    tasks,
     ui,
     report,
     admin_auth,
@@ -99,6 +100,7 @@ app.include_router(visemes.router, prefix="/admin/visemes", tags=["visemes"])
 # app.include_router(flags.router, prefix="/admin/flags", tags=["flags"])
 app.include_router(import_export.router, prefix="/admin", tags=["import_export"])
 # app.include_router(feedback.router, prefix="/admin/feedback", tags=["feedback"])
+app.include_router(tasks.router, tags=["tasks"])
 app.include_router(ui.router, tags=["ui"])
 app.include_router(report.router, tags=["reports"])
 

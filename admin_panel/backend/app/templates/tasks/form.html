@@ -24,17 +24,23 @@
                 <label class="form-label">Frequency</label>
                 <select class="form-select" name="frequency" required>
                     <option value="daily" {% if task and task.frequency=='daily' or not task %}selected{% endif %}>Daily</option>
+                    <option value="weekly" {% if task and task.frequency=='weekly' %}selected{% endif %}>Weekly</option>
                 </select>
             </div>
-            <div class="col-md-6">
-                <label class="form-label">Action</label>
-                <select class="form-select" name="action" required>
+            <div class="col-md-4">
+                <label class="form-label">Action type</label>
+                <select class="form-select" name="action_type" required>
                     <option value="">Select an action</option>
                     {% for key, label in actions.items() %}
-                        <option value="{{ key }}" {% if task and task.action==key %}selected{% endif %}>{{ label }}</option>
+                        <option value="{{ key }}" {% if task and task.action and (task.action.type if task.action is mapping else task.action)==key %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
                 </select>
-                <div class="form-text">Maps the task to in-app XP awarding hooks.</div>
+                <div class="form-text">Determines which in-app activity moves this task forward.</div>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Count</label>
+                <input type="number" class="form-control" name="action_count" min="1" value="{{ task.action.count if task and task.action is mapping and task.action.count is defined else 1 }}" required>
+                <div class="form-text">How many times the action must be done per period.</div>
             </div>
             <div class="col-12">
                 <button type="submit" class="btn btn-primary">{{ 'Update task' if task else 'Create task' }}</button>

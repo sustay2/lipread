@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Daily Tasks | LipRead Admin{% endblock %}
-{% block header %}Daily Tasks{% endblock %}
+{% block title %}Tasks | LipRead Admin{% endblock %}
+{% block header %}Tasks{% endblock %}
 {% block content %}
 {% if message %}
 <div class="alert alert-success">{{ message.replace('-', ' ') | capitalize }}</div>
@@ -8,7 +8,7 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
         <h6 class="mb-0">Manage recurring XP tasks</h6>
-        <small class="text-muted">Configure daily tasks and their XP rewards</small>
+        <small class="text-muted">Configure daily and weekly tasks plus their XP rewards</small>
     </div>
     <a class="btn btn-primary" href="/admin/tasks/new"><i class="bi bi-plus-lg me-1"></i>New Task</a>
 </div>
@@ -20,6 +20,7 @@
                     <tr>
                         <th>Title</th>
                         <th>Action</th>
+                        <th>Count</th>
                         <th>Points</th>
                         <th>Frequency</th>
                         <th>Created</th>
@@ -30,7 +31,8 @@
                     {% for task in tasks %}
                     <tr>
                         <td class="fw-semibold">{{ task.title }}</td>
-                        <td class="text-muted">{{ actions.get(task.action, task.action) }}</td>
+                        <td class="text-muted">{{ actions.get(task.action.type if task.action is mapping else task.action, task.action.type if task.action is mapping else task.action) }}</td>
+                        <td>{{ task.action.count if task.action is mapping and task.action.count is defined else 1 }}</td>
                         <td><span class="badge bg-primary">{{ task.points }} XP</span></td>
                         <td>{{ task.frequency|capitalize }}</td>
                         <td class="text-muted small">{{ task.createdAt or '—' }}</td>

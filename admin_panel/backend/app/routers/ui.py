@@ -28,13 +28,6 @@ db = get_firestore_client()
 
 router = APIRouter(dependencies=[Depends(require_admin_session)])
 
-TASK_ACTIONS: Dict[str, str] = {
-    "complete_quiz": "Complete a quiz",
-    "finish_practice": "Finish practice",
-    "complete_dictation": "Complete dictation",
-}
-
-
 def _validate_scoring(scoring: Dict[str, Any] | None, default_max: int = 100) -> Dict[str, int]:
     base_max = default_max if default_max is not None else 100
     payload = scoring or {}
@@ -1097,35 +1090,6 @@ def _parse_bool(value: Any) -> bool:
     return str(value).lower() in ("true", "1", "on", "yes")
 
 
-def _validate_task_payload(title: str, points: str, frequency: str, action: str) -> tuple[list[str], Dict[str, Any]]:
-    errors: list[str] = []
-    cleaned_title = (title or "").strip()
-    if not cleaned_title:
-        errors.append("Title is required")
-
-    try:
-        points_val = int(points)
-        if points_val < 0:
-            errors.append("Points must be zero or greater")
-    except (TypeError, ValueError):
-        points_val = 0
-        errors.append("Points must be a number")
-
-    if frequency not in ("daily",):
-        errors.append("Frequency must be daily")
-
-    if action not in TASK_ACTIONS:
-        errors.append("Select a valid action")
-
-    payload = {
-        "title": cleaned_title,
-        "points": points_val,
-        "frequency": frequency,
-        "action": action,
-    }
-    return errors, payload
-
-
 @router.get("/subscriptions", response_class=HTMLResponse)
 async def subscription_plans(request: Request, message: Optional[str] = None):
     snaps = (
@@ -1316,97 +1280,3 @@ async def payment_events(
     )
 
 
-@router.get("/admin/tasks", response_class=HTMLResponse)
-async def list_tasks(request: Request, message: Optional[str] = None):
-    tasks = firestore_admin.list_user_tasks()
-    return templates.TemplateResponse(
-        "tasks/list.html",
-        {
-            "request": request,
-            "tasks": tasks,
-            "message": message,
-            "actions": TASK_ACTIONS,
-        },
-    )
-
-
-@router.get("/admin/tasks/new", response_class=HTMLResponse)
-async def new_task(request: Request):
-    return templates.TemplateResponse(
-        "tasks/form.html",
-        {
-            "request": request,
-            "task": None,
-            "errors": [],
-            "actions": TASK_ACTIONS,
-        },
-    )
-
-
-@router.post("/admin/tasks")
-async def create_task(
-    request: Request,
-    title: str = Form(""),
-    points: str = Form("0"),
-    frequency: str = Form("daily"),
-    action: str = Form(""),
-):
-    errors, payload = _validate_task_payload(title, points, frequency, action)
-    if errors:
-        return templates.TemplateResponse(
-            "tasks/form.html",
-            {
-                "request": request,
-                "task": payload,
-                "errors": errors,
-                "actions": TASK_ACTIONS,
-            },
-            status_code=400,
-        )
-
-    firestore_admin.create_user_task(payload)
-    return RedirectResponse(url="/admin/tasks?message=task-created", status_code=303)
-
-
-@router.get("/admin/tasks/{task_id}/edit", response_class=HTMLResponse)
-async def edit_task(request: Request, task_id: str):
-    task = firestore_admin.get_user_task(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    return templates.TemplateResponse(
-        "tasks/form.html",
-        {"request": request, "task": task, "errors": [], "actions": TASK_ACTIONS},
-    )
-
-
-@router.post("/admin/tasks/{task_id}/update")
-async def update_task(
-    request: Request,
-    task_id: str,
-    title: str = Form(""),
-    points: str = Form("0"),
-    frequency: str = Form("daily"),
-    action: str = Form(""),
-):
-    errors, payload = _validate_task_payload(title, points, frequency, action)
-    if errors:
-        payload["id"] = task_id
-        return templates.TemplateResponse(
-            "tasks/form.html",
-            {
-                "request": request,
-                "task": payload,
-                "errors": errors,
-                "actions": TASK_ACTIONS,
-            },
-            status_code=400,
-        )
-
-    firestore_admin.update_user_task(task_id, payload)
-    return RedirectResponse(url="/admin/tasks?message=task-updated", status_code=303)
-
-
-@router.post("/admin/tasks/{task_id}/delete")
-async def delete_task(task_id: str):
-    firestore_admin.delete_user_task(task_id)
-    return RedirectResponse(url="/admin/tasks?message=task-deleted", status_code=303)
