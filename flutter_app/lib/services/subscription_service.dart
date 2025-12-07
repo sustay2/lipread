@@ -203,6 +203,11 @@ class SubscriptionService {
   SubscriptionMetadata? _metadataCache;
   Plan? _freePlanCache;
 
+  Future<void> refreshAllCaches() async {
+    _metadataCache = null;
+    _freePlanCache = null;
+  }
+
   Future<List<Plan>> getPlans() async {
     final res = await _dio.get(
       '/plans',
@@ -219,6 +224,8 @@ class SubscriptionService {
   }
 
   Future<UserSubscription?> getMySubscription() async {
+    await refreshAllCaches();
+
     final res = await _dio.get(
       '/me',
       options: Options(headers: await _authHeaders()),
@@ -274,6 +281,7 @@ class SubscriptionService {
     if (url == null || url.isEmpty) {
       throw Exception('Billing portal session did not return a URL');
     }
+    await refreshAllCaches();
     return url;
   }
 
