@@ -372,40 +372,49 @@ class ActivityService:
         lesson_id: str,
         activity_id: str,
         bank_id: str,
-        question_ids: List[str],
+        question_items: List[Dict[str, Any]],
         embed: bool,
     ) -> None:
         col = self._questions_collection(course_id, module_id, lesson_id, activity_id)
-        for q in col.stream():
-            q.reference.delete()
-        if question_ids:
-            self._attach_questions(course_id, module_id, lesson_id, activity_id, bank_id, question_ids, embed)
 
-    def _attach_questions(
-        self,
-        course_id: str,
-        module_id: str,
-        lesson_id: str,
-        activity_id: str,
-        bank_id: str,
-        question_ids: List[str],
-        embed: bool,
-    ) -> None:
-        col = self._questions_collection(course_id, module_id, lesson_id, activity_id)
+        existing_docs = {doc.id: doc.to_dict() for doc in col.stream()}
         batch = self.db.batch()
-        for idx, qid in enumerate(question_ids):
-            question = question_bank_service.get_question(bank_id, qid)
-            if not question:
-                continue
-            payload: Dict[str, Any] = {
-                "questionId": qid,
+
+        for idx, item in enumerate(question_items):
+            qid = item.get("id")
+            existing = existing_docs.get(qid)
+
+            # If existing and no new upload, preserve old mediaId
+            media_id = item.get("mediaId")
+            if existing and not item.get("needsUpload"):
+                media_id = existing.get("mediaId")
+
+            # Real question data (always embed)
+            payload = {
+                "questionId": item.get("questionId"),
                 "bankId": bank_id,
-                "mode": "copied" if embed else "reference",
                 "order": idx,
-                "type": question.type,
-                "data": self._question_to_dict(question),
+                "mode": "copied" if embed else "reference",
+                "type": item.get("type", "mcq"),
+                "data": {
+                    "id": item.get("questionId"),
+                    "bankId": bank_id,
+                    "type": item.get("type", "mcq"),
+                    "stem": item.get("stem", ""),
+                    "options": item.get("options", []),
+                    "answers": item.get("answers", []),
+                    "explanation": item.get("explanation"),
+                    "mediaId": media_id,
+                }
             }
-            batch.set(col.document(), payload)
+
+            if qid:
+                # Update existing reference
+                batch.update(col.document(qid), payload)
+            else:
+                # Create new one
+                batch.set(col.document(), payload)
+
         batch.commit()
 
     def _replace_dictation_items(
@@ -417,20 +426,33 @@ class ActivityService:
         items: List[Dict[str, Any]],
     ) -> None:
         col = self._dictation_collection(course_id, module_id, lesson_id, activity_id)
-        for doc in col.stream():
-            doc.reference.delete()
+
+        existing_docs = {doc.id: doc.to_dict() for doc in col.stream()}
         batch = self.db.batch()
         now = datetime.now(timezone.utc)
+
         for idx, item in enumerate(items):
+            item_id = item.get("id")
+            existing = existing_docs.get(item_id)
+
+            media_id = item.get("mediaId")
+            if existing and not item.get("needsUpload"):
+                media_id = existing.get("mediaId")
+
             payload = {
                 "correctText": item.get("correctText", ""),
-                "mediaId": item.get("mediaId"),
+                "mediaId": media_id,
                 "hints": item.get("hints"),
                 "order": idx,
-                "createdAt": now,
                 "updatedAt": now,
             }
-            batch.set(col.document(), payload)
+
+            if item_id:
+                batch.update(col.document(item_id), payload)
+            else:
+                payload["createdAt"] = now
+                batch.set(col.document(), payload)
+
         batch.commit()
 
     def _replace_practice_items(
@@ -442,20 +464,33 @@ class ActivityService:
         items: List[Dict[str, Any]],
     ) -> None:
         col = self._practice_collection(course_id, module_id, lesson_id, activity_id)
-        for doc in col.stream():
-            doc.reference.delete()
+
+        existing_docs = {doc.id: doc.to_dict() for doc in col.stream()}
         batch = self.db.batch()
         now = datetime.now(timezone.utc)
+
         for idx, item in enumerate(items):
+            item_id = item.get("id")
+            existing = existing_docs.get(item_id)
+
+            media_id = item.get("mediaId")
+            if existing and not item.get("needsUpload"):
+                media_id = existing.get("mediaId")
+
             payload = {
                 "description": item.get("description", ""),
                 "targetWord": item.get("targetWord"),
-                "mediaId": item.get("mediaId"),
+                "mediaId": media_id,
                 "order": idx,
-                "createdAt": now,
                 "updatedAt": now,
             }
-            batch.set(col.document(), payload)
+
+            if item_id:
+                batch.update(col.document(item_id), payload)
+            else:
+                payload["createdAt"] = now
+                batch.set(col.document(), payload)
+
         batch.commit()
 
     def _question_to_dict(self, question: BankQuestion) -> Dict[str, Any]:

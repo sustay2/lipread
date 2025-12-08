@@ -21,6 +21,7 @@ from app.services.media_library import save_media_file
 from app.services.lessons import lesson_service
 from app.services.activities import activity_service
 from app.services.question_banks import question_bank_service
+from app.services import analytics_report_service
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -44,6 +45,11 @@ async def dashboard(request: Request):
     users = firestore_admin.list_users(limit=5)
     chart = firestore_admin.analytics_timeseries(days=14)
 
+    metrics = analytics_report_service.aggregate_all((None, None))
+
+    # helper currency formatter (just reuse the reports one)
+    from app.routers.report import _currency as format_currency
+
     return templates.TemplateResponse(
         "dashboard.html",
         {
@@ -53,6 +59,8 @@ async def dashboard(request: Request):
             "courses": courses[:4],
             "recent_users": users,
             "chart": chart,
+            "metrics": metrics,
+            "format_currency": format_currency,
         },
     )
 
@@ -780,8 +788,10 @@ async def activity_update(
     dictationMedia: List[UploadFile] = File([]),
     practiceMedia: List[UploadFile] = File([]),
 ):
+    """Unified update handler with Fix-A applied for ALL activity types."""
     admin = request.session.get("admin") if request.session else None
     data: Dict[str, Any] = json.loads(payload or "{}")
+
     activity_type = (data.get("type") or "").strip()
     if not activity_type:
         return RedirectResponse(
@@ -789,7 +799,9 @@ async def activity_update(
             status_code=303,
         )
 
+    # Get current activity for resolving existing items/media
     current_activity = activity_service.get_activity(course_id, module_id, lesson_id, activity_id)
+
     def _save_video(file: UploadFile, error_code: str) -> Optional[str]:
         if not file or not file.filename:
             return None
@@ -798,6 +810,7 @@ async def activity_update(
         media = save_media_file(file, media_type="videos")
         return media.get("id")
 
+    # Shared fields
     title = (data.get("title") or activity_type).strip()
     order = int(data.get("order") or 0)
     scoring = data.get("scoring") or {}
@@ -808,14 +821,18 @@ async def activity_update(
     if activity_type == "dictation":
         items = data.get("dictationItems") or []
         upload_idx = 0
-        processed: List[Dict[str, Any]] = []
+        processed = []
+
         for item in items:
-            media_id = item.get("mediaId") or item.get("existingMediaId")
+            existing = item.get("existingMediaId")
+            media_id = item.get("mediaId") or existing
             needs_upload = bool(item.get("needsUpload"))
+
+            # Upload only if required
             if needs_upload:
                 if upload_idx >= len(dictationMedia):
                     return RedirectResponse(
-                        url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=dictation-media-mismatch",
+                        url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=dictation-upload-mismatch",
                         status_code=303,
                     )
                 try:
@@ -826,23 +843,22 @@ async def activity_update(
                         status_code=303,
                     )
                 upload_idx += 1
-            if not media_id:
+
+            if not media_id:  # New items MUST have media
                 return RedirectResponse(
                     url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=dictation-media-missing",
                     status_code=303,
                 )
+
             processed.append(
                 {
+                    "id": item.get("id"),
                     "correctText": item.get("correctText", ""),
                     "hints": item.get("hints"),
                     "mediaId": media_id,
                 }
             )
-        if not processed:
-            return RedirectResponse(
-                url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=dictation-items-missing",
-                status_code=303,
-            )
+
         scoring_payload = _validate_scoring(scoring, default_max=len(processed) or 100)
         activity_service.update_activity(
             course_id,
@@ -856,17 +872,21 @@ async def activity_update(
             config=config,
             dictation_items=processed,
         )
+
     elif activity_type == "practice_lip":
         items = data.get("practiceItems") or []
         upload_idx = 0
-        processed: List[Dict[str, Any]] = []
+        processed = []
+
         for item in items:
-            media_id = item.get("mediaId") or item.get("existingMediaId")
+            existing = item.get("existingMediaId")
+            media_id = item.get("mediaId") or existing
             needs_upload = bool(item.get("needsUpload"))
+
             if needs_upload:
                 if upload_idx >= len(practiceMedia):
                     return RedirectResponse(
-                        url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=practice-media-mismatch",
+                        url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=practice-upload-mismatch",
                         status_code=303,
                     )
                 try:
@@ -877,23 +897,22 @@ async def activity_update(
                         status_code=303,
                     )
                 upload_idx += 1
+
             if not media_id:
                 return RedirectResponse(
                     url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=practice-media-missing",
                     status_code=303,
                 )
+
             processed.append(
                 {
+                    "id": item.get("id"),
                     "description": item.get("description", ""),
                     "targetWord": item.get("targetWord"),
                     "mediaId": media_id,
                 }
             )
-        if not processed:
-            return RedirectResponse(
-                url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=practice-items-missing",
-                status_code=303,
-            )
+
         scoring_payload = _validate_scoring(scoring, default_max=len(processed) or 100)
         activity_service.update_activity(
             course_id,
@@ -907,41 +926,50 @@ async def activity_update(
             config=config,
             practice_items=processed,
         )
+
     else:
         bank_payload = data.get("questionBank") or {}
-        bank_title = (bank_payload.get("title") or "").strip()
-        bank_difficulty = int(bank_payload.get("difficulty") or 1)
-        bank_tags = bank_payload.get("tags") or []
-        bank_description = (bank_payload.get("description") or "").strip() or None
-        bank_id = bank_payload.get("id") or config.get("questionBankId") or (current_activity.get("config", {}).get("questionBankId") if current_activity else None)
+        bank_id = (
+            bank_payload.get("id")
+            or config.get("questionBankId")
+            or (current_activity.get("config", {}).get("questionBankId") if current_activity else None)
+        )
+
+        # Update existing bank or create new
         if bank_id:
             question_bank_service.update_bank(
                 bank_id,
-                title=bank_title or "Untitled bank",
-                difficulty=bank_difficulty,
-                tags=bank_tags,
-                description=bank_description,
+                title=(bank_payload.get("title") or "Untitled bank"),
+                difficulty=int(bank_payload.get("difficulty") or 1),
+                tags=bank_payload.get("tags") or [],
+                description=bank_payload.get("description") or None,
             )
         else:
             bank_id = question_bank_service.create_bank(
-                title=bank_title or "Untitled bank",
-                difficulty=bank_difficulty,
-                tags=bank_tags,
-                description=bank_description,
+                title=bank_payload.get("title") or "Untitled bank",
+                difficulty=int(bank_payload.get("difficulty") or 1),
+                tags=bank_payload.get("tags") or [],
+                description=bank_payload.get("description") or None,
                 created_by=(admin or {}).get("uid"),
             )
+
         config["questionBankId"] = bank_id
 
-        questions = data.get("questions") or []
+        # Process questions
+        items = data.get("questions") or []
         upload_idx = 0
-        processed_questions: List[Dict[str, Any]] = []
-        for item in questions:
-            media_id = item.get("mediaId") or item.get("existingMediaId")
+        processed_questions = []
+
+        for item in items:
+            existing = item.get("existingMediaId")
+            media_id = item.get("mediaId") or existing
             needs_upload = bool(item.get("needsUpload"))
+
+            # Upload new video if required
             if needs_upload:
                 if upload_idx >= len(questionMedia):
                     return RedirectResponse(
-                        url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=question-media-mismatch",
+                        url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=question-upload-mismatch",
                         status_code=303,
                     )
                 try:
@@ -952,11 +980,13 @@ async def activity_update(
                         status_code=303,
                     )
                 upload_idx += 1
+
             if not media_id:
                 return RedirectResponse(
                     url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=question-media-missing",
                     status_code=303,
                 )
+
             processed_questions.append(
                 {
                     "id": item.get("id"),
@@ -972,20 +1002,10 @@ async def activity_update(
                 }
             )
 
-        if upload_idx != len(questionMedia):
-            return RedirectResponse(
-                url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=question-media-mismatch",
-                status_code=303,
-            )
-
-        if not processed_questions:
-            return RedirectResponse(
-                url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=questions-missing",
-                status_code=303,
-            )
-
+        # Commit questions
         question_ids = question_bank_service.upsert_questions(bank_id, processed_questions)
         scoring_payload = _validate_scoring(scoring)
+
         activity_service.update_activity(
             course_id,
             module_id,
@@ -1000,6 +1020,7 @@ async def activity_update(
             question_ids=question_ids,
             embed_questions=bool(config.get("embedQuestions")),
         )
+
     return RedirectResponse(
         url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=activity-updated",
         status_code=303,
