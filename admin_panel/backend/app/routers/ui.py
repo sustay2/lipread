@@ -504,6 +504,9 @@ async def activity_create(
         config["difficultyLevel"] = data.get("difficultyLevel")
     embed_questions = bool(config.get("embedQuestions"))
 
+    def _non_empty_uploads(files: Optional[List[UploadFile]]) -> List[UploadFile]:
+        return [f for f in files or [] if f and getattr(f, "filename", None)]
+
     def _save_video(file: UploadFile, error_code: str) -> Optional[str]:
         if not file or not file.filename:
             return None
@@ -514,7 +517,8 @@ async def activity_create(
 
     if activity_type == "dictation":
         dict_items = data.get("dictationItems") or []
-        if len(dict_items) != len(dictationMedia):
+        dictation_uploads = _non_empty_uploads(dictationMedia)
+        if len(dict_items) != len(dictation_uploads):
             return RedirectResponse(
                 url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities?message=dictation-media-mismatch",
                 status_code=303,
@@ -522,7 +526,7 @@ async def activity_create(
         scoring_payload = _validate_scoring(scoring, default_max=len(dict_items) or 100)
         for idx, item in enumerate(dict_items):
             try:
-                media_id = _save_video(dictationMedia[idx], "dictation-media-invalid")
+                media_id = _save_video(dictation_uploads[idx], "dictation-media-invalid")
             except ValueError:
                 return RedirectResponse(
                     url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities?message=dictation-media-invalid",
@@ -548,7 +552,8 @@ async def activity_create(
         )
     elif activity_type == "practice_lip":
         practice_items = data.get("practiceItems") or []
-        if len(practice_items) != len(practiceMedia):
+        practice_uploads = _non_empty_uploads(practiceMedia)
+        if len(practice_items) != len(practice_uploads):
             return RedirectResponse(
                 url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities?message=practice-media-mismatch",
                 status_code=303,
@@ -556,7 +561,7 @@ async def activity_create(
         scoring_payload = _validate_scoring(scoring, default_max=len(practice_items) or 100)
         for idx, item in enumerate(practice_items):
             try:
-                media_id = _save_video(practiceMedia[idx], "practice-media-invalid")
+                media_id = _save_video(practice_uploads[idx], "practice-media-invalid")
             except ValueError:
                 return RedirectResponse(
                     url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities?message=practice-media-invalid",
@@ -598,7 +603,8 @@ async def activity_create(
         )
 
         questions = data.get("questions") or []
-        if len(questions) != len(questionMedia):
+        question_uploads = _non_empty_uploads(questionMedia)
+        if len(questions) != len(question_uploads):
             return RedirectResponse(
                 url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities?message=question-media-mismatch",
                 status_code=303,
@@ -607,7 +613,7 @@ async def activity_create(
         created_questions: List[str] = []
         for idx, q in enumerate(questions):
             try:
-                media_id = _save_video(questionMedia[idx], "question-media-invalid")
+                media_id = _save_video(question_uploads[idx], "question-media-invalid")
             except ValueError:
                 return RedirectResponse(
                     url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities?message=question-media-invalid",
@@ -802,6 +808,9 @@ async def activity_update(
     # Get current activity for resolving existing items/media
     current_activity = activity_service.get_activity(course_id, module_id, lesson_id, activity_id)
 
+    def _non_empty_uploads(files: Optional[List[UploadFile]]) -> List[UploadFile]:
+        return [f for f in files or [] if f and getattr(f, "filename", None)]
+
     def _save_video(file: UploadFile, error_code: str) -> Optional[str]:
         if not file or not file.filename:
             return None
@@ -820,6 +829,7 @@ async def activity_update(
 
     if activity_type == "dictation":
         items = data.get("dictationItems") or []
+        uploads = _non_empty_uploads(dictationMedia)
         upload_idx = 0
         processed = []
 
@@ -830,13 +840,13 @@ async def activity_update(
 
             # Upload only if required
             if needs_upload:
-                if upload_idx >= len(dictationMedia):
+                if upload_idx >= len(uploads):
                     return RedirectResponse(
                         url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=dictation-upload-mismatch",
                         status_code=303,
                     )
                 try:
-                    media_id = _save_video(dictationMedia[upload_idx], "dictation-media-invalid")
+                    media_id = _save_video(uploads[upload_idx], "dictation-media-invalid")
                 except ValueError:
                     return RedirectResponse(
                         url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=dictation-media-invalid",
@@ -875,6 +885,7 @@ async def activity_update(
 
     elif activity_type == "practice_lip":
         items = data.get("practiceItems") or []
+        uploads = _non_empty_uploads(practiceMedia)
         upload_idx = 0
         processed = []
 
@@ -884,13 +895,13 @@ async def activity_update(
             needs_upload = bool(item.get("needsUpload"))
 
             if needs_upload:
-                if upload_idx >= len(practiceMedia):
+                if upload_idx >= len(uploads):
                     return RedirectResponse(
                         url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=practice-upload-mismatch",
                         status_code=303,
                     )
                 try:
-                    media_id = _save_video(practiceMedia[upload_idx], "practice-media-invalid")
+                    media_id = _save_video(uploads[upload_idx], "practice-media-invalid")
                 except ValueError:
                     return RedirectResponse(
                         url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=practice-media-invalid",
@@ -957,6 +968,7 @@ async def activity_update(
 
         # Process questions
         items = data.get("questions") or []
+        uploads = _non_empty_uploads(questionMedia)
         upload_idx = 0
         processed_questions = []
 
@@ -967,13 +979,13 @@ async def activity_update(
 
             # Upload new video if required
             if needs_upload:
-                if upload_idx >= len(questionMedia):
+                if upload_idx >= len(uploads):
                     return RedirectResponse(
                         url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=question-upload-mismatch",
                         status_code=303,
                     )
                 try:
-                    media_id = _save_video(questionMedia[upload_idx], "question-media-invalid")
+                    media_id = _save_video(uploads[upload_idx], "question-media-invalid")
                 except ValueError:
                     return RedirectResponse(
                         url=f"/courses/{course_id}/modules/{module_id}/lessons/{lesson_id}/activities/{activity_id}?message=question-media-invalid",
