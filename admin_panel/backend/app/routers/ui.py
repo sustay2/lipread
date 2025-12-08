@@ -107,12 +107,71 @@ async def user_detail(request: Request, uid: str):
             "users/detail.html", {"request": request, "user": None}, status_code=404
         )
 
+    sub_doc = db.collection("user_subscriptions").document(uid).get()
+    subscription = sub_doc.to_dict() if sub_doc.exists else None
+
+    invoices = []
+    if subscription and subscription.get("stripe_customer_id"):
+        try:
+            stripe_invoices = stripe.Invoice.list(
+                customer=subscription["stripe_customer_id"],
+                limit=10
+            )
+            invoices = stripe_invoices.data
+        except Exception as exc:
+            print("Stripe invoice load error:", exc)
+
+    enrollments = []
+    enr_ref = db.collection("course_enrollments").document(uid).collection("courses")
+    for doc in enr_ref.stream():
+        d = doc.to_dict()
+        d["courseId"] = doc.id
+        enrollments.append(d)
+
+    attempts = []
+    attempt_ref = db.collection("quiz_attempts").document(uid).collection("attempts")
+    for doc in attempt_ref.stream():
+        d = doc.to_dict()
+        d["attemptId"] = doc.id
+        attempts.append(d)
+
     return templates.TemplateResponse(
         "users/detail.html",
         {
             "request": request,
             "user": user,
+            "subscription": subscription,
+            "invoices": invoices,
+            "enrollments": enrollments,
+            "attempts": attempts,
         },
+    )
+
+
+@router.post("/users/{uid}/cancel_subscription")
+async def cancel_subscription(uid: str):
+    sub_doc = db.collection("user_subscriptions").document(uid).get()
+    if not sub_doc.exists:
+        raise HTTPException(404, "Subscription not found")
+
+    subscription = sub_doc.to_dict()
+    stripe_sub_id = subscription.get("stripe_subscription_id")
+
+    if not stripe_sub_id:
+        raise HTTPException(400, "No Stripe subscription ID stored")
+
+    stripe.Subscription.modify(
+        stripe_sub_id,
+        cancel_at_period_end=True
+    )
+
+    db.collection("user_subscriptions").document(uid).update({
+        "status": "cancelling"
+    })
+
+    return RedirectResponse(
+        f"/users/{uid}?message=subscription-cancelled",
+        status_code=303
     )
 
 
