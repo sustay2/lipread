@@ -104,17 +104,13 @@
                         </div>
                     </div>
                     <div class="tab-pane fade" id="progress" role="tabpanel">
-                        <div class="d-flex justify-content-between mb-3">
-                            <h6 class="mb-0">Course Progress</h6>
-                            <button class="btn btn-sm btn-outline-secondary">Export PDF</button>
-                        </div>
                         <div class="row g-3">
                             {% for enr in user.enrollments %}
                             <div class="col-md-6">
                                 <div class="card border-0 shadow-sm h-100">
                                     <div class="card-body">
                                         <div class="d-flex justify-content-between">
-                                            <h6 class="fw-semibold">Course {{ enr.courseId }}</h6>
+                                            <h6 class="fw-semibold">{{ enr.courseTitle }}</h6>
                                             <span class="badge bg-soft-primary text-primary">{{ enr.status|capitalize }}</span>
                                         </div>
                                         <div class="progress my-2" style="height:8px;">
@@ -130,24 +126,85 @@
                             {% endfor %}
                         </div>
                     </div>
+
                     <div class="tab-pane fade" id="quiz" role="tabpanel">
-                        <div class="alert alert-info mb-0">Quiz history will appear here. Connect question banks and attempts collections to populate charts.</div>
+                        <h6 class="fw-semibold mb-3">Quiz Attempts</h6>
+
+                        {% if attempts %}
+                        <ul class="list-group">
+                            {% for a in attempts %}
+                            <li class="list-group-item d-flex justify-content-between">
+                                <div>
+                                    <div class="fw-semibold">Attempt {{ a.attemptId }}</div>
+                                    <div class="text-muted small">
+                                        Score: {{ a.score }} / {{ a.total }}<br>
+                                        {{ a.createdAt }}
+                                    </div>
+                                </div>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                        {% else %}
+                        <div class="text-muted">No quiz attempts yet.</div>
+                        {% endif %}
                     </div>
+
                     <div class="tab-pane fade" id="billing" role="tabpanel">
+
+                        {% if not subscription %}
+                            <div class="alert alert-warning">No subscription found for this user.</div>
+                        {% else %}
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label class="text-muted small">Subscription Status</label>
-                                <div class="fw-semibold">Active (Stripe)</div>
+                                <div class="fw-semibold">{{ subscription.status|capitalize }}</div>
+
+                                <div class="text-muted small mt-2">
+                                    Current period:<br>
+                                    {{ subscription.current_period_start or '—' }} → {{ subscription.current_period_end or '—' }}
+                                </div>
+
+                                {% if subscription.is_trialing %}
+                                <div class="badge bg-info text-dark mt-2">Trial until {{ subscription.trial_end_at }}</div>
+                                {% endif %}
                             </div>
+
                             <div class="col-md-6 text-end">
-                                <button class="btn btn-outline-danger btn-sm">Cancel Subscription</button>
-                                <button class="btn btn-primary btn-sm">Renew</button>
+                                {% if subscription.status != 'canceled' and subscription.status != 'cancelling' %}
+                                <form method="post" action="/users/{{ user.id }}/cancel_subscription">
+                                    <button class="btn btn-outline-danger btn-sm">Cancel Subscription</button>
+                                </form>
+                                {% else %}
+                                <span class="badge bg-warning text-dark">Cancellation in progress</span>
+                                {% endif %}
                             </div>
                         </div>
-                        <div class="mt-3">
-                            <h6 class="fw-semibold">Billing History</h6>
-                            <div class="placeholder-chart bg-light rounded-3 p-4 text-center text-muted">Payment timeline placeholder</div>
+
+                        <div class="mt-4">
+                            <h6 class="fw-semibold">Invoice History</h6>
+
+                            {% if invoices %}
+                                <ul class="list-group">
+                                    {% for inv in invoices %}
+                                    <li class="list-group-item d-flex justify-content-between">
+                                        <div>
+                                            <div class="fw-semibold">{{ inv.number }}</div>
+                                            <div class="text-muted small">{{ inv.created }}</div>
+                                        </div>
+                                        <div>
+                                            <span class="fw-semibold">RM {{ inv.amount_paid / 100 }}</span>
+                                            <a class="btn btn-sm btn-outline-primary ms-2" target="_blank"
+                                            href="{{ inv.hosted_invoice_url }}">View</a>
+                                        </div>
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                            {% else %}
+                            <div class="text-muted">No invoices found.</div>
+                            {% endif %}
                         </div>
+
+                        {% endif %}
                     </div>
                 </div>
             </div>

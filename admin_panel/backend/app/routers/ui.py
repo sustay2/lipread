@@ -25,6 +25,7 @@ from app.services import analytics_report_service
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
 db = get_firestore_client()
 
 router = APIRouter(dependencies=[Depends(require_admin_session)])
@@ -123,9 +124,17 @@ async def user_detail(request: Request, uid: str):
 
     enrollments = []
     enr_ref = db.collection("course_enrollments").document(uid).collection("courses")
+
     for doc in enr_ref.stream():
         d = doc.to_dict()
-        d["courseId"] = doc.id
+        course_id = doc.id
+
+        course_snap = db.collection("courses").document(course_id).get()
+        course_data = course_snap.to_dict() or {}
+
+        d["courseId"] = course_id
+        d["courseTitle"] = course_data.get("title", f"Course {course_id}")
+
         enrollments.append(d)
 
     attempts = []
