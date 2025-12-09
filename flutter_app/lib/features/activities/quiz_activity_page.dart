@@ -308,10 +308,9 @@ class _QuizActivityPageState extends State<QuizActivityPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _QuestionMedia(
-                        imageUrl: q.imageUrl,
-                        videoUrl: q.videoUrl,
+                      _ActivityMedia(
                         mediaId: q.mediaId,
+                        fallbackLabel: 'Tap to play',
                       ),
                       const SizedBox(height: 12),
 
@@ -511,8 +510,6 @@ class _QuizQuestion {
   final List<String> options;
   final List<String> answers;
   final String? explanation;
-  final String? imageUrl;
-  final String? videoUrl;
   final String? mediaId;
 
   _QuizQuestion({
@@ -521,8 +518,6 @@ class _QuizQuestion {
     required this.options,
     this.answers = const [],
     this.explanation,
-    this.imageUrl,
-    this.videoUrl,
     this.mediaId,
   });
 
@@ -547,34 +542,10 @@ class _QuizQuestion {
 
     final explanation = data['explanation'] as String?;
 
-    // Direct URLs (if present)
-    String? imageUrl = publicMediaUrl(
-      data['imageUrl'] as String?,
-      path: data['imagePath'] as String?,
-    );
-    String? videoUrl = publicMediaUrl(
-      data['videoUrl'] as String?,
-      path: data['videoPath'] as String?,
-    );
-
-    // Media map + mediaId from question payload
     final media = data['media'] as Map<String, dynamic>?;
-    final mediaId = data['mediaId'] as String?;
-    String? mediaUrl = publicMediaUrl(
-      media?['url'] as String?,
-      path: media?['path'] as String? ?? media?['storagePath'] as String?,
-    );
-    mediaUrl ??= publicMediaUrl(null, path: mediaId);
-
-    // If only mediaId+mediaUrl exists, decide whether it's image or video
-    if ((videoUrl == null || videoUrl.isEmpty) && _looksVideo(mediaUrl)) {
-      videoUrl = mediaUrl;
-    }
-    if ((imageUrl == null || imageUrl.isEmpty) &&
-        mediaUrl != null &&
-        !_looksVideo(mediaUrl)) {
-      imageUrl = mediaUrl;
-    }
+    final mediaId = (data['mediaId'] as String?) ??
+        (media?['mediaId'] as String?) ??
+        (media?['id'] as String?);
 
     return _QuizQuestion(
       id: aq.id,
@@ -582,8 +553,6 @@ class _QuizQuestion {
       options: options,
       answers: answers,
       explanation: explanation,
-      imageUrl: normalizeMediaUrl(imageUrl),
-      videoUrl: normalizeMediaUrl(videoUrl),
       mediaId: mediaId,
     );
   }
@@ -608,22 +577,25 @@ class _QuizQuestion {
    MEDIA WIDGET (Home-style)
    ========================= */
 
-class _QuestionMedia extends StatefulWidget {
-  final String? imageUrl;
-  final String? videoUrl;
-  final String? mediaId;
+/// Home-style media renderer with **ID → Firestore** resolving.
+class _ActivityMedia extends StatefulWidget {
+  final Map<String, dynamic>? media; // {url/path/contentType/kind/mediaId/id}
+  final String? mediaId; // config.mediaId OR root mediaId
+  final String? videoId; // config.videoId (treat as mediaId)
+  final String? fallbackLabel; // UI hint if nothing resolves
 
-  const _QuestionMedia({
-    this.imageUrl,
-    this.videoUrl,
+  const _ActivityMedia({
+    this.media,
     this.mediaId,
+    this.videoId,
+    this.fallbackLabel,
   });
 
   @override
-  State<_QuestionMedia> createState() => _QuestionMediaState();
+  State<_ActivityMedia> createState() => _ActivityMediaState();
 }
 
-class _QuestionMediaState extends State<_QuestionMedia> {
+class _ActivityMediaState extends State<_ActivityMedia> {
   VideoPlayerController? _ctrl;
   bool _err = false;
 
@@ -641,11 +613,11 @@ class _QuestionMediaState extends State<_QuestionMedia> {
   }
 
   @override
-  void didUpdateWidget(covariant _QuestionMedia oldWidget) {
+  void didUpdateWidget(covariant _ActivityMedia oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.imageUrl != widget.imageUrl ||
-        oldWidget.videoUrl != widget.videoUrl ||
-        oldWidget.mediaId != widget.mediaId) {
+    if (oldWidget.media != widget.media ||
+        oldWidget.mediaId != widget.mediaId ||
+        oldWidget.videoId != widget.videoId) {
       _disposeVideo();
       _resolveAndInit();
     }
@@ -662,27 +634,28 @@ class _QuestionMediaState extends State<_QuestionMedia> {
       _isImage = false;
     });
 
-    // 1) Direct values from question (video wins over image)
-    String? url = widget.videoUrl ?? widget.imageUrl;
-    String? mediaId = widget.mediaId;
+    // 1) Direct values from media map
+    final m = widget.media ?? {};
+    String? url = (m['url'] as String?) ?? (m['path'] as String?);
+    String? mediaId =
+        (m['mediaId'] as String?) ?? (m['id'] as String?) ?? widget.mediaId ?? widget.videoId;
 
-    String contentType = '';
-    String kind = '';
+    String contentType = (m['contentType'] as String?)?.toLowerCase() ?? '';
+    String kind = (m['kind'] as String?)?.toLowerCase() ?? '';
 
     // 2) If no URL but we have an ID, resolve from /media/{id}
     if ((url == null || url.isEmpty) && mediaId != null && mediaId.isNotEmpty) {
       try {
         final snap =
-            await FirebaseFirestore.instance.collection('media').doc(mediaId).get();
+        await FirebaseFirestore.instance.collection('media').doc(mediaId).get();
         if (snap.exists) {
           final data = snap.data() ?? {};
           url = data['url'] as String?;
-          contentType =
-              (data['contentType'] as String?)?.toLowerCase() ?? contentType;
+          contentType = (data['contentType'] as String?)?.toLowerCase() ?? contentType;
           kind = (data['kind'] as String?)?.toLowerCase() ?? kind;
         }
       } catch (_) {
-        // swallow; we'll just show nothing / fallback
+        // swallow; will show fallback chip later
       }
     }
 
@@ -704,7 +677,7 @@ class _QuestionMediaState extends State<_QuestionMedia> {
     });
 
     // 5) Init video if needed
-    if (_isVideo && _url != null && _url!.isNotEmpty) {
+    if (_isVideo) {
       try {
         final c = VideoPlayerController.networkUrl(
           Uri.parse(_url!),
@@ -736,7 +709,6 @@ class _QuestionMediaState extends State<_QuestionMedia> {
     super.dispose();
   }
 
-  // Outer 16:9 frame used for both image and video
   Widget _frame(Widget child) {
     return Container(
       width: double.infinity,
@@ -747,10 +719,7 @@ class _QuestionMediaState extends State<_QuestionMedia> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        child: AspectRatio(
-          aspectRatio: 16 / 9,
-          child: child,
-        ),
+        child: AspectRatio(aspectRatio: 16 / 9, child: child),
       ),
     );
   }
@@ -765,95 +734,92 @@ class _QuestionMediaState extends State<_QuestionMedia> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return _frame(
-        const Center(
-          child: SizedBox(
-            width: 22,
-            height: 22,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+    // Fallback chip if absolutely nothing resolved
+    if ((_url == null || _url!.isEmpty) && widget.fallbackLabel != null) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.play_circle_fill_rounded, color: AppColors.primary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                widget.fallbackLabel!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+            ),
+          ],
         ),
       );
     }
 
+    if (_loading) {
+      return _frame(const Center(
+        child: SizedBox(
+          width: 22,
+          height: 22,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      ));
+    }
+
     if (_url == null || _url!.isEmpty) {
-      // Nothing resolvable → no media
       return const SizedBox.shrink();
     }
 
-    // IMAGE — centered (letterboxed) inside the 16:9 frame
+    // IMAGE (letterboxed like Home)
     if (_isImage) {
       return _frame(
         Image.network(
           _url!,
           fit: BoxFit.contain,
           errorBuilder: (_, __, ___) => const Center(
-            child: Text(
-              'Image failed to load',
-              style: TextStyle(fontSize: 12, color: AppColors.error),
-            ),
+            child:
+            Text('Image failed to load', style: TextStyle(color: AppColors.error)),
           ),
-          loadingBuilder: (_, child, progress) {
-            if (progress == null) return child;
-            return const Center(
-              child: SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            );
-          },
         ),
       );
     }
 
-    // VIDEO — centered inside 16:9 frame with overlay + progress bar
+    // VIDEO (centered to its AR + hidden overlay while playing + progress bar)
     if (_isVideo) {
       if (_err) {
-        return _frame(
-          const Center(
-            child: Text(
-              'Video failed to load',
-              style: TextStyle(fontSize: 12, color: AppColors.error),
-            ),
-          ),
-        );
+        return _frame(const Center(
+          child: Text('Video failed to load', style: TextStyle(color: AppColors.error)),
+        ));
       }
       if (_ctrl == null || !_ctrl!.value.isInitialized) {
-        return _frame(
-          const Center(
-            child: SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
+        return _frame(const Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2),
           ),
-        );
+        ));
       }
 
-      final ar = (_ctrl!.value.aspectRatio.isFinite &&
-              _ctrl!.value.aspectRatio > 0)
+      final ar = (_ctrl!.value.aspectRatio.isFinite && _ctrl!.value.aspectRatio > 0)
           ? _ctrl!.value.aspectRatio
           : (16 / 9);
-
+      final playing = _ctrl!.value.isPlaying;
       final dur = _ctrl!.value.duration;
       final pos = _ctrl!.value.position;
-      final playing = _ctrl!.value.isPlaying;
       final ended = dur > Duration.zero && pos >= dur;
 
       return _frame(
         Stack(
           children: [
-            // Center the real video to its aspect ratio (letterbox)
             Center(
-              child: AspectRatio(
-                aspectRatio: ar,
-                child: VideoPlayer(_ctrl!),
-              ),
+              child: AspectRatio(aspectRatio: ar, child: VideoPlayer(_ctrl!)),
             ),
-
-            // Play/Pause/Replay overlay — hides while playing
+            // Play/Pause/Replay overlay (auto hides when playing)
             Positioned.fill(
               child: AnimatedOpacity(
                 opacity: playing ? 0.0 : 1.0,
@@ -869,17 +835,15 @@ class _QuestionMediaState extends State<_QuestionMedia> {
                     }
                   },
                   child: Container(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .scrim
-                        .withOpacity(0.26),
+                    color:
+                        Theme.of(context).colorScheme.scrim.withOpacity(0.26),
                     child: Center(
                       child: Icon(
                         ended
                             ? Icons.replay_rounded
                             : (playing
-                                ? Icons.pause_circle_filled_rounded
-                                : Icons.play_circle_fill_rounded),
+                            ? Icons.pause_circle_filled_rounded
+                            : Icons.play_circle_fill_rounded),
                         size: 56,
                         color: Theme.of(context).colorScheme.onSurface,
                       ),
@@ -888,8 +852,7 @@ class _QuestionMediaState extends State<_QuestionMedia> {
                 ),
               ),
             ),
-
-            // Bottom progress bar + time
+            // Bottom progress + time
             Positioned(
               left: 8,
               right: 8,
@@ -931,8 +894,6 @@ class _QuestionMediaState extends State<_QuestionMedia> {
                 ],
               ),
             ),
-
-            // Tap anywhere to pause while overlay hidden
             if (playing)
               Positioned.fill(
                 child: GestureDetector(
@@ -945,7 +906,7 @@ class _QuestionMediaState extends State<_QuestionMedia> {
       );
     }
 
-    // Unknown type → small URL chip (debuggy but useful)
+    // Unknown type → small URL chip
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -962,8 +923,7 @@ class _QuestionMediaState extends State<_QuestionMedia> {
               _url!,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style:
-                  const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
             ),
           ),
         ],
