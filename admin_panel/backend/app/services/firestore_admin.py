@@ -660,7 +660,14 @@ def collect_engagement_metrics() -> Dict[str, Any]:
     weekly_start = today.isocalendar().week
 
     lesson_completion: List[float] = []
-    quiz_scores: List[int] = []
+    quiz_scores: List[float] = []
+
+    def _score_to_pct(raw: Any) -> float:
+        try:
+            val = float(raw)
+        except (TypeError, ValueError):
+            return 0.0
+        return val * 100 if val <= 1 else val
 
     for user in users:
         uid = user["id"]
@@ -683,7 +690,7 @@ def collect_engagement_metrics() -> Dict[str, Any]:
         ):
             adata = attempt.to_dict() or {}
             if adata.get("score") is not None:
-                quiz_scores.append(int(adata.get("score")))
+                quiz_scores.append(_score_to_pct(adata.get("score")))
 
     avg_completion = sum(lesson_completion) / len(lesson_completion) if lesson_completion else 0
     avg_quiz_score = sum(quiz_scores) / len(quiz_scores) if quiz_scores else 0
@@ -729,6 +736,13 @@ def analytics_timeseries(days: int = 14, start_date: Optional[date] = None, end_
     quiz_accuracy: Dict[date, List[int]] = {start_date + timedelta(days=i): [] for i in range(days)}
 
     users = list_users(limit=5000)
+
+    def _score_to_pct(raw: Any) -> float:
+        try:
+            val = float(raw)
+        except (TypeError, ValueError):
+            return 0.0
+        return val * 100 if val <= 1 else val
     for user in users:
         last_active = _to_datetime(user.get("lastActiveAt"))
         if last_active:
@@ -762,7 +776,7 @@ def analytics_timeseries(days: int = 14, start_date: Optional[date] = None, end_
             if created_at:
                 d = created_at.date()
                 if start_date <= d <= end_date and adata.get("score") is not None:
-                    quiz_accuracy[d].append(int(adata.get("score")))
+                    quiz_accuracy[d].append(_score_to_pct(adata.get("score")))
 
     labels = [(start_date + timedelta(days=i)).isoformat() for i in range(days)]
     avg_accuracy = []
