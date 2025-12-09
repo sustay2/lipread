@@ -73,6 +73,7 @@ class _DictationActivityScreenState extends State<DictationActivityScreen> {
     });
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
+    final ids = _ActivityIds.fromRef(widget.activityRef);
     final total = detail.dictationItems.length;
     int correct = 0;
     for (final item in detail.dictationItems) {
@@ -83,11 +84,17 @@ class _DictationActivityScreenState extends State<DictationActivityScreen> {
 
     final scorePct = total == 0 ? 0 : ((correct / total) * 100).round();
 
-    if (uid != null) {
-      await HomeMetricsService.onActivityCompleted(uid);
-      await HomeMetricsService.onAttemptSubmitted(
-        uid,
-        actionType: 'complete_dictation',
+    if (uid != null && ids != null) {
+      await HomeMetricsService.recordActivityAttempt(
+        uid: uid,
+        courseId: ids.courseId,
+        moduleId: ids.moduleId,
+        lessonId: ids.lessonId,
+        activityId: ids.activityId,
+        activityType: 'dictation',
+        score: scorePct.toDouble(),
+        passed: scorePct >= 60,
+        baseXp: (detail.scoring['points'] as num?)?.toInt() ?? 10,
       );
     }
 
@@ -300,12 +307,19 @@ class _PracticeActivityScreenState extends State<PracticeActivityScreen> {
     });
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid != null) {
-      await HomeMetricsService.onActivityCompleted(
-        uid,
-        actionType: 'finish_practice',
+    final ids = _ActivityIds.fromRef(widget.activityRef);
+    if (uid != null && ids != null) {
+      await HomeMetricsService.recordActivityAttempt(
+        uid: uid,
+        courseId: ids.courseId,
+        moduleId: ids.moduleId,
+        lessonId: ids.lessonId,
+        activityId: ids.activityId,
+        activityType: 'practice_lip',
+        score: 100,
+        passed: true,
+        baseXp: (detail.scoring['points'] as num?)?.toInt() ?? 10,
       );
-      await HomeMetricsService.onAttemptSubmitted(uid);
     }
 
     if (!mounted) return;
