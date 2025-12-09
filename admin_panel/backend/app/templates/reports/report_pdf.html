@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>LipRead Analytics Report</title>
+    <style>
+        /* ---------- Base ---------- */
+        @page {
+            size: A4;
+            margin: 24mm 18mm 20mm 18mm;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+            font-size: 11px;
+            color: #111827;
+            background: #f3f4f6;
+            -weasy-hyphens: auto;
+        }
+
+        .page {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        h1, h2, h3, h4, h5 {
+            margin: 0;
+            font-weight: 700;
+            color: #111827;
+        }
+
+        h1 {
+            font-size: 24px;
+            letter-spacing: 0.02em;
+        }
+
+        h2 {
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+
+        h3 {
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #374151;
+        }
+
+        p {
+            margin: 0 0 4px;
+            line-height: 1.5;
+        }
+
+        .text-muted {
+            color: #6b7280;
+        }
+
+        .text-small {
+            font-size: 10px;
+        }
+
+        .mt-2 { margin-top: 8px; }
+        .mt-3 { margin-top: 12px; }
+        .mt-4 { margin-top: 16px; }
+        .mb-0 { margin-bottom: 0; }
+        .mb-1 { margin-bottom: 4px; }
+        .mb-2 { margin-bottom: 8px; }
+        .mb-3 { margin-bottom: 12px; }
+        .mb-4 { margin-bottom: 16px; }
+
+        .section {
+            margin-top: 18px;
+            page-break-inside: avoid;
+        }
+
+        .section + .section {
+            margin-top: 22px;
+        }
+
+        /* ---------- Layout helpers ---------- */
+        .row {
+            display: flex;
+            flex-wrap: wrap;
+            margin: 0 -6px;
+        }
+
+        .col-3 { width: 25%; padding: 0 6px; box-sizing: border-box; }
+        .col-4 { width: 33.3333%; padding: 0 6px; box-sizing: border-box; }
+        .col-6 { width: 50%; padding: 0 6px; box-sizing: border-box; }
+        .col-12 { width: 100%; padding: 0 6px; box-sizing: border-box; }
+
+        /* ---------- Cards & chips ---------- */
+        .card {
+            background: #ffffff;
+            border-radius: 10px;
+            padding: 12px 14px;
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 4px 10px rgba(15, 23, 42, 0.04);
+        }
+
+        .card-header {
+            margin-bottom: 8px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .card-header h3 {
+            font-size: 11px;
+            font-weight: 700;
+            color: #111827;
+        }
+
+        .kpi-card {
+            background: #ffffff;
+            border-radius: 10px;
+            padding: 10px 12px;
+            border: 1px solid #e5e7eb;
+        }
+
+        .kpi-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #6b7280;
+            margin-bottom: 4px;
+        }
+
+        .kpi-value {
+            font-size: 17px;
+            font-weight: 700;
+            color: #111827;
+            margin-bottom: 3px;
+        }
+
+        .chip {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 999px;
+            border: 1px solid #e5e7eb;
+            background: #f9fafb;
+            font-size: 10px;
+            color: #4b5563;
+            margin: 2px 4px 2px 0;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 9px;
+            font-weight: 600;
+        }
+
+        .badge-soft-blue {
+            background: #eff6ff;
+            color: #1d4ed8;
+        }
+
+        .badge-soft-gray {
+            background: #f3f4f6;
+            color: #4b5563;
+        }
+
+        .pill-muted {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 8px;
+            border-radius: 999px;
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            font-size: 9px;
+            color: #6b7280;
+        }
+
+        /* ---------- Header ---------- */
+        .report-header {
+            padding-bottom: 10px;
+            border-bottom: 1px solid #e5e7eb;
+            margin-bottom: 16px;
+        }
+
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .brand-name {
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #6b7280;
+        }
+
+        .logo {
+            height: 24px;
+        }
+
+        .divider {
+            height: 1px;
+            background: #e5e7eb;
+            margin: 10px 0 12px;
+        }
+
+        /* ---------- Tables ---------- */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 10px;
+        }
+
+        thead th {
+            background: #0d6efd;
+            color: #ffffff;
+            text-align: left;
+            padding: 6px 8px;
+            font-weight: 600;
+        }
+
+        tbody td, tbody th {
+            border-bottom: 1px solid #e5e7eb;
+            padding: 5px 8px;
+        }
+
+        tbody tr:nth-child(even) {
+            background: #f9fafb;
+        }
+
+        .table-compact thead th {
+            padding: 4px 6px;
+        }
+
+        .table-compact tbody td,
+        .table-compact tbody th {
+            padding: 4px 6px;
+        }
+
+        .text-right {
+            text-align: right;
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        .muted-row {
+            color: #9ca3af;
+        }
+
+        /* ---------- Utility colors ---------- */
+        .text-positive {
+            color: #15803d;
+        }
+
+        .text-negative {
+            color: #b91c1c;
+        }
+
+        .text-accent {
+            color: #0d6efd;
+        }
+
+        .pill-label {
+            font-size: 9px;
+            color: #6b7280;
+        }
+
+        /* ---------- Footer ---------- */
+        .footer {
+            margin-top: 18px;
+            padding-top: 8px;
+            border-top: 1px solid #e5e7eb;
+            font-size: 9px;
+            color: #9ca3af;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .footer span {
+            white-space: nowrap;
+        }
+
+        /* ---------- Page breaks ---------- */
+        .page-break {
+            page-break-before: always;
+        }
+    </style>
+</head>
+<body>
+<div class="page">
+
+    <!-- Header -->
+    <header class="report-header">
+        <div class="header-top">
+            <div class="brand">
+                <img src="../../static/img/logo.png" alt="LipRead" class="logo">
+                <span class="brand-name">LIPREAD ANALYTICS</span>
+            </div>
+            <div class="text-right text-small text-muted">
+                <div><strong>Generated for:</strong> {{ admin_email }}</div>
+                <div>Generated on {{ generated_label }}</div>
+            </div>
+        </div>
+        <div class="divider"></div>
+        <h1>Analytics Report</h1>
+        <p class="text-muted text-small mt-1">
+            {% if start_date and end_date %}
+                Reporting window: {{ start_date }} – {{ end_date }}
+            {% elif start_date %}
+                Reporting window starting {{ start_date }} (open end)
+            {% elif end_date %}
+                Reporting window up to {{ end_date }}
+            {% else %}
+                Reporting window: All time
+            {% endif %}
+        </p>
+    </header>
+
+    <!-- Executive summary / KPIs -->
+    <section class="section">
+        <h2>Executive Summary</h2>
+        <p class="text-muted mb-2">
+            This report highlights overall user growth, course engagement, subscription performance,
+            and revenue for the selected period. Use the KPIs below as a quick snapshot before
+            reviewing each section in detail.
+        </p>
+
+        <div class="row mt-2">
+            <div class="col-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">Total users</div>
+                    <div class="kpi-value">
+                        {{ metrics.user.total_users or 0 }}
+                    </div>
+                    <div class="pill-label">Registered users across the platform.</div>
+                </div>
+            </div>
+            <div class="col-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">Active users</div>
+                    <div class="kpi-value">
+                        {{ metrics.user.active_users or 0 }}
+                    </div>
+                    <div class="pill-label">Users active during this period.</div>
+                </div>
+            </div>
+            <div class="col-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">Total subscriptions</div>
+                    <div class="kpi-value">
+                        {{ metrics.subscription.total_subscribers or 0 }}
+                    </div>
+                    <div class="pill-label">Users on a paid subscription.</div>
+                </div>
+            </div>
+            <div class="col-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">Total revenue</div>
+                    <div class="kpi-value">
+                        {{ format_currency(metrics.revenue.total_revenue) }}
+                    </div>
+                    <div class="pill-label">Cumulative revenue over the period.</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- User analytics -->
+    <section class="section">
+        <h2>User analytics</h2>
+
+        <div class="row mt-1">
+            <div class="col-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>User overview</h3>
+                    </div>
+                    <table class="table-compact">
+                        <tbody>
+                        <tr>
+                            <th class="w-50">Total users</th>
+                            <td class="text-right">{{ metrics.user.total_users or 0 }}</td>
+                        </tr>
+                        <tr>
+                            <th>Active users in range</th>
+                            <td class="text-right">{{ metrics.user.active_users or 0 }}</td>
+                        </tr>
+                        <tr>
+                            <th>Average streak length</th>
+                            <td class="text-right">{{ metrics.user.avg_streak or 0 }} days</td>
+                        </tr>
+                        <tr>
+                            <th>Task completion rate</th>
+                            <td class="text-right">{{ metrics.user.task_completion_rate or 0 }}%</td>
+                        </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="col-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>New users per month</h3>
+                    </div>
+                    <table class="table-compact">
+                        <thead>
+                        <tr>
+                            <th>Month</th>
+                            <th class="text-right">New users</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {% for row in metrics.user.new_users_per_month %}
+                            <tr>
+                                <td>{{ row.label }}</td>
+                                <td class="text-right">{{ row.count }}</td>
+                            </tr>
+                        {% else %}
+                            <tr class="muted-row">
+                                <td colspan="2">No sign ups in this range.</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </section>
+
+    <!-- Course analytics -->
+    <section class="section page-break">
+        <h2>Course analytics</h2>
+
+        <div class="row mt-1">
+            <div class="col-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">Courses</div>
+                    <div class="kpi-value">{{ metrics.course.total_courses or 0 }}</div>
+                    <div class="pill-label">Published & draft courses.</div>
+                </div>
+            </div>
+            <div class="col-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">Modules</div>
+                    <div class="kpi-value">{{ metrics.course.total_modules or 0 }}</div>
+                    <div class="pill-label">Modules across all courses.</div>
+                </div>
+            </div>
+            <div class="col-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">Lessons</div>
+                    <div class="kpi-value">{{ metrics.course.total_lessons or 0 }}</div>
+                    <div class="pill-label">Individual learning units.</div>
+                </div>
+            </div>
+            <div class="col-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">Premium courses</div>
+                    <div class="kpi-value">{{ metrics.course.premium_courses or 0 }}</div>
+                    <div class="pill-label">Courses requiring a subscription.</div>
+                </div>
+            </div>
+        </div>
+
+        {% if charts.user_growth %}
+        <div class="card mt-2">
+            <div class="card-header">
+                <h3>User Growth Trend</h3>
+            </div>
+            <img src="{{ charts.user_growth }}" style="width:100%; margin-top:6px;">
+        </div>
+        {% endif %}
+
+        <div class="card mt-2">
+            <div class="card-header">
+                <h3>Top courses by engagement</h3>
+            </div>
+            <table class="table-compact">
+                <thead>
+                <tr>
+                    <th>Course</th>
+                    <th class="text-right">Enrolled</th>
+                    <th class="text-right">Completed lessons</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for course in metrics.course.top_courses %}
+                    <tr>
+                        <td>{{ course.title }}</td>
+                        <td class="text-right">{{ course.enrolled }}</td>
+                        <td class="text-right">{{ course.completed }}</td>
+                    </tr>
+                {% else %}
+                    <tr class="muted-row">
+                        <td colspan="3">No engagement yet in this range.</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card mt-2">
+            <div class="card-header">
+                <h3>Activity completion heatmap</h3>
+            </div>
+            <div>
+                {% if metrics.course.activity_heatmap %}
+                    {% for label, value in metrics.course.activity_heatmap.items() %}
+                        <span class="chip">{{ label|title }}: {{ value }}</span>
+                    {% endfor %}
+                {% else %}
+                    <span class="text-muted text-small">No activity attempts found.</span>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if charts.activity_heatmap %}
+        <div class="card mt-2">
+            <div class="card-header">
+                <h3>Activity Completion Chart</h3>
+            </div>
+            <img src="{{ charts.activity_heatmap }}" style="width:100%; margin-top:6px;">
+        </div>
+        {% endif %}
+
+    </section>
+
+    <!-- Subscription analytics -->
+    <section class="section">
+        <h2>Subscription analytics</h2>
+
+        <div class="row mt-1">
+            <div class="col-4">
+                <div class="card">
+                    <div class="kpi-label">Total subscriptions</div>
+                    <div class="kpi-value">
+                        {{ metrics.subscription.total_subscribers or 0 }}
+                    </div>
+                    <p class="text-small text-muted">
+                        Active + trialing + recently canceled within the period.
+                    </p>
+                    <p class="text-small text-muted mt-1">
+                        Status breakdown:<br>
+                        <span class="badge badge-soft-blue">
+                            Active: {{ metrics.subscription.status_breakdown.active|default(0) }}
+                        </span>
+                        <span class="badge badge-soft-gray">
+                            Trial: {{ metrics.subscription.status_breakdown.trialing|default(0) }}
+                        </span>
+                        <span class="badge badge-soft-gray">
+                            Canceled: {{ metrics.subscription.status_breakdown.canceled|default(0) }}
+                        </span>
+                    </p>
+                </div>
+            </div>
+
+            <div class="col-4">
+                <div class="card">
+                    <div class="kpi-label">Free → Paid conversion</div>
+                    <div class="kpi-value">
+                        {{ metrics.subscription.free_to_paid_conversion or 0 }}%
+                    </div>
+                    <p class="text-small text-muted">
+                        Percentage of free users who upgraded to a subscription during this period.
+                    </p>
+                </div>
+            </div>
+
+            <div class="col-4">
+                <div class="card">
+                    <div class="kpi-label">Trial conversion</div>
+                    <div class="kpi-value">
+                        {{ metrics.subscription.trial_conversion or 0 }}%
+                    </div>
+                    <p class="text-small text-muted">
+                        Percentage of trial users that converted into paying subscribers.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-2">
+            <div class="col-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Active subscribers by plan</h3>
+                    </div>
+                    <table class="table-compact">
+                        <thead>
+                        <tr>
+                            <th>Plan</th>
+                            <th class="text-right">Active</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {% for plan in metrics.subscription.active_by_plan %}
+                            <tr>
+                                <td>{{ plan.plan }}</td>
+                                <td class="text-right">{{ plan.count }}</td>
+                            </tr>
+                        {% else %}
+                            <tr class="muted-row">
+                                <td colspan="2">No active plans found.</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {% if charts.plans %}
+            <div class="card mt-2">
+                <div class="card-header">
+                    <h3>Active Plans Chart</h3>
+                </div>
+                <img src="{{ charts.plans }}" style="width:100%; margin-top:6px;">
+            </div>
+            {% endif %}
+
+
+            <div class="col-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Monthly new subscriptions</h3>
+                    </div>
+                    <table class="table-compact">
+                        <thead>
+                        <tr>
+                            <th>Month</th>
+                            <th class="text-right">New subscriptions</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {% for row in metrics.subscription.monthly_new_subscriptions %}
+                            <tr>
+                                <td>{{ row.label }}</td>
+                                <td class="text-right">{{ row.count }}</td>
+                            </tr>
+                        {% else %}
+                            <tr class="muted-row">
+                                <td colspan="2">No subscription starts in this range.</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {% if charts.subscriptions %}
+            <div class="card mt-2">
+                <div class="card-header">
+                    <h3>Subscription Growth Trend</h3>
+                </div>
+                <img src="{{ charts.subscriptions }}" style="width:100%; margin-top:6px;">
+            </div>
+            {% endif %}
+
+        </div>
+    </section>
+
+    <!-- Revenue analytics -->
+    <section class="section page-break">
+        <h2>Revenue analytics</h2>
+
+        <div class="row mt-1">
+            <div class="col-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">Total revenue (MYR)</div>
+                    <div class="kpi-value">{{ format_currency(metrics.revenue.total_revenue) }}</div>
+                </div>
+            </div>
+            <div class="col-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">MRR</div>
+                    <div class="kpi-value">{{ format_currency(metrics.revenue.mrr) }}</div>
+                </div>
+            </div>
+            <div class="col-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">ARPU</div>
+                    <div class="kpi-value">{{ format_currency(metrics.revenue.arpu) }}</div>
+                </div>
+            </div>
+            <div class="col-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">Churn rate</div>
+                    <div class="kpi-value">{{ metrics.revenue.churn_rate or 0 }}%</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-2">
+            <div class="card-header">
+                <h3>Monthly revenue</h3>
+            </div>
+            <table class="table-compact">
+                <thead>
+                <tr>
+                    <th>Month</th>
+                    <th class="text-right">Revenue</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for row in metrics.revenue.monthly_revenue %}
+                    <tr>
+                        <td>{{ row.label }}</td>
+                        <td class="text-right">{{ format_currency(row.amount) }}</td>
+                    </tr>
+                {% else %}
+                    <tr class="muted-row">
+                        <td colspan="2">No revenue data for this period.</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if charts.revenue %}
+        <div class="card mt-2">
+            <div class="card-header">
+                <h3>Revenue Trend Chart</h3>
+            </div>
+            <img src="{{ charts.revenue }}" style="width:100%; margin-top:6px;">
+        </div>
+        {% endif %}
+
+    </section>
+
+    <!-- Transcription analytics -->
+    <section class="section">
+        <h2>Transcription analytics</h2>
+
+        <div class="row mt-1">
+            <div class="col-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">Total uploads</div>
+                    <div class="kpi-value">{{ metrics.transcription.total_uploads or 0 }}</div>
+                </div>
+            </div>
+            <div class="col-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">Avg uploads per user</div>
+                    <div class="kpi-value">{{ metrics.transcription.avg_uploads_per_user or 0 }}</div>
+                </div>
+            </div>
+            <div class="col-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">Users at monthly limit</div>
+                    <div class="kpi-value">{{ metrics.transcription.users_at_limit or 0 }}</div>
+                </div>
+            </div>
+            <div class="col-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">Premium feature usage</div>
+                    <div class="kpi-value">{{ metrics.transcription.premium_usage or 0 }}</div>
+                </div>
+            </div>
+        </div>
+
+        <p class="text-muted text-small mt-2">
+            Transcription metrics help identify how often learners rely on lip-reading inference,
+            and where premium features (such as higher limits or better models) deliver the most value.
+        </p>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <span>LipRead Analytics · {{ generated_label }}</span>
+        <span>Confidential · Internal use only</span>
+    </footer>
+
+</div>
+</body>
+</html>

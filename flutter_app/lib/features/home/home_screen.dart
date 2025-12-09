@@ -108,15 +108,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ],
               ),
-              child: const Icon(
-                Icons.mic_none_rounded,
-                size: 20,
-                color: AppColors.primary,
+              child: Image.asset(
+                'assets/icons/logo.png',
+                width: 20,
+                height: 20,
               ),
             ),
             const SizedBox(width: 10),
             Text(
-              'Lip Learning',
+              'LipRead',
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w700,
                 color: theme.colorScheme.onSurface,
@@ -257,7 +257,7 @@ class _GreetingCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Hello, $name 👋',
+                      'Hello, $name',
                       style: theme.textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.w800,
                         color: AppColors.textPrimary,

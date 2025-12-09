@@ -48,7 +48,7 @@ async def dashboard(request: Request):
 
     metrics = analytics_report_service.aggregate_all((None, None))
 
-    # helper currency formatter (just reuse the reports one)
+    # helper currency formatter (just reuse the reports one
     from app.routers.report import _currency as format_currency
 
     return templates.TemplateResponse(
@@ -131,9 +131,28 @@ async def user_detail(request: Request, uid: str):
 
         course_snap = db.collection("courses").document(course_id).get()
         course_data = course_snap.to_dict() or {}
-
-        d["courseId"] = course_id
         d["courseTitle"] = course_data.get("title", f"Course {course_id}")
+
+        last_lesson_id = d.get("lastLessonId")
+        d["lastLessonTitle"] = None
+
+        if last_lesson_id:
+            modules_ref = db.collection("courses").document(course_id).collection("modules")
+
+            for module in modules_ref.stream():
+                module_id = module.id
+
+                lesson_snap = (
+                    modules_ref.document(module_id)
+                    .collection("lessons")
+                    .document(last_lesson_id)
+                    .get()
+                )
+
+                if lesson_snap.exists:
+                    lesson_data = lesson_snap.to_dict() or {}
+                    d["lastLessonTitle"] = lesson_data.get("title")
+                    break
 
         enrollments.append(d)
 

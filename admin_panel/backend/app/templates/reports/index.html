@@ -58,7 +58,7 @@
     <div class="col-md-3">
         <div class="card metric-card shadow-sm">
             <div class="card-body">
-                <div class="text-muted small">Total subscribers</div>
+                <div class="text-muted small">Total subscriptions</div>
                 <div class="h4 mb-0">{{ metrics.subscription.total_subscribers }}</div>
             </div>
         </div>
@@ -102,17 +102,6 @@
                     </tbody>
                 </table>
             </div>
-        </div>
-        <h6 class="text-muted text-uppercase mt-3">XP distribution</h6>
-        <div class="row g-2">
-            {% for row in metrics.user.xp_distribution %}
-            <div class="col-sm-4">
-                <div class="border rounded p-2 d-flex justify-content-between align-items-center">
-                    <span class="text-muted">{{ row.label }}</span>
-                    <strong>{{ row.count }}</strong>
-                </div>
-            </div>
-            {% endfor %}
         </div>
     </div>
 </div>
@@ -182,7 +171,7 @@
         <div class="row g-3 mb-3">
             <div class="col-md-4">
                 <div class="border rounded p-3 h-100">
-                    <div class="text-muted small">Total subscribers</div>
+                    <div class="text-muted small">Total subscriptions</div>
                     <div class="h5 mb-1">{{ metrics.subscription.total_subscribers }}</div>
                     <div class="text-muted small">Active / trial / canceled: {{ metrics.subscription.status_breakdown.active|default(0) }} / {{ metrics.subscription.status_breakdown.trialing|default(0) }} / {{ metrics.subscription.status_breakdown.canceled|default(0) }}</div>
                 </div>
@@ -200,7 +189,7 @@
                 </div>
             </div>
         </div>
-        <h6 class="text-muted text-uppercase">Active subscriptions by plan</h6>
+        <h6 class="text-muted text-uppercase">Active subscribers by plan</h6>
         <table class="table table-sm table-bordered w-auto">
             <thead><tr><th>Plan</th><th class="text-end">Active</th></tr></thead>
             <tbody>

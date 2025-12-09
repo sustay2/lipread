@@ -196,14 +196,34 @@ def get_subscription_metrics(date_range: DateRange | None = None) -> Dict[str, A
     status_breakdown = analytics.get("subscription_counts", {})
 
     # Count active subs by plan id from Firestore (fallback-safe)
+    # ---- Fetch subscription plans ----
+    plan_name_lookup = {}
+    try:
+        for snap in db.collection("subscription_plans").stream():
+            pdata = snap.to_dict() or {}
+            plan_name_lookup[snap.id] = pdata.get("name", snap.id)
+    except Exception:
+        pass
+
+    # ---- Count active subscriptions by plan ----
     active_by_plan: Counter[str] = Counter()
     try:
         for snap in db.collection("user_subscriptions").where("status", "==", "active").stream():
             data = snap.to_dict() or {}
-            plan_id = str(data.get("plan_id") or data.get("planId") or "Unknown")
+            plan_id = str(data.get("plan_id") or "Unknown")
             active_by_plan[plan_id] += 1
     except Exception:
         pass
+
+    # ---- Convert counts to list including plan names ----
+    active_by_plan_list = [
+        {
+            "plan_id": pid,
+            "plan": plan_name_lookup.get(pid, pid),  # readable name from Firestore
+            "count": count,
+        }
+        for pid, count in active_by_plan.items()
+    ]
 
     free_to_paid_rate = 0.0
     trial_conversion = analytics.get("trial_conversion", {})
@@ -221,9 +241,7 @@ def get_subscription_metrics(date_range: DateRange | None = None) -> Dict[str, A
 
     return {
         "total_subscribers": total_subscribers,
-        "active_by_plan": [
-            {"plan": plan, "count": count} for plan, count in active_by_plan.items()
-        ],
+        "active_by_plan": active_by_plan_list,
         "free_to_paid_conversion": free_to_paid_rate,
         "trial_conversion": trial_conversion.get("percentage", 0.0),
         "monthly_new_subscriptions": monthly_new,

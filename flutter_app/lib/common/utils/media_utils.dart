@@ -16,7 +16,7 @@ String? normalizeMediaUrl(String? url) {
   if (mediaBaseOverride != null && mediaBaseOverride!.isNotEmpty) {
     final overrideUri = Uri.tryParse(mediaBaseOverride!);
     final u = Uri.tryParse(url);
-
+  
     if (u != null && u.hasScheme && overrideUri != null) {
       return Uri(
         scheme: overrideUri.scheme.isNotEmpty ? overrideUri.scheme : u.scheme,
@@ -35,6 +35,8 @@ String? normalizeMediaUrl(String? url) {
   final replacements = <Pattern, String>{
     RegExp(r'^http://localhost:8000'): _defaultBase(),
     RegExp(r'^http://127\.0\.0\.1:8000'): _defaultBase(),
+    RegExp(r'^http://192\.168\.\d+\.\d+:8000'): _defaultBase(),
+    RegExp(r'^http://172\.\d+\.\d+\.\d+:8000'): _defaultBase(),
     RegExp(r'^http://api:8000'): _defaultBase(),
     RegExp(r'^http://backend:8000'): _defaultBase(),
     RegExp(r'^http://fastapi:8000'): _defaultBase(),
