@@ -47,6 +47,7 @@ class _QuizActivityPageState extends State<QuizActivityPage> {
   bool _loading = true;
   String? _error;
 
+  ActivityDetail? _activityDetail;
   List<_QuizQuestion> _questions = [];
   int _currentIndex = 0;
   final Map<int, int> _selectedOption = {}; // questionIndex -> optionIndex
@@ -67,6 +68,8 @@ class _QuizActivityPageState extends State<QuizActivityPage> {
         widget.lessonId,
         widget.activityId,
       );
+
+      _activityDetail = detail;
 
       if (detail.questions.isEmpty) {
         setState(() {
@@ -134,19 +137,27 @@ class _QuizActivityPageState extends State<QuizActivityPage> {
     _finished = true;
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid != null) {
-      await HomeMetricsService.onActivityCompleted(
-        uid,
-        actionType: 'complete_quiz',
-      );
-      await HomeMetricsService.onAttemptSubmitted(uid);
-    }
-
-    if (!mounted) return;
 
     final correctCount = _isCorrect.values.where((v) => v == true).length;
     final total = _questions.length;
     final scorePct = ((correctCount / total) * 100).round();
+
+    if (uid != null) {
+      final baseXp = (_activityDetail?.scoring['points'] as num?)?.toInt() ?? 10;
+      await HomeMetricsService.recordActivityAttempt(
+        uid: uid,
+        courseId: widget.courseId,
+        moduleId: widget.moduleId,
+        lessonId: widget.lessonId,
+        activityId: widget.activityId,
+        activityType: 'quiz',
+        score: scorePct.toDouble(),
+        passed: scorePct >= 60,
+        baseXp: baseXp,
+      );
+    }
+
+    if (!mounted) return;
 
     showModalBottomSheet(
       context: context,
