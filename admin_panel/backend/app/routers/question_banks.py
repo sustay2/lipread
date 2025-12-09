@@ -14,7 +14,20 @@ COL = "question_banks"
 # ---------------- Media config ----------------
 DEFAULT_MEDIA_ROOT = "C:/lipread_media"
 MEDIA_ROOT = os.getenv("MEDIA_ROOT", DEFAULT_MEDIA_ROOT)
-MEDIA_BASE_URL = os.getenv("MEDIA_BASE_URL", "http://localhost:8000/media")
+API_BASE_FALLBACK = os.getenv("API_BASE", "http://localhost:8000")
+
+
+def _normalize_media_base(raw: str) -> str:
+    base = (raw or "").strip() or API_BASE_FALLBACK
+    if not base.startswith("http://") and not base.startswith("https://"):
+        base = f"http://{base}"
+    base = base.rstrip("/")
+    if not base.endswith("/media"):
+        base = f"{base}/media"
+    return base
+
+
+MEDIA_BASE_URL = _normalize_media_base(os.getenv("MEDIA_BASE_URL", ""))
 
 QB_IMG_DIR = "qb/images"
 QB_VID_DIR = "qb/videos/original"

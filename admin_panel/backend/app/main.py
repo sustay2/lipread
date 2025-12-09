@@ -1,15 +1,15 @@
 import os
 import pathlib
-from fastapi import FastAPI, HTTPException, Request, status, Response
-from fastapi.responses import StreamingResponse, FileResponse
-from starlette.responses import PlainTextResponse
-from typing import Optional
-from fastapi.exception_handlers import http_exception_handler
-from starlette.staticfiles import StaticFiles
-from starlette.middleware.sessions import SessionMiddleware
-from fastapi.templating import Jinja2Templates
-
 import re
+from typing import Optional
+
+from fastapi import FastAPI, Header, HTTPException, Request, status
+from fastapi.exception_handlers import http_exception_handler
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.responses import PlainTextResponse
+from starlette.staticfiles import StaticFiles
 from app.routers import (
     health,
     users,
@@ -69,7 +69,7 @@ STATIC_ROOT = pathlib.Path(__file__).resolve().parent / "static"
 import mimetypes
 
 @app.get("/media/{full_path:path}")
-async def media_handler(full_path: str, range: Optional[str] = None):
+async def media_handler(full_path: str, range: Optional[str] = Header(default=None, convert_underscores=False)):
     file_path = pathlib.Path(MEDIA_ROOT) / full_path
 
     if not file_path.exists():
@@ -80,6 +80,35 @@ async def media_handler(full_path: str, range: Optional[str] = None):
 
     is_video = content_type.startswith("video/")
 
+    def make_stream(start: int, end: int, status_code: int = 206):
+        chunk_size = (end - start) + 1
+
+        def iter_file():
+            with open(file_path, "rb") as f:
+                f.seek(start)
+                remaining = chunk_size
+                while remaining > 0:
+                    data = f.read(min(1024 * 1024, remaining))
+                    if not data:
+                        break
+                    remaining -= len(data)
+                    yield data
+
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(chunk_size),
+        }
+
+        if status_code == 206:
+            headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+
+        return StreamingResponse(
+            iter_file(),
+            media_type=content_type,
+            status_code=status_code,
+            headers=headers,
+        )
+
     # -------------------------
     # IMAGE OR NO RANGE HEADER
     # -------------------------
@@ -88,57 +117,33 @@ async def media_handler(full_path: str, range: Optional[str] = None):
             file_path,
             media_type=content_type,
             filename=os.path.basename(str(file_path)),
+            headers={"Accept-Ranges": "bytes", "Content-Length": str(file_size)},
         )
 
     if range is None:
-        return FileResponse(
-            file_path,
-            media_type=content_type,
-            filename=os.path.basename(str(file_path)),
-        )
+        return make_stream(0, file_size - 1, status_code=200)
 
     # -------------------------
     # VIDEO RANGE REQUEST
     # -------------------------
-    import re
     match = re.match(r"bytes=(\d+)-(\d*)", range)
     if not match:
         return PlainTextResponse("Invalid range header", status_code=416)
 
     start = int(match.group(1))
-    end = match.group(2)
-    end = int(end) if end else file_size - 1
+    end_raw = match.group(2)
+    end = int(end_raw) if end_raw else file_size - 1
 
-    if start >= file_size:
-        return PlainTextResponse("Range out of bounds", status_code=416)
+    if start >= file_size or start < 0:
+        return PlainTextResponse(
+            "Range out of bounds",
+            status_code=416,
+            headers={"Content-Range": f"bytes */{file_size}"},
+        )
 
-    chunk_size = (end - start) + 1
+    end = min(end, file_size - 1)
 
-    def iter_file():
-        with open(file_path, "rb") as f:
-            f.seek(start)
-            remaining = chunk_size
-            while remaining > 0:
-                data = f.read(min(1024 * 1024, remaining))
-                if not data:
-                    break
-                remaining -= len(data)
-                yield data
-
-    headers = {
-        "Content-Range": f"bytes {start}-{end}/{file_size}",
-        "Accept-Ranges": "bytes",
-        "Content-Length": str(chunk_size),
-    }
-
-    return StreamingResponse(
-        iter_file(),
-        media_type=content_type,
-        status_code=206,
-        headers=headers,
-    )
-
-app.mount("/media", StaticFiles(directory=MEDIA_ROOT, check_dir=False), name="media")
+    return make_stream(start, end, status_code=206)
 
 # Legacy badge icon paths
 BADGE_ICON_ROOT = os.path.join(MEDIA_ROOT, "badge_icons")
