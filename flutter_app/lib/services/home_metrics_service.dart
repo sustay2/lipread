@@ -350,6 +350,10 @@ class HomeMetricsService {
   ///   /users/{uid}/attempts/{attemptId}
   /// - Awards XP (scaled by score if you like)
   /// - Hooks into streak & daily tasks.
+  static double _normalizeScore(double raw) {
+    return raw <= 1.0 ? (raw * 100.0) : raw;
+  }
+
   static Future<void> recordActivityAttempt({
     required String uid,
     required String courseId,
@@ -379,6 +383,8 @@ class HomeMetricsService {
     final userAttemptRef =
     _db.collection('users').doc(uid).collection('attempts').doc(attemptId);
 
+    final normalizedScore = _normalizeScore(score);
+
     final payload = {
       'uid': uid,
       'courseId': courseId,
@@ -387,11 +393,12 @@ class HomeMetricsService {
       'activityId': activityId,
       'activityType': activityType,
       'type': activityType,
-      'score': score,
+      'score': normalizedScore,
+      'scoreRaw': score,
       'passed': passed,
-      'startedAt': Timestamp.fromDate(now), // if you track separately, adjust
-      'finishedAt': Timestamp.fromDate(now),
-      'createdAt': Timestamp.fromDate(now),
+      'startedAt': FieldValue.serverTimestamp(),
+      'finishedAt': FieldValue.serverTimestamp(),
+      'createdAt': FieldValue.serverTimestamp(),
     };
 
     final rootAttemptRef = _db.collection('attempts').doc(attemptId);
@@ -417,16 +424,24 @@ class HomeMetricsService {
 
     await Future.wait([
       ensureDailyStreak(uid),
-      onActivityCompleted(
+      onAttemptSubmitted(uid),
+    ]);
+
+    // Always attempt to update progress, but don't let ancillary failures break
+    // attempt logging.
+    try {
+      await onActivityCompleted(
         uid,
         actionType: actionKey,
         courseId: courseId,
         moduleId: moduleId,
         lessonId: lessonId,
         activityId: activityId,
-      ),
-      onAttemptSubmitted(uid),
-    ]);
+      );
+    } catch (_) {
+      // no-op: progress sync failure should not prevent attempts from being
+      // saved. The user can re-sync from the lesson detail screen.
+    }
 
     // Attempts / completion-based badges (e.g., N activities completed)
     await BadgeService.checkAll(uid);
@@ -489,6 +504,7 @@ class HomeMetricsService {
         'totalActivities': totalActivities,
         'progress': lessonProgress,
         'completed': lessonProgress >= 100,
+        if (lessonProgress >= 100) 'completedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       },
       SetOptions(merge: true),
@@ -558,6 +574,7 @@ class HomeMetricsService {
         'totalLessons': totalLessons,
         'progress': moduleProgress,
         'completed': moduleProgress >= 100,
+        if (moduleProgress >= 100) 'completedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       },
       SetOptions(merge: true),
@@ -616,6 +633,7 @@ class HomeMetricsService {
         'totalModules': totalModules,
         'progress': courseProgress,
         'completed': courseProgress >= 100,
+        if (courseProgress >= 100) 'completedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       },
       SetOptions(merge: true),
