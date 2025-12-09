@@ -268,13 +268,29 @@ class ActivityService:
         elif type == "practice_lip" and practice_items is not None:
             self._replace_practice_items(course_id, module_id, lesson_id, doc_ref.id, practice_items)
         elif question_bank_id and question_ids:
-            self._attach_questions(
+            question_items = []
+            for qid in question_ids:
+                qb_q = question_bank_service.get_question(question_bank_id, qid)
+                if qb_q:
+                    question_items.append({
+                        "id": None,
+                        "questionId": qb_q.id,
+                        "stem": qb_q.stem,
+                        "options": qb_q.options,
+                        "answers": qb_q.answers,
+                        "explanation": qb_q.explanation,
+                        "type": qb_q.type,
+                        "mediaId": qb_q.mediaId,
+                        "needsUpload": False,
+                    })
+
+            self._replace_questions(
                 course_id,
                 module_id,
                 lesson_id,
                 doc_ref.id,
                 question_bank_id,
-                question_ids,
+                question_items,
                 embed_questions,
             )
         return doc_ref.id

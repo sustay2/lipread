@@ -7,8 +7,6 @@ import 'package:flutter_app/app.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  
-
   try {
     await FirebaseFirestore.instance.disableNetwork();
     await FirebaseFirestore.instance.enableNetwork();
