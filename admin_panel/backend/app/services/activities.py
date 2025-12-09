@@ -58,6 +58,10 @@ class ActivityService:
     def __init__(self) -> None:
         self.db = get_firestore_client()
 
+    # -------------------------------------------------------------------------
+    # Collection helpers
+    # -------------------------------------------------------------------------
+
     def _activities_collection(self, course_id: str, module_id: str, lesson_id: str):
         return (
             self.db.collection("courses")
@@ -89,9 +93,17 @@ class ActivityService:
             "practiceItems"
         )
 
+    # -------------------------------------------------------------------------
+    # Public listing / fetching
+    # -------------------------------------------------------------------------
+
     def list_activities(self, course_id: str, module_id: str, lesson_id: str) -> List[ActivityRecord]:
         activities: List[ActivityRecord] = []
-        for doc in self._activities_collection(course_id, module_id, lesson_id).order_by("order").stream():
+        for doc in (
+            self._activities_collection(course_id, module_id, lesson_id)
+            .order_by("order")
+            .stream()
+        ):
             data = doc.to_dict() or {}
             activity_type = data.get("type") or "activity"
             question_count = self._count_items(course_id, module_id, lesson_id, doc.id, activity_type)
@@ -125,21 +137,26 @@ class ActivityService:
         except Exception:
             return sum(1 for _ in collection.stream())
 
-    def get_activity(self, course_id: str, module_id: str, lesson_id: str, activity_id: str) -> Optional[Dict[str, Any]]:
+    def get_activity(
+        self, course_id: str, module_id: str, lesson_id: str, activity_id: str
+    ) -> Optional[Dict[str, Any]]:
         doc = self._activity_doc(course_id, module_id, lesson_id, activity_id).get()
         if not doc.exists:
             return None
+
         data = doc.to_dict() or {}
         activity_type = data.get("type")
         questions: List[ActivityQuestion] = []
         dictation_items: List[DictationItem] = []
         practice_items: List[PracticeItem] = []
+
         if activity_type == "dictation":
             dictation_items = self._load_dictation_items(course_id, module_id, lesson_id, activity_id)
         elif activity_type == "practice_lip":
             practice_items = self._load_practice_items(course_id, module_id, lesson_id, activity_id)
         else:
             questions = self._load_questions(course_id, module_id, lesson_id, activity_id)
+
         return {
             "id": doc.id,
             "title": data.get("title") or data.get("type"),
@@ -159,19 +176,25 @@ class ActivityService:
         self, course_id: str, module_id: str, lesson_id: str, activity_id: str
     ) -> List[ActivityQuestion]:
         attached: List[ActivityQuestion] = []
-        for doc in self._questions_collection(course_id, module_id, lesson_id, activity_id).order_by("order").stream():
+        for doc in (
+            self._questions_collection(course_id, module_id, lesson_id, activity_id)
+            .order_by("order")
+            .stream()
+        ):
             data = doc.to_dict() or {}
             mode = data.get("mode", "reference")
             embedded = data.get("data") if data.get("data") else None
             resolved = None
             bank_id = data.get("bankId")
             question_id = data.get("questionId")
+
             if embedded:
                 resolved = embedded
             elif bank_id and question_id:
                 qb_question = question_bank_service.get_question(bank_id, question_id)
                 if qb_question:
                     resolved = self._question_to_dict(qb_question)
+
             attached.append(
                 ActivityQuestion(
                     id=doc.id,
@@ -183,6 +206,7 @@ class ActivityService:
                     resolvedQuestion=resolved,
                 )
             )
+
         attached.sort(key=lambda q: q.order)
         return attached
 
@@ -190,7 +214,11 @@ class ActivityService:
         self, course_id: str, module_id: str, lesson_id: str, activity_id: str
     ) -> List[DictationItem]:
         items: List[DictationItem] = []
-        for doc in self._dictation_collection(course_id, module_id, lesson_id, activity_id).order_by("order").stream():
+        for doc in (
+            self._dictation_collection(course_id, module_id, lesson_id, activity_id)
+            .order_by("order")
+            .stream()
+        ):
             data = doc.to_dict() or {}
             items.append(
                 DictationItem(
@@ -208,7 +236,11 @@ class ActivityService:
         self, course_id: str, module_id: str, lesson_id: str, activity_id: str
     ) -> List[PracticeItem]:
         items: List[PracticeItem] = []
-        for doc in self._practice_collection(course_id, module_id, lesson_id, activity_id).order_by("order").stream():
+        for doc in (
+            self._practice_collection(course_id, module_id, lesson_id, activity_id)
+            .order_by("order")
+            .stream()
+        ):
             data = doc.to_dict() or {}
             items.append(
                 PracticeItem(
@@ -222,6 +254,10 @@ class ActivityService:
         items.sort(key=lambda i: i.order)
         return items
 
+    # -------------------------------------------------------------------------
+    # Create / Update / Delete
+    # -------------------------------------------------------------------------
+
     def create_activity(
         self,
         course_id: str,
@@ -234,7 +270,8 @@ class ActivityService:
         scoring: Dict[str, Any],
         config: Optional[Dict[str, Any]] = None,
         question_bank_id: Optional[str] = None,
-        question_ids: Optional[List[str]] = None,
+        # NOTE: can be list[str] (old style) or list[dict] (A3 embedded)
+        question_ids: Optional[List[Any]] = None,
         embed_questions: bool = False,
         ab_variant: Optional[str] = None,
         created_by: Optional[str] = None,
@@ -242,7 +279,7 @@ class ActivityService:
         practice_items: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         now = datetime.now(timezone.utc)
-        payload = {
+        payload: Dict[str, Any] = {
             "title": title or type,
             "type": type,
             "order": int(order),
@@ -263,36 +300,33 @@ class ActivityService:
         doc_ref = self._activities_collection(course_id, module_id, lesson_id).document()
         doc_ref.set(payload)
 
+        # Dictation / Practice
         if type == "dictation" and dictation_items is not None:
-            self._replace_dictation_items(course_id, module_id, lesson_id, doc_ref.id, dictation_items)
-        elif type == "practice_lip" and practice_items is not None:
-            self._replace_practice_items(course_id, module_id, lesson_id, doc_ref.id, practice_items)
-        elif question_bank_id and question_ids:
-            question_items = []
-            for qid in question_ids:
-                qb_q = question_bank_service.get_question(question_bank_id, qid)
-                if qb_q:
-                    question_items.append({
-                        "id": None,
-                        "questionId": qb_q.id,
-                        "stem": qb_q.stem,
-                        "options": qb_q.options,
-                        "answers": qb_q.answers,
-                        "explanation": qb_q.explanation,
-                        "type": qb_q.type,
-                        "mediaId": qb_q.mediaId,
-                        "needsUpload": False,
-                    })
-
-            self._replace_questions(
-                course_id,
-                module_id,
-                lesson_id,
-                doc_ref.id,
-                question_bank_id,
-                question_items,
-                embed_questions,
+            self._replace_dictation_items(
+                course_id, module_id, lesson_id, doc_ref.id, dictation_items
             )
+        elif type == "practice_lip" and practice_items is not None:
+            self._replace_practice_items(
+                course_id, module_id, lesson_id, doc_ref.id, practice_items
+            )
+        # MCQ / Quiz
+        elif type == "quiz" and question_ids:
+            question_items = self._normalize_question_items_for_replace(
+                question_bank_id=question_bank_id,
+                raw_questions=question_ids,
+            )
+            if question_items:
+                bank_id_for_store = question_bank_id or question_items[0].get("bankId")
+                self._replace_questions(
+                    course_id,
+                    module_id,
+                    lesson_id,
+                    doc_ref.id,
+                    bank_id_for_store,
+                    question_items,
+                    embed_questions,
+                )
+
         return doc_ref.id
 
     def update_activity(
@@ -308,7 +342,8 @@ class ActivityService:
         scoring: Dict[str, Any],
         config: Optional[Dict[str, Any]] = None,
         question_bank_id: Optional[str] = None,
-        question_ids: Optional[List[str]] = None,
+        # NOTE: can be list[str] (old style) or list[dict] (A3 embedded)
+        question_ids: Optional[List[Any]] = None,
         embed_questions: bool = False,
         ab_variant: Optional[str] = None,
         dictation_items: Optional[List[Dict[str, Any]]] = None,
@@ -317,7 +352,8 @@ class ActivityService:
         doc_ref = self._activity_doc(course_id, module_id, lesson_id, activity_id)
         if not doc_ref.get().exists:
             return False
-        payload = {
+
+        payload: Dict[str, Any] = {
             "title": title or type,
             "type": type,
             "order": int(order),
@@ -331,23 +367,36 @@ class ActivityService:
             payload["config"]["questionBankId"] = question_bank_id
         if embed_questions:
             payload["config"]["embedQuestions"] = True
+
         doc_ref.update(payload)
 
-        questions = question_ids or []
+        # Dictation / Practice
         if type == "dictation" and dictation_items is not None:
-            self._replace_dictation_items(course_id, module_id, lesson_id, activity_id, dictation_items)
-        elif type == "practice_lip" and practice_items is not None:
-            self._replace_practice_items(course_id, module_id, lesson_id, activity_id, practice_items)
-        elif question_bank_id is not None:
-            self._replace_questions(
-                course_id,
-                module_id,
-                lesson_id,
-                activity_id,
-                question_bank_id,
-                questions,
-                embed_questions,
+            self._replace_dictation_items(
+                course_id, module_id, lesson_id, activity_id, dictation_items
             )
+        elif type == "practice_lip" and practice_items is not None:
+            self._replace_practice_items(
+                course_id, module_id, lesson_id, activity_id, practice_items
+            )
+        # MCQ / Quiz
+        elif type == "quiz" and question_ids is not None:
+            question_items = self._normalize_question_items_for_replace(
+                question_bank_id=question_bank_id,
+                raw_questions=question_ids,
+            )
+            if question_items:
+                bank_id_for_store = question_bank_id or question_items[0].get("bankId")
+                self._replace_questions(
+                    course_id,
+                    module_id,
+                    lesson_id,
+                    activity_id,
+                    bank_id_for_store,
+                    question_items,
+                    embed_questions,
+                )
+
         return True
 
     def delete_activity(
@@ -356,12 +405,14 @@ class ActivityService:
         doc_ref = self._activity_doc(course_id, module_id, lesson_id, activity_id)
         if not doc_ref.get().exists:
             return False
+
         for q in self._questions_collection(course_id, module_id, lesson_id, activity_id).stream():
             q.reference.delete()
         for d in self._dictation_collection(course_id, module_id, lesson_id, activity_id).stream():
             d.reference.delete()
         for p in self._practice_collection(course_id, module_id, lesson_id, activity_id).stream():
             p.reference.delete()
+
         doc_ref.delete()
         return True
 
@@ -381,13 +432,84 @@ class ActivityService:
             pass
         return 0
 
+    # -------------------------------------------------------------------------
+    # Question replace helpers
+    # -------------------------------------------------------------------------
+
+    def _normalize_question_items_for_replace(
+        self,
+        *,
+        question_bank_id: Optional[str],
+        raw_questions: List[Any],
+    ) -> List[Dict[str, Any]]:
+        """
+        Accepts either:
+          - list[dict]: from A3 activity-form (embedded questions), or
+          - list[str]: legacy list of question IDs from a question bank.
+
+        Returns a normalized list[dict] suitable for _replace_questions.
+        """
+        if not raw_questions:
+            return []
+
+        # A3 embedded case: already dicts from frontend
+        if isinstance(raw_questions[0], dict):
+            # ensure basic fields exist
+            normalized: List[Dict[str, Any]] = []
+            for item in raw_questions:
+                if not isinstance(item, dict):
+                    continue
+                normalized.append(
+                    {
+                        "id": item.get("id"),  # activity-question doc id (may be None for new)
+                        "questionId": item.get("questionId") or item.get("id"),
+                        "bankId": item.get("bankId") or question_bank_id,
+                        "type": item.get("type", "mcq"),
+                        "stem": item.get("stem", ""),
+                        "options": item.get("options", []),
+                        "answers": item.get("answers", []),
+                        "explanation": item.get("explanation"),
+                        "mediaId": item.get("mediaId") or item.get("existingMediaId"),
+                        "needsUpload": bool(item.get("needsUpload", False)),
+                    }
+                )
+            return normalized
+
+        # Legacy case: list[str] of bank question IDs
+        if question_bank_id is None:
+            # Cannot hydrate IDs without a bank id
+            return []
+
+        normalized_ids: List[Dict[str, Any]] = []
+        for qid in raw_questions:
+            if not isinstance(qid, str):
+                continue
+            qb_q = question_bank_service.get_question(question_bank_id, qid)
+            if not qb_q:
+                continue
+            normalized_ids.append(
+                {
+                    "id": None,
+                    "questionId": qb_q.id,
+                    "bankId": question_bank_id,
+                    "type": qb_q.type,
+                    "stem": qb_q.stem,
+                    "options": qb_q.options,
+                    "answers": qb_q.answers,
+                    "explanation": qb_q.explanation,
+                    "mediaId": qb_q.mediaId,
+                    "needsUpload": False,
+                }
+            )
+        return normalized_ids
+
     def _replace_questions(
         self,
         course_id: str,
         module_id: str,
         lesson_id: str,
         activity_id: str,
-        bank_id: str,
+        bank_id: Optional[str],
         question_items: List[Dict[str, Any]],
         embed: bool,
     ) -> None:
@@ -395,43 +517,57 @@ class ActivityService:
 
         existing_docs = {doc.id: doc.to_dict() for doc in col.stream()}
         batch = self.db.batch()
+        used_ids = set()
 
         for idx, item in enumerate(question_items):
             qid = item.get("id")
-            existing = existing_docs.get(qid)
+            if qid:
+                used_ids.add(qid)
+            existing = existing_docs.get(qid) if qid else None
 
-            # If existing and no new upload, preserve old mediaId
+            # Preserve existing mediaId if no new upload requested
             media_id = item.get("mediaId")
             if existing and not item.get("needsUpload"):
                 media_id = existing.get("mediaId")
 
-            # Real question data (always embed)
+            question_id = item.get("questionId") or qid
+            question_type = item.get("type", "mcq")
+
             payload = {
-                "questionId": item.get("questionId"),
+                "questionId": question_id,
                 "bankId": bank_id,
                 "order": idx,
                 "mode": "copied" if embed else "reference",
-                "type": item.get("type", "mcq"),
+                "type": question_type,
                 "data": {
-                    "id": item.get("questionId"),
+                    "id": question_id,
                     "bankId": bank_id,
-                    "type": item.get("type", "mcq"),
+                    "type": question_type,
                     "stem": item.get("stem", ""),
                     "options": item.get("options", []),
                     "answers": item.get("answers", []),
                     "explanation": item.get("explanation"),
                     "mediaId": media_id,
-                }
+                },
             }
 
             if qid:
-                # Update existing reference
                 batch.update(col.document(qid), payload)
             else:
-                # Create new one
-                batch.set(col.document(), payload)
+                new_ref = col.document()
+                batch.set(new_ref, payload)
+                used_ids.add(new_ref.id)
+
+        # Delete any questions that are no longer present in payload
+        for existing_id in existing_docs.keys():
+            if existing_id not in used_ids:
+                batch.delete(col.document(existing_id))
 
         batch.commit()
+
+    # -------------------------------------------------------------------------
+    # Dictation / Practice replace helpers
+    # -------------------------------------------------------------------------
 
     def _replace_dictation_items(
         self,
@@ -446,9 +582,12 @@ class ActivityService:
         existing_docs = {doc.id: doc.to_dict() for doc in col.stream()}
         batch = self.db.batch()
         now = datetime.now(timezone.utc)
+        used_ids = set()
 
         for idx, item in enumerate(items):
             item_id = item.get("id")
+            if item_id:
+                used_ids.add(item_id)
             existing = existing_docs.get(item_id)
 
             media_id = item.get("mediaId")
@@ -467,7 +606,14 @@ class ActivityService:
                 batch.update(col.document(item_id), payload)
             else:
                 payload["createdAt"] = now
-                batch.set(col.document(), payload)
+                new_ref = col.document()
+                batch.set(new_ref, payload)
+                used_ids.add(new_ref.id)
+
+        # Delete removed items
+        for existing_id in existing_docs.keys():
+            if existing_id not in used_ids:
+                batch.delete(col.document(existing_id))
 
         batch.commit()
 
@@ -484,9 +630,12 @@ class ActivityService:
         existing_docs = {doc.id: doc.to_dict() for doc in col.stream()}
         batch = self.db.batch()
         now = datetime.now(timezone.utc)
+        used_ids = set()
 
         for idx, item in enumerate(items):
             item_id = item.get("id")
+            if item_id:
+                used_ids.add(item_id)
             existing = existing_docs.get(item_id)
 
             media_id = item.get("mediaId")
@@ -505,9 +654,20 @@ class ActivityService:
                 batch.update(col.document(item_id), payload)
             else:
                 payload["createdAt"] = now
-                batch.set(col.document(), payload)
+                new_ref = col.document()
+                batch.set(new_ref, payload)
+                used_ids.add(new_ref.id)
+
+        # Delete removed items
+        for existing_id in existing_docs.keys():
+            if existing_id not in used_ids:
+                batch.delete(col.document(existing_id))
 
         batch.commit()
+
+    # -------------------------------------------------------------------------
+    # Question bank helper
+    # -------------------------------------------------------------------------
 
     def _question_to_dict(self, question: BankQuestion) -> Dict[str, Any]:
         return {

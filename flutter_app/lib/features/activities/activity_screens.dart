@@ -8,8 +8,7 @@ import '../../models/content_models.dart';
 import '../../services/content_api_service.dart';
 import '../../services/home_metrics_service.dart';
 import '../../services/daily_task_service.dart';
-// IMPORTANT: use the same URL normalizer you use elsewhere
-import '../../common/utils/media_utils.dart'; // normalizeMediaUrl
+import '../../common/utils/media_utils.dart';
 
 //
 // Helpers
