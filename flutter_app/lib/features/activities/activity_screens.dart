@@ -308,23 +308,34 @@ class _PracticeActivityScreenState extends State<PracticeActivityScreen> {
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     final ids = _ActivityIds.fromRef(widget.activityRef);
-    if (uid != null && ids != null) {
-      await HomeMetricsService.recordActivityAttempt(
-        uid: uid,
-        courseId: ids.courseId,
-        moduleId: ids.moduleId,
-        lessonId: ids.lessonId,
-        activityId: ids.activityId,
-        activityType: 'practice_lip',
-        score: 100,
-        passed: true,
-        baseXp: (detail.scoring['points'] as num?)?.toInt() ?? 10,
-      );
-    }
 
-    if (!mounted) return;
-    setState(() => _submitting = false);
-    Navigator.of(context).pop();
+    try {
+      if (uid != null && ids != null) {
+        await HomeMetricsService.recordActivityAttempt(
+          uid: uid,
+          courseId: ids.courseId,
+          moduleId: ids.moduleId,
+          lessonId: ids.lessonId,
+          activityId: ids.activityId,
+          activityType: 'practice_lip',
+          score: 100,
+          passed: true,
+          baseXp: (detail.scoring['points'] as num?)?.toInt() ?? 10,
+        );
+      }
+
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      setState(() {
+        _error = 'Could not record completion. Please try again.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
+    }
   }
 
   @override
