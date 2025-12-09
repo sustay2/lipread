@@ -11,7 +11,20 @@ db = admin_fs.client()
 
 DEFAULT_MEDIA_ROOT = "C:/lipread_media"
 MEDIA_ROOT = os.getenv("MEDIA_ROOT", DEFAULT_MEDIA_ROOT)
-MEDIA_BASE_URL = os.getenv("MEDIA_BASE_URL", "http://localhost:8000/media")
+API_BASE_FALLBACK = os.getenv("API_BASE", "http://localhost:8000")
+
+
+def _normalize_media_base(raw: str) -> str:
+    base = (raw or "").strip() or API_BASE_FALLBACK
+    if not base.startswith("http://") and not base.startswith("https://"):
+        base = f"http://{base}"
+    base = base.rstrip("/")
+    if not base.endswith("/media"):
+        base = f"{base}/media"
+    return base
+
+
+MEDIA_BASE_URL = _normalize_media_base(os.getenv("MEDIA_BASE_URL", ""))
 MEDIA_ORIGINAL_DIR = os.getenv("MEDIA_ORIGINAL_DIR", os.path.join(MEDIA_ROOT, "original"))
 MEDIA_THUMB_DIR    = os.getenv("MEDIA_THUMB_DIR",    os.path.join(MEDIA_ROOT, "thumbs"))
 MEDIA_PUBLIC_BASE_URL = os.getenv("MEDIA_PUBLIC_BASE_URL", None)
