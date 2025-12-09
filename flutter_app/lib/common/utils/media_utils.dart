@@ -1,4 +1,3 @@
-
 import '../../env.dart';
 
 /// Optionally set this at app start based on server_info or manual override:
@@ -7,46 +6,12 @@ import '../../env.dart';
 /// If not set, we fall back to kApiBase from env.dart.
 String? mediaBaseOverride;
 
-/// Rewrites localhost-like and docker-service hostnames to something
-/// the device can actually reach.
+/// Normalize any media URL/path so it always uses the same host as API_BASE
+/// and is served from `/media/<path>`.
 String? normalizeMediaUrl(String? url) {
-  if (url == null || url.isEmpty) return url;
-
-  // If caller gave us a hard override, apply it
-  if (mediaBaseOverride != null && mediaBaseOverride!.isNotEmpty) {
-    final overrideUri = Uri.tryParse(mediaBaseOverride!);
-    final u = Uri.tryParse(url);
-  
-    if (u != null && u.hasScheme && overrideUri != null) {
-      return Uri(
-        scheme: overrideUri.scheme.isNotEmpty ? overrideUri.scheme : u.scheme,
-        host: overrideUri.host.isNotEmpty ? overrideUri.host : u.host,
-        port: overrideUri.hasPort ? overrideUri.port : u.port,
-        path: u.path,
-        query: u.query,
-        fragment: u.fragment,
-      ).toString();
-    }
-  }
-
-  String out = url;
-
-  // Map common dev hosts → emulator/host
-  final replacements = <Pattern, String>{
-    RegExp(r'^http://localhost:8000'): _defaultBase(),
-    RegExp(r'^http://127\.0\.0\.1:8000'): _defaultBase(),
-    RegExp(r'^http://192\.168\.\d+\.\d+:8000'): _defaultBase(),
-    RegExp(r'^http://172\.\d+\.\d+\.\d+:8000'): _defaultBase(),
-    RegExp(r'^http://api:8000'): _defaultBase(),
-    RegExp(r'^http://backend:8000'): _defaultBase(),
-    RegExp(r'^http://fastapi:8000'): _defaultBase(),
-  };
-
-  replacements.forEach((pattern, repl) {
-    out = out.replaceFirst(pattern, repl);
-  });
-
-  return out;
+  final parts = _mediaParts(url: url);
+  if (parts == null) return url;
+  return _buildMediaUrl(parts);
 }
 
 /// Default base for media URLs:
@@ -61,6 +26,8 @@ String _defaultBase() {
   return kApiBase;
 }
 
+Uri _defaultBaseUri() => Uri.parse(_defaultBase());
+
 /// Helper used across the app (videos, thumbnails, badges, etc.)
 ///
 /// Usage patterns:
@@ -70,32 +37,75 @@ String _defaultBase() {
 ///     publicMediaUrl(null, path: doc['thumbnailPath'])
 ///
 /// This will:
-///   * Build a full URL when only a path is given (BASE + path)
-///   * Normalize localhost/api/backend hosts so they work on emulator/real devices.
+///   * Build a full URL when only a path is given (BASE + /media + path)
+///   * Normalize any existing URL to the current API host.
 String? publicMediaUrl(String? url, {String? path}) {
-  // If we were given a full URL, just normalize and return.
+  final parts = _mediaParts(url: url, path: path);
+  if (parts == null) return null;
+  return _buildMediaUrl(parts);
+}
+
+class _MediaUrlParts {
+  const _MediaUrlParts(this.path, {this.query, this.fragment});
+
+  final String path;
+  final String? query;
+  final String? fragment;
+}
+
+_MediaUrlParts? _mediaParts({String? url, String? path}) {
+  String? rawPath;
+  String? query;
+  String? fragment;
+
   if (url != null && url.isNotEmpty) {
-    return normalizeMediaUrl(url);
+    final parsed = Uri.tryParse(url);
+    if (parsed != null) {
+      rawPath = parsed.path.isNotEmpty ? parsed.path : null;
+      query = parsed.hasQuery ? parsed.query : null;
+      fragment = parsed.fragment.isNotEmpty ? parsed.fragment : null;
+    }
   }
 
-  // No URL, try to build from a stored path.
-  if (path == null || path.isEmpty) return null;
+  rawPath ??= path;
 
-  // If path is already an absolute URL, just normalize.
+  if (rawPath == null || rawPath.isEmpty) {
+    return null;
+  }
+
+  final normalizedPath = _normalizeMediaPath(rawPath);
+  return _MediaUrlParts(normalizedPath, query: query, fragment: fragment);
+}
+
+String _buildMediaUrl(_MediaUrlParts parts) {
+  final base = _defaultBaseUri();
+  final normalizedPath = parts.path.replaceAll(RegExp(r'/+'), '/');
+  return Uri(
+    scheme: base.scheme,
+    host: base.host,
+    port: base.hasPort ? base.port : null,
+    path: normalizedPath,
+    query: parts.query?.isNotEmpty == true ? parts.query : null,
+    fragment: parts.fragment?.isNotEmpty == true ? parts.fragment : null,
+  ).toString();
+}
+
+String _normalizeMediaPath(String rawPath) {
+  var path = rawPath;
   if (path.startsWith('http://') || path.startsWith('https://')) {
-    return normalizeMediaUrl(path);
+    final parsed = Uri.tryParse(path);
+    if (parsed != null) {
+      path = parsed.path;
+    }
   }
 
-  // Resolve the relative path against the configured backend base.
-  // We intentionally *do not* force a "/media" prefix because
-  // Firestore stores paths like "qb/images/foo.jpg" that are served from
-  // the backend root.
-  final base = _defaultBase();
-  final sanitizedPath = path.startsWith('/') ? path.substring(1) : path;
+  path = path.trim();
+  if (path.isEmpty) return '/media';
 
-  final resolved = Uri.parse(base.endsWith('/') ? base : '$base/')
-      .resolve(sanitizedPath)
-      .toString();
+  path = path.replaceFirst(RegExp('^/+'), '');
+  if (!path.startsWith('media/')) {
+    path = 'media/$path';
+  }
 
-  return normalizeMediaUrl(resolved);
+  return '/$path';
 }
