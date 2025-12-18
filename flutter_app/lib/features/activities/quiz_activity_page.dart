@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
@@ -46,6 +47,7 @@ class _QuizActivityPageState extends State<QuizActivityPage> {
   bool _loading = true;
   String? _error;
 
+  ActivityDetail? _activityDetail;
   List<_QuizQuestion> _questions = [];
   int _currentIndex = 0;
   final Map<int, int> _selectedOption = {}; // questionIndex -> optionIndex
@@ -66,6 +68,8 @@ class _QuizActivityPageState extends State<QuizActivityPage> {
         widget.lessonId,
         widget.activityId,
       );
+
+      _activityDetail = detail;
 
       if (detail.questions.isEmpty) {
         setState(() {
@@ -121,7 +125,7 @@ class _QuizActivityPageState extends State<QuizActivityPage> {
 
     final allAnswered = List.generate(
       _questions.length,
-          (i) => _selectedOption[i] != null,
+      (i) => _selectedOption[i] != null,
     ).every((v) => v);
 
     if (allAnswered && !_finished) {
@@ -133,19 +137,27 @@ class _QuizActivityPageState extends State<QuizActivityPage> {
     _finished = true;
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid != null) {
-      await HomeMetricsService.onActivityCompleted(
-        uid,
-        actionType: 'complete_quiz',
-      );
-      await HomeMetricsService.onAttemptSubmitted(uid);
-    }
-
-    if (!mounted) return;
 
     final correctCount = _isCorrect.values.where((v) => v == true).length;
     final total = _questions.length;
     final scorePct = ((correctCount / total) * 100).round();
+
+    if (uid != null) {
+      final baseXp = (_activityDetail?.scoring['points'] as num?)?.toInt() ?? 10;
+      await HomeMetricsService.recordActivityAttempt(
+        uid: uid,
+        courseId: widget.courseId,
+        moduleId: widget.moduleId,
+        lessonId: widget.lessonId,
+        activityId: widget.activityId,
+        activityType: 'quiz',
+        score: scorePct.toDouble(),
+        passed: scorePct >= 60,
+        baseXp: baseXp,
+      );
+    }
+
+    if (!mounted) return;
 
     showModalBottomSheet(
       context: context,
@@ -307,9 +319,9 @@ class _QuizActivityPageState extends State<QuizActivityPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _QuestionMedia(
-                        imageUrl: q.imageUrl,
-                        videoUrl: q.videoUrl,
+                      _ActivityMedia(
+                        mediaId: q.mediaId,
+                        fallbackLabel: 'Tap to play',
                       ),
                       const SizedBox(height: 12),
 
@@ -356,10 +368,10 @@ class _QuizActivityPageState extends State<QuizActivityPage> {
                             onTap: checked
                                 ? null
                                 : () {
-                              setState(() {
-                                _selectedOption[_currentIndex] = i;
-                              });
-                            },
+                                    setState(() {
+                                      _selectedOption[_currentIndex] = i;
+                                    });
+                                  },
                             child: Container(
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
@@ -377,23 +389,28 @@ class _QuizActivityPageState extends State<QuizActivityPage> {
                                       border: Border.all(
                                         color: checked
                                             ? (q.isCorrect(i)
-                                            ? AppColors.success
-                                            : AppColors.error)
+                                                ? AppColors.success
+                                                : AppColors.error)
                                             : (isSelected
-                                            ? AppColors.primary
-                                            : AppColors.border),
+                                                ? AppColors.primary
+                                                : AppColors.border),
                                       ),
                                       color: isSelected
                                           ? (checked
-                                          ? (q.isCorrect(i)
-                                          ? AppColors.success
-                                          : AppColors.error)
-                                          : AppColors.primary)
+                                              ? (q.isCorrect(i)
+                                                  ? AppColors.success
+                                                  : AppColors.error)
+                                              : AppColors.primary)
                                           : Colors.transparent,
                                     ),
                                     child: isSelected
-                                        ? Icon(Icons.check,
-                                        size: 14, color: Theme.of(context).colorScheme.onPrimary)
+                                        ? Icon(
+                                            Icons.check,
+                                            size: 14,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onPrimary,
+                                          )
                                         : null,
                                   ),
                                   const SizedBox(width: 10),
@@ -471,6 +488,30 @@ class _QuizActivityPageState extends State<QuizActivityPage> {
 }
 
 /* =========================
+   HELPERS FOR MEDIA TYPE
+   ========================= */
+
+bool _looksVideo(String? url) {
+  if (url == null) return false;
+  final lower = url.toLowerCase();
+  return lower.endsWith('.mp4') ||
+      lower.endsWith('.mov') ||
+      lower.endsWith('.webm') ||
+      lower.endsWith('.mkv') ||
+      lower.contains('/videos/');
+}
+
+bool _looksImage(String? url) {
+  if (url == null) return false;
+  final lower = url.toLowerCase();
+  return lower.endsWith('.png') ||
+      lower.endsWith('.jpg') ||
+      lower.endsWith('.jpeg') ||
+      lower.endsWith('.gif') ||
+      lower.endsWith('.webp');
+}
+
+/* =========================
    DATA MODEL
    ========================= */
 
@@ -480,8 +521,7 @@ class _QuizQuestion {
   final List<String> options;
   final List<String> answers;
   final String? explanation;
-  final String? imageUrl;
-  final String? videoUrl;
+  final String? mediaId;
 
   _QuizQuestion({
     required this.id,
@@ -489,8 +529,7 @@ class _QuizQuestion {
     required this.options,
     this.answers = const [],
     this.explanation,
-    this.imageUrl,
-    this.videoUrl,
+    this.mediaId,
   });
 
   static _QuizQuestion fromActivityQuestion(ActivityQuestion aq) {
@@ -506,44 +545,18 @@ class _QuizQuestion {
         .map((e) => e.toString())
         .where((e) => e.isNotEmpty)
         .toList();
-    final singleAnswer = (data['answer'] ?? data['correct'] ?? data['correctAnswer']);
+    final singleAnswer =
+        (data['answer'] ?? data['correct'] ?? data['correctAnswer']);
     if (singleAnswer != null) {
       answers.add(singleAnswer.toString());
     }
 
     final explanation = data['explanation'] as String?;
 
-    String? imageUrl = publicMediaUrl(data['imageUrl'] as String?,
-        path: data['imagePath'] as String?);
-    String? videoUrl = publicMediaUrl(data['videoUrl'] as String?,
-        path: data['videoPath'] as String?);
-
     final media = data['media'] as Map<String, dynamic>?;
-    final mediaId = data['mediaId'] as String?;
-    String? mediaUrl = publicMediaUrl(
-      media?['url'] as String?,
-      path: media?['path'] as String? ?? media?['storagePath'] as String?,
-    );
-    mediaUrl ??= publicMediaUrl(null, path: mediaId);
-
-    bool looksVideo(String? url) {
-      if (url == null) return false;
-      final lower = url.toLowerCase();
-      return lower.endsWith('.mp4') ||
-          lower.endsWith('.mov') ||
-          lower.endsWith('.webm') ||
-          lower.endsWith('.mkv') ||
-          lower.contains('/videos/');
-    }
-
-    if ((videoUrl == null || videoUrl.isEmpty) && looksVideo(mediaUrl)) {
-      videoUrl = mediaUrl;
-    }
-    if ((imageUrl == null || imageUrl.isEmpty) &&
-        mediaUrl != null &&
-        !looksVideo(mediaUrl)) {
-      imageUrl = mediaUrl;
-    }
+    final mediaId = (data['mediaId'] as String?) ??
+        (media?['mediaId'] as String?) ??
+        (media?['id'] as String?);
 
     return _QuizQuestion(
       id: aq.id,
@@ -551,8 +564,7 @@ class _QuizQuestion {
       options: options,
       answers: answers,
       explanation: explanation,
-      imageUrl: normalizeMediaUrl(imageUrl),
-      videoUrl: normalizeMediaUrl(videoUrl),
+      mediaId: mediaId,
     );
   }
 
@@ -573,81 +585,152 @@ class _QuizQuestion {
 }
 
 /* =========================
-   MEDIA WIDGET (Home style)
+   MEDIA WIDGET (Home-style)
    ========================= */
 
-class _QuestionMedia extends StatefulWidget {
-  final String? imageUrl;
-  final String? videoUrl;
+/// Home-style media renderer with **ID → Firestore** resolving.
+class _ActivityMedia extends StatefulWidget {
+  final Map<String, dynamic>? media; // {url/path/contentType/kind/mediaId/id}
+  final String? mediaId; // config.mediaId OR root mediaId
+  final String? videoId; // config.videoId (treat as mediaId)
+  final String? fallbackLabel; // UI hint if nothing resolves
 
-  const _QuestionMedia({this.imageUrl, this.videoUrl});
+  const _ActivityMedia({
+    this.media,
+    this.mediaId,
+    this.videoId,
+    this.fallbackLabel,
+  });
 
   @override
-  State<_QuestionMedia> createState() => _QuestionMediaState();
+  State<_ActivityMedia> createState() => _ActivityMediaState();
 }
 
-class _QuestionMediaState extends State<_QuestionMedia> {
+class _ActivityMediaState extends State<_ActivityMedia> {
   VideoPlayerController? _ctrl;
   bool _err = false;
+
+  String? _url;
+  String _contentType = '';
+  String _kind = '';
+  bool _isVideo = false;
+  bool _isImage = false;
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    _initVideo();
-  }
-
-  Future<void> _initVideo() async {
-    final url = widget.videoUrl;
-    if (url == null || url.isEmpty) return;
-    try {
-      final c = VideoPlayerController.networkUrl(
-        Uri.parse(url),
-        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
-      );
-      _ctrl = c;
-      await c.initialize();
-      await c.setLooping(false);
-      setState(() {});
-      c.addListener(() {
-        if (mounted) setState(() {});
-      });
-    } catch (_) {
-      if (mounted) setState(() => _err = true);
-    }
+    _resolveAndInit();
   }
 
   @override
-  void didUpdateWidget(covariant _QuestionMedia oldWidget) {
+  void didUpdateWidget(covariant _ActivityMedia oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.videoUrl != widget.videoUrl) {
-      _ctrl?.dispose();
-      _ctrl = null;
-      _err = false;
-      _initVideo();
+    if (oldWidget.media != widget.media ||
+        oldWidget.mediaId != widget.mediaId ||
+        oldWidget.videoId != widget.videoId) {
+      _disposeVideo();
+      _resolveAndInit();
     }
+  }
+
+  Future<void> _resolveAndInit() async {
+    setState(() {
+      _loading = true;
+      _err = false;
+      _url = null;
+      _contentType = '';
+      _kind = '';
+      _isVideo = false;
+      _isImage = false;
+    });
+
+    // 1) Direct values from media map
+    final m = widget.media ?? {};
+    String? url = (m['url'] as String?) ?? (m['path'] as String?);
+    String? mediaId =
+        (m['mediaId'] as String?) ?? (m['id'] as String?) ?? widget.mediaId ?? widget.videoId;
+
+    String contentType = (m['contentType'] as String?)?.toLowerCase() ?? '';
+    String kind = (m['kind'] as String?)?.toLowerCase() ?? '';
+
+    // 2) If no URL but we have an ID, resolve from /media/{id}
+    if ((url == null || url.isEmpty) && mediaId != null && mediaId.isNotEmpty) {
+      try {
+        final snap =
+        await FirebaseFirestore.instance.collection('media').doc(mediaId).get();
+        if (snap.exists) {
+          final data = snap.data() ?? {};
+          url = data['url'] as String?;
+          contentType = (data['contentType'] as String?)?.toLowerCase() ?? contentType;
+          kind = (data['kind'] as String?)?.toLowerCase() ?? kind;
+        }
+      } catch (_) {
+        // swallow; will show fallback chip later
+      }
+    }
+
+    // 3) Normalize URL for emulator/device
+    url = normalizeMediaUrl(url);
+
+    // 4) Decide type
+    final looksVid = _looksVideo(url);
+    final looksImg = _looksImage(url);
+    final isVid = contentType.startsWith('video/') || kind == 'video' || looksVid;
+    final isImg = contentType.startsWith('image/') || kind == 'image' || looksImg;
+
+    setState(() {
+      _url = url;
+      _contentType = contentType;
+      _kind = kind;
+      _isVideo = isVid && (url != null && url.isNotEmpty);
+      _isImage = isImg && (url != null && url.isNotEmpty);
+    });
+
+    // 5) Init video if needed
+    if (_isVideo) {
+      try {
+        final c = VideoPlayerController.networkUrl(
+          Uri.parse(_url!),
+          videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+        );
+        _ctrl = c;
+        await c.initialize();
+        await c.setLooping(false);
+        if (!mounted) return;
+        c.addListener(() {
+          if (mounted) setState(() {});
+        });
+      } catch (_) {
+        if (mounted) setState(() => _err = true);
+      }
+    }
+
+    if (mounted) setState(() => _loading = false);
+  }
+
+  void _disposeVideo() {
+    _ctrl?.dispose();
+    _ctrl = null;
   }
 
   @override
   void dispose() {
-    _ctrl?.dispose();
+    _disposeVideo();
     super.dispose();
   }
 
-  // Outer 16:9 frame used for both image and video
   Widget _frame(Widget child) {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
         color: AppColors.background,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.border),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: AspectRatio(
-          aspectRatio: 16 / 9,
-          child: child,
-        ),
+        borderRadius: BorderRadius.circular(16),
+        child: AspectRatio(aspectRatio: 16 / 9, child: child),
       ),
     );
   }
@@ -662,172 +745,201 @@ class _QuestionMediaState extends State<_QuestionMedia> {
 
   @override
   Widget build(BuildContext context) {
-    final items = <Widget>[];
-
-    // IMAGE — centered (letterboxed) inside the 16:9 frame
-    if (widget.imageUrl != null && widget.imageUrl!.isNotEmpty) {
-      items.add(
-        _frame(
-          // BoxFit.contain to avoid cropping; centered with blanks around
-          Image.network(
-            widget.imageUrl!,
-            fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) => const Center(
-              child: Text('Image failed to load',
-                  style: TextStyle(fontSize: 12, color: AppColors.error)),
+    // Fallback chip if absolutely nothing resolved
+    if ((_url == null || _url!.isEmpty) && widget.fallbackLabel != null) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.play_circle_fill_rounded, color: AppColors.primary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                widget.fallbackLabel!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
             ),
-            loadingBuilder: (_, child, progress) {
-              if (progress == null) return child;
-              return const Center(
-                child: SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              );
-            },
+          ],
+        ),
+      );
+    }
+
+    if (_loading) {
+      return _frame(const Center(
+        child: SizedBox(
+          width: 22,
+          height: 22,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      ));
+    }
+
+    if (_url == null || _url!.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    // IMAGE (letterboxed like Home)
+    if (_isImage) {
+      return _frame(
+        Image.network(
+          _url!,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => const Center(
+            child:
+            Text('Image failed to load', style: TextStyle(color: AppColors.error)),
           ),
         ),
       );
-      items.add(const SizedBox(height: 10));
     }
 
-    // VIDEO — centered inside 16:9 frame with overlay + progress bar
-    if (widget.videoUrl != null && widget.videoUrl!.isNotEmpty) {
+    // VIDEO (centered to its AR + hidden overlay while playing + progress bar)
+    if (_isVideo) {
       if (_err) {
-        items.add(
-          _frame(const Center(
-            child: Text('Video failed to load',
-                style: TextStyle(fontSize: 12, color: AppColors.error)),
-          )),
-        );
-      } else if (_ctrl == null || !_ctrl!.value.isInitialized) {
-        items.add(
-          _frame(const Center(
-            child: SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(strokeWidth: 2),
+        return _frame(const Center(
+          child: Text('Video failed to load', style: TextStyle(color: AppColors.error)),
+        ));
+      }
+      if (_ctrl == null || !_ctrl!.value.isInitialized) {
+        return _frame(const Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ));
+      }
+
+      final ar = (_ctrl!.value.aspectRatio.isFinite && _ctrl!.value.aspectRatio > 0)
+          ? _ctrl!.value.aspectRatio
+          : (16 / 9);
+      final playing = _ctrl!.value.isPlaying;
+      final dur = _ctrl!.value.duration;
+      final pos = _ctrl!.value.position;
+      final ended = dur > Duration.zero && pos >= dur;
+
+      return _frame(
+        Stack(
+          children: [
+            Center(
+              child: AspectRatio(aspectRatio: ar, child: VideoPlayer(_ctrl!)),
             ),
-          )),
-        );
-      } else {
-        final ar = (_ctrl!.value.aspectRatio.isFinite && _ctrl!.value.aspectRatio > 0)
-            ? _ctrl!.value.aspectRatio
-            : (16 / 9);
-
-        final dur = _ctrl!.value.duration;
-        final pos = _ctrl!.value.position;
-        final playing = _ctrl!.value.isPlaying;
-        final ended = dur > Duration.zero && pos >= dur;
-
-        items.add(
-          _frame(
-            Stack(
-              children: [
-                // Center the real video to its aspect ratio (letterbox)
-                Center(
-                  child: AspectRatio(
-                    aspectRatio: ar,
-                    child: VideoPlayer(_ctrl!),
-                  ),
-                ),
-
-                // Play/Pause/Replay overlay — hides while playing
-                Positioned.fill(
-                  child: AnimatedOpacity(
-                    opacity: playing ? 0.0 : 1.0,
-                    duration: const Duration(milliseconds: 180),
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () {
-                        if (ended) {
-                          _ctrl!.seekTo(Duration.zero);
-                          _ctrl!.play();
-                        } else {
-                          playing ? _ctrl!.pause() : _ctrl!.play();
-                        }
-                    },
-                    child: Container(
-                      color:
-                          Theme.of(context).colorScheme.scrim.withOpacity(0.26),
-                      child: Center(
-                        child: Icon(
-                          ended
-                              ? Icons.replay_rounded
-                              : (playing
-                              ? Icons.pause_circle_filled_rounded
-                              : Icons.play_circle_fill_rounded),
-                          size: 56,
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                ),
-
-                // Bottom progress bar + time
-                Positioned(
-                  left: 8,
-                  right: 8,
-                  bottom: 8,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(999),
-                        child: LinearProgressIndicator(
-                          minHeight: 4,
-                          value: (dur.inMilliseconds == 0)
-                              ? 0
-                              : pos.inMilliseconds / dur.inMilliseconds,
-                          backgroundColor: Theme.of(context)
-                              .colorScheme
-                              .onSurfaceVariant
-                              .withOpacity(0.3),
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '${_fmt(pos)} / ${_fmt(dur)}',
-                      style: TextStyle(
-                        fontSize: 11,
+            // Play/Pause/Replay overlay (auto hides when playing)
+            Positioned.fill(
+              child: AnimatedOpacity(
+                opacity: playing ? 0.0 : 1.0,
+                duration: const Duration(milliseconds: 180),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    if (ended) {
+                      _ctrl!.seekTo(Duration.zero);
+                      _ctrl!.play();
+                    } else {
+                      playing ? _ctrl!.pause() : _ctrl!.play();
+                    }
+                  },
+                  child: Container(
+                    color:
+                        Theme.of(context).colorScheme.scrim.withOpacity(0.26),
+                    child: Center(
+                      child: Icon(
+                        ended
+                            ? Icons.replay_rounded
+                            : (playing
+                            ? Icons.pause_circle_filled_rounded
+                            : Icons.play_circle_fill_rounded),
+                        size: 56,
                         color: Theme.of(context).colorScheme.onSurface,
-                        shadows: [
-                          Shadow(
-                              blurRadius: 2,
-                              color: Theme.of(context).colorScheme.scrim),
-                        ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
               ),
-
-                // Tap anywhere to toggle during playback (while overlay hidden)
-                if (playing)
-                  Positioned.fill(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () {
-                        _ctrl!.pause();
-                      },
+            ),
+            // Bottom progress + time
+            Positioned(
+              left: 8,
+              right: 8,
+              bottom: 8,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        minHeight: 4,
+                        value: (dur.inMilliseconds == 0)
+                            ? 0
+                            : pos.inMilliseconds / dur.inMilliseconds,
+                        backgroundColor: Theme.of(context)
+                            .colorScheme
+                            .onSurfaceVariant
+                            .withOpacity(0.3),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
                     ),
                   ),
-              ],
+                  const SizedBox(width: 8),
+                  Text(
+                    '${_fmt(pos)} / ${_fmt(dur)}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Theme.of(context).colorScheme.onSurface,
+                      shadows: [
+                        Shadow(
+                          blurRadius: 2,
+                          color: Theme.of(context).colorScheme.scrim,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        );
-      }
+            if (playing)
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _ctrl!.pause(),
+                ),
+              ),
+          ],
+        ),
+      );
     }
 
-    if (items.isEmpty) return const SizedBox.shrink();
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: items);
+    // Unknown type → small URL chip
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.play_circle_fill_rounded, color: AppColors.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _url!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -869,7 +981,9 @@ class _Explanation extends StatelessWidget {
             child: Text(
               (explanation != null && explanation!.trim().isNotEmpty)
                   ? explanation!
-                  : (isCorrect ? 'Nice work!' : 'Not quite. Review this and try the next one.'),
+                  : (isCorrect
+                      ? 'Nice work!'
+                      : 'Not quite. Review this and try the next one.'),
               style: TextStyle(
                 fontSize: 12,
                 color: color,

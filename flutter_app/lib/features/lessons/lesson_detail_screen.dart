@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:ui';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -50,6 +52,27 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
     super.initState();
     _bundleFuture = _loadBundle();
     _loadSubscription();
+  }
+
+  Stream<Set<String>> _completedActivitiesStream(
+    String uid,
+    String courseId,
+    String moduleId,
+    String lessonId,
+  ) {
+    return FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('progress')
+        .doc(courseId)
+        .collection('modules')
+        .doc(moduleId)
+        .collection('lessons')
+        .doc(lessonId)
+        .collection('activities')
+        .where('completed', isEqualTo: true)
+        .snapshots()
+        .map((snap) => snap.docs.map((d) => d.id).toSet());
   }
 
   Future<_LessonBundle> _loadBundle() async {
@@ -331,18 +354,33 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                         ),
                       )
                     else
-                      Column(
-                        children: bundle.activities
-                            .map(
-                              (a) => _ActivityTile(
-                                courseId: courseId,
-                                moduleId: moduleId,
-                                lessonId: realLessonId,
-                                activity: a,
-                                onTap: _openActivity,
-                              ),
-                            )
-                            .toList(),
+                      StreamBuilder<Set<String>>(
+                        stream: hasUser
+                            ? _completedActivitiesStream(
+                                uid!,
+                                courseId,
+                                moduleId,
+                                realLessonId,
+                              )
+                            : const Stream.empty(),
+                        builder: (context, progressSnap) {
+                          final completedIds = progressSnap.data ?? <String>{};
+
+                          return Column(
+                            children: bundle.activities
+                                .map(
+                                  (a) => _ActivityTile(
+                                    courseId: courseId,
+                                    moduleId: moduleId,
+                                    lessonId: realLessonId,
+                                    activity: a,
+                                    onTap: _openActivity,
+                                    completed: completedIds.contains(a.id),
+                                  ),
+                                )
+                                .toList(),
+                          );
+                        },
                       ),
                   ],
                 ),
@@ -441,6 +479,7 @@ class _ActivityTile extends StatelessWidget {
   final String moduleId;
   final String lessonId;
   final ActivitySummary activity;
+  final bool completed;
   final void Function(
     BuildContext context, {
     required String courseId,
@@ -455,6 +494,7 @@ class _ActivityTile extends StatelessWidget {
     required this.moduleId,
     required this.lessonId,
     required this.activity,
+    this.completed = false,
     required this.onTap,
   });
 
@@ -516,8 +556,13 @@ class _ActivityTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              const Icon(Icons.chevron_right_rounded,
-                  color: AppColors.textSecondary),
+              completed
+                  ? const Icon(
+                      Icons.check_circle_rounded,
+                      color: AppColors.success,
+                    )
+                  : const Icon(Icons.chevron_right_rounded,
+                      color: AppColors.textSecondary),
             ],
           ),
         ),

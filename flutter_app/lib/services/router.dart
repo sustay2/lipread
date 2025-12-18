@@ -73,7 +73,9 @@ class Routes {
   static const dictationActivity = '/activity/dictation';
   static const practiceActivity  = '/activity/practice';
 
-
+  // Add Stripe Callback Routes
+  static const stripeSuccess = '/stripe/success';
+  static const stripeCancel  = '/stripe/cancel';
 }
 
 /// Arguments for lesson detail
@@ -187,6 +189,14 @@ class AppNavigator {
         return _material(PracticeActivityScreen(
           activityRef: settings.arguments as String,
         ));
+
+      // Handle Stripe Success
+      case '/success':
+        return _material(const BillingInfoPage(paymentSuccess: true));
+
+      // Handle Stripe Cancel
+      case '/cancel':
+        return _material(const SubscriptionPage());
 
       default:
         return _material(Scaffold(

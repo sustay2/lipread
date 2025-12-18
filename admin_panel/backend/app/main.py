@@ -1,10 +1,15 @@
 import os
 import pathlib
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Request, status, Response
+from fastapi.responses import StreamingResponse, FileResponse
+from starlette.responses import PlainTextResponse
+from typing import Optional
 from fastapi.exception_handlers import http_exception_handler
 from starlette.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.templating import Jinja2Templates
+
+import re
 from app.routers import (
     health,
     users,
@@ -16,10 +21,6 @@ from app.routers import (
     activities,
     question_banks,
     inference_jobs,
-    analytics,
-    attempts,
-    feedback,
-    flags,
     import_export,
     tasks,
     ui,
@@ -64,13 +65,85 @@ app.add_middleware(
 DEFAULT_MEDIA_ROOT = "C:/lipread_media"
 MEDIA_ROOT = os.getenv("MEDIA_ROOT", DEFAULT_MEDIA_ROOT)
 STATIC_ROOT = pathlib.Path(__file__).resolve().parent / "static"
+
+import mimetypes
+
+@app.get("/media/{full_path:path}")
+async def media_handler(full_path: str, range: Optional[str] = None):
+    file_path = pathlib.Path(MEDIA_ROOT) / full_path
+
+    if not file_path.exists():
+        return PlainTextResponse("File not found", status_code=404)
+
+    content_type = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
+    file_size = file_path.stat().st_size
+
+    is_video = content_type.startswith("video/")
+
+    # -------------------------
+    # IMAGE OR NO RANGE HEADER
+    # -------------------------
+    if not is_video:
+        return FileResponse(
+            file_path,
+            media_type=content_type,
+            filename=os.path.basename(str(file_path)),
+        )
+
+    if range is None:
+        return FileResponse(
+            file_path,
+            media_type=content_type,
+            filename=os.path.basename(str(file_path)),
+        )
+
+    # -------------------------
+    # VIDEO RANGE REQUEST
+    # -------------------------
+    import re
+    match = re.match(r"bytes=(\d+)-(\d*)", range)
+    if not match:
+        return PlainTextResponse("Invalid range header", status_code=416)
+
+    start = int(match.group(1))
+    end = match.group(2)
+    end = int(end) if end else file_size - 1
+
+    if start >= file_size:
+        return PlainTextResponse("Range out of bounds", status_code=416)
+
+    chunk_size = (end - start) + 1
+
+    def iter_file():
+        with open(file_path, "rb") as f:
+            f.seek(start)
+            remaining = chunk_size
+            while remaining > 0:
+                data = f.read(min(1024 * 1024, remaining))
+                if not data:
+                    break
+                remaining -= len(data)
+                yield data
+
+    headers = {
+        "Content-Range": f"bytes {start}-{end}/{file_size}",
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(chunk_size),
+    }
+
+    return StreamingResponse(
+        iter_file(),
+        media_type=content_type,
+        status_code=206,
+        headers=headers,
+    )
+
 app.mount("/media", StaticFiles(directory=MEDIA_ROOT, check_dir=False), name="media")
 app.mount("/static", StaticFiles(directory=STATIC_ROOT, check_dir=False), name="static")
 
 # Legacy badge icon paths
 BADGE_ICON_ROOT = os.path.join(MEDIA_ROOT, "badge_icons")
 app.mount("/badge_icons", StaticFiles(directory=BADGE_ICON_ROOT, check_dir=False), name="badge_icons")
-
 
 # Auth routes
 app.include_router(admin_auth.router, tags=["auth"])
@@ -82,6 +155,7 @@ app.include_router(health.router, prefix="/health", tags=["health"])
 # Public/mobile API
 app.include_router(public_api.router, prefix="/api", tags=["public-api"])
 app.include_router(billing.router, tags=["billing"])
+app.include_router(billing.admin_router, tags=["billing"])
 app.include_router(stripe_webhooks.router, tags=["billing"])
 
 
@@ -103,6 +177,7 @@ app.include_router(import_export.router, prefix="/admin", tags=["import_export"]
 app.include_router(tasks.router, tags=["tasks"])
 app.include_router(ui.router, tags=["ui"])
 app.include_router(report.router, tags=["reports"])
+app.include_router(stripe_webhooks.router, prefix="/api/stripe", tags=["Stripe Webhooks"])
 
 
 @app.exception_handler(HTTPException)

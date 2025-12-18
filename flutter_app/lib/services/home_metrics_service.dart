@@ -311,9 +311,23 @@ class HomeMetricsService {
   static Future<void> onActivityCompleted(
     String uid, {
     String? actionType,
+    String? courseId,
+    String? moduleId,
+    String? lessonId,
+    String? activityId,
   }) async {
     if (actionType != null && actionType.isNotEmpty) {
       await DailyTaskService.markTaskCompleted(uid, actionType);
+    }
+
+    if (courseId != null && moduleId != null && lessonId != null && activityId != null) {
+      await _updateProgressAfterActivityCompletion(
+        uid: uid,
+        courseId: courseId,
+        moduleId: moduleId,
+        lessonId: lessonId,
+        activityId: activityId,
+      );
     }
   }
 
@@ -336,6 +350,10 @@ class HomeMetricsService {
   ///   /users/{uid}/attempts/{attemptId}
   /// - Awards XP (scaled by score if you like)
   /// - Hooks into streak & daily tasks.
+  static double _normalizeScore(double raw) {
+    return raw <= 1.0 ? (raw * 100.0) : raw;
+  }
+
   static Future<void> recordActivityAttempt({
     required String uid,
     required String courseId,
@@ -365,6 +383,8 @@ class HomeMetricsService {
     final userAttemptRef =
     _db.collection('users').doc(uid).collection('attempts').doc(attemptId);
 
+    final normalizedScore = _normalizeScore(score);
+
     final payload = {
       'uid': uid,
       'courseId': courseId,
@@ -372,16 +392,21 @@ class HomeMetricsService {
       'lessonId': lessonId,
       'activityId': activityId,
       'activityType': activityType,
-      'score': score,
+      'type': activityType,
+      'score': normalizedScore,
+      'scoreRaw': score,
       'passed': passed,
-      'startedAt': Timestamp.fromDate(now), // if you track separately, adjust
-      'finishedAt': Timestamp.fromDate(now),
-      'createdAt': Timestamp.fromDate(now),
+      'startedAt': FieldValue.serverTimestamp(),
+      'finishedAt': FieldValue.serverTimestamp(),
+      'createdAt': FieldValue.serverTimestamp(),
     };
+
+    final rootAttemptRef = _db.collection('attempts').doc(attemptId);
 
     final batch = _db.batch();
     batch.set(actAttemptRef, payload);
     batch.set(userAttemptRef, payload);
+    batch.set(rootAttemptRef, payload);
     await batch.commit();
 
     // Simple XP rule: baseXp, with small bonus for high scores.
@@ -392,18 +417,235 @@ class HomeMetricsService {
     // Update related metrics/tasks.
     final actionKey = switch (activityType.toLowerCase()) {
       'quiz' => 'complete_quiz',
+      'mcq' => 'complete_quiz',
       'dictation' => 'complete_dictation',
+      'practice_lip' => 'finish_practice',
       'practice' => 'finish_practice',
       _ => null,
     };
 
     await Future.wait([
       ensureDailyStreak(uid),
-      onActivityCompleted(uid, actionType: actionKey),
       onAttemptSubmitted(uid),
     ]);
 
+    // Always attempt to update progress, but don't let ancillary failures break
+    // attempt logging.
+    try {
+      await onActivityCompleted(
+        uid,
+        actionType: actionKey,
+        courseId: courseId,
+        moduleId: moduleId,
+        lessonId: lessonId,
+        activityId: activityId,
+      );
+    } catch (_) {
+      // no-op: progress sync failure should not prevent attempts from being
+      // saved. The user can re-sync from the lesson detail screen.
+    }
+
     // Attempts / completion-based badges (e.g., N activities completed)
     await BadgeService.checkAll(uid);
+  }
+
+  static CollectionReference<Map<String, dynamic>> _userProgressRoot(String uid) {
+    return _db.collection('users').doc(uid).collection('progress');
+  }
+
+  static Future<void> _updateProgressAfterActivityCompletion({
+    required String uid,
+    required String courseId,
+    required String moduleId,
+    required String lessonId,
+    required String activityId,
+  }) async {
+    final courseRef = _db.collection('courses').doc(courseId);
+    final activitiesRef = courseRef
+        .collection('modules')
+        .doc(moduleId)
+        .collection('lessons')
+        .doc(lessonId)
+        .collection('activities');
+
+    final progressLessonRef = _userProgressRoot(uid)
+        .doc(courseId)
+        .collection('modules')
+        .doc(moduleId)
+        .collection('lessons')
+        .doc(lessonId);
+
+    final activityProgressRef = progressLessonRef.collection('activities').doc(activityId);
+
+    await activityProgressRef.set(
+      {
+        'courseId': courseId,
+        'moduleId': moduleId,
+        'lessonId': lessonId,
+        'activityId': activityId,
+        'completed': true,
+        'completedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+
+    final totalActivities = (await activitiesRef.get()).docs.length;
+    final completedActivities =
+        (await progressLessonRef.collection('activities').where('completed', isEqualTo: true).get()).docs.length;
+
+    final lessonProgress = totalActivities > 0
+        ? ((completedActivities / totalActivities) * 100).clamp(0, 100).toDouble()
+        : 0.0;
+
+    await progressLessonRef.set(
+      {
+        'courseId': courseId,
+        'moduleId': moduleId,
+        'lessonId': lessonId,
+        'completedActivities': completedActivities,
+        'totalActivities': totalActivities,
+        'progress': lessonProgress,
+        'completed': lessonProgress >= 100,
+        if (lessonProgress >= 100) 'completedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+
+    await _updateModuleProgress(
+      uid: uid,
+      courseId: courseId,
+      moduleId: moduleId,
+      lessonId: lessonId,
+    );
+  }
+
+  static Future<void> _updateModuleProgress({
+    required String uid,
+    required String courseId,
+    required String moduleId,
+    required String lessonId,
+  }) async {
+    final lessonsRef = _db
+        .collection('courses')
+        .doc(courseId)
+        .collection('modules')
+        .doc(moduleId)
+        .collection('lessons');
+
+    final moduleProgressRef =
+        _userProgressRoot(uid).doc(courseId).collection('modules').doc(moduleId);
+
+    final lessonDocs = (await moduleProgressRef.collection('lessons').get()).docs;
+
+    int totalLessons = 0;
+    int completedLessons = 0;
+    int moduleCompletedActivities = 0;
+    int moduleTotalActivities = 0;
+
+    final lessonSnaps = await lessonsRef.get();
+    totalLessons = lessonSnaps.docs.length;
+    for (final lessonDoc in lessonSnaps.docs) {
+      final actsCount =
+          (await lessonDoc.reference.collection('activities').get()).docs.length;
+      moduleTotalActivities += actsCount;
+    }
+
+    for (final doc in lessonDocs) {
+      final data = doc.data();
+      final completed = data['completed'] == true;
+      final completedActs = (data['completedActivities'] as num?)?.toInt() ?? 0;
+
+      moduleCompletedActivities += completedActs;
+      if (completed) completedLessons += 1;
+    }
+
+    final normalizedCompletedLessons = completedLessons.clamp(0, totalLessons);
+
+    final moduleProgress = moduleTotalActivities > 0
+        ? ((moduleCompletedActivities / moduleTotalActivities) * 100).clamp(0, 100).toDouble()
+        : 0.0;
+
+    await moduleProgressRef.set(
+      {
+        'courseId': courseId,
+        'moduleId': moduleId,
+        'completedActivities': moduleCompletedActivities,
+        'totalActivities': moduleTotalActivities,
+        'completedLessons': normalizedCompletedLessons,
+        'totalLessons': totalLessons,
+        'progress': moduleProgress,
+        'completed': moduleProgress >= 100,
+        if (moduleProgress >= 100) 'completedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+
+    await _updateCourseProgress(
+      uid: uid,
+      courseId: courseId,
+      moduleId: moduleId,
+      lessonId: lessonId,
+    );
+  }
+
+  static Future<void> _updateCourseProgress({
+    required String uid,
+    required String courseId,
+    required String moduleId,
+    required String lessonId,
+  }) async {
+    final modulesRef = _db.collection('courses').doc(courseId).collection('modules');
+    final courseProgressRef = _userProgressRoot(uid).doc(courseId);
+
+    final moduleDocs = (await courseProgressRef.collection('modules').get()).docs;
+
+    int totalModules = 0;
+    int completedModules = 0;
+    int courseCompletedActivities = 0;
+    int courseTotalActivities = 0;
+
+    final moduleSnaps = await modulesRef.get();
+    totalModules = moduleSnaps.docs.length;
+    for (final moduleSnap in moduleSnaps.docs) {
+      final lessonsSnap = await moduleSnap.reference.collection('lessons').get();
+      for (final lessonSnap in lessonsSnap.docs) {
+        courseTotalActivities +=
+            (await lessonSnap.reference.collection('activities').get()).docs.length;
+      }
+    }
+
+    for (final doc in moduleDocs) {
+      final data = doc.data();
+      if (data['completed'] == true) completedModules += 1;
+      courseCompletedActivities += (data['completedActivities'] as num?)?.toInt() ?? 0;
+    }
+
+    final courseProgress = courseTotalActivities > 0
+        ? ((courseCompletedActivities / courseTotalActivities) * 100).clamp(0, 100).toDouble()
+        : 0.0;
+
+    await courseProgressRef.set(
+      {
+        'courseId': courseId,
+        'completedActivities': courseCompletedActivities,
+        'totalActivities': courseTotalActivities,
+        'completedModules': completedModules,
+        'totalModules': totalModules,
+        'progress': courseProgress,
+        'completed': courseProgress >= 100,
+        if (courseProgress >= 100) 'completedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+
+    await updateEnrollmentProgress(
+      uid: uid,
+      courseId: courseId,
+      lastLessonId: '$courseId|$moduleId|$lessonId',
+      progress: courseProgress,
+    );
   }
 }

@@ -320,11 +320,16 @@ class _LoginScreenState extends State<LoginScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
         child: Column(
           children: [
-            Icon(Icons.mic_none_rounded, size: 64, color: cs.primary),
+            Image.asset(
+              'assets/icons/logo.png', 
+              height: 64,
+              width: 64, 
+            ),
+
             const SizedBox(height: 12),
 
             Text(
-              "Welcome Back 👋",
+              "Welcome Back!",
               style: theme.textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.bold,
               ),

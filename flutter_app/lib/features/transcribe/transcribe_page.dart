@@ -125,6 +125,24 @@ class _TranscribePageState extends State<TranscribePage>
     final limit = _resolveLimit(subscription);
     final used = await _countTranscriptionsThisMonth(user.uid);
 
+    final currentCounter = subscription?.usageCounters['transcriptions'] ?? 0;
+    if (used != currentCounter) {
+      debugPrint('Syncing counter: Firestore=$currentCounter, Real=$used');
+      
+      // Update Firestore immediately
+      await FirebaseFirestore.instance
+          .collection('user_subscriptions')
+          .doc(user.uid)
+          .set({
+            'usage_counters': {'transcriptions': used}
+          }, SetOptions(merge: true));
+          
+      // Update local state so UI reflects it immediately
+      if (subscription != null) {
+        subscription.usageCounters['transcriptions'] = used;
+      }
+    }
+
     setState(() {
       _transcriptionLimit = limit;
       _transcriptionsThisMonth = used;
@@ -169,33 +187,54 @@ class _TranscribePageState extends State<TranscribePage>
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final ref = FirebaseFirestore.instance
+    final batch = FirebaseFirestore.instance.batch();
+
+    final transcriptRef = FirebaseFirestore.instance
         .collection('users')
         .doc(user.uid)
-        .collection('transcriptions');
+        .collection('transcriptions')
+        .doc(); // Auto-ID
 
-    await ref.add({
+    batch.set(transcriptRef, {
       'transcript': r.transcript,
       'confidence': r.confidence,
       'words': r.words
           .map((w) => {
-        'text': w.text,
-        'start': w.start,
-        'end': w.end,
-        'conf': w.conf,
-      })
+                'text': w.text,
+                'start': w.start,
+                'end': w.end,
+                'conf': w.conf,
+              })
           .toList(),
       'visemes': r.visemes
           .map((v) => {
-        'label': v.label,
-        'start': v.start,
-        'end': v.end,
-      })
+                'label': v.label,
+                'start': v.start,
+                'end': v.end,
+              })
           .toList(),
       'lessonId': widget.lessonId,
       'mode': _recordTabActive ? 'record' : 'upload',
       'createdAt': FieldValue.serverTimestamp(),
     });
+
+    final subRef = FirebaseFirestore.instance
+        .collection('user_subscriptions')
+        .doc(user.uid);
+
+    batch.set(
+      subRef,
+      {
+        'usage_counters': {
+          'transcriptions': FieldValue.increment(1),
+        },
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+
+    // Commit both changes
+    await batch.commit();
   }
 
   Future<void> _onVideoReady(File file) async {

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import "package:flutter/foundation.dart";
 
 class XpService {
   static final _users = FirebaseFirestore.instance.collection('users');
@@ -10,7 +11,6 @@ class XpService {
     return _users.doc(uid).collection('streaks').doc(_yearWeekKey(date));
   }
 
-  /// Convert a date to a `yyyy-ww` bucket (ISO week number, padded).
   static String _yearWeekKey(DateTime date) {
     final d = DateTime.utc(date.year, date.month, date.day);
     final monday = d.subtract(Duration(days: d.weekday - 1));
@@ -21,14 +21,12 @@ class XpService {
     return '${d.year}-${week.toString().padLeft(2, '0')}';
   }
 
-  /// Formula: XP required to reach the next level
-  /// Tweak this as you like.
   static int xpNeededForLevel(int level) {
-    if (level <= 1) return 50;         // Level 1 → needs 50 XP
-    return 50 + (level - 1) * 25;      // Level 2=75, 3=100, 4=125, etc.
+    if (level <= 1) return 50;
+    return 50 + (level - 1) * 25;
   }
 
-  /// Awards XP and handles leveling logic.
+  // award XP
   static Future<void> awardXp(
     String uid,
     int delta, {
@@ -41,32 +39,80 @@ class XpService {
       final snap = await tx.get(ref);
       final data = snap.data() ?? {};
 
-      final Map<String, dynamic> stats =
-          Map<String, dynamic>.from(data['stats'] ?? {});
+      final existingStats = Map<String, dynamic>.from(data['stats'] ?? {});
 
-      int xp = (stats['xp'] as num?)?.toInt() ?? 0;
-      int level = (stats['level'] as num?)?.toInt() ?? 1;
-      int levelCur = (stats['levelCur'] as num?)?.toInt() ?? 0;
+      // --- BEGIN PROTECTED MERGE ---
+      Map<String, dynamic> _protectStats(Map<String, dynamic> next) {
+        final safe = Map<String, dynamic>.from(existingStats);
+
+        next.forEach((key, value) {
+          if (!existingStats.containsKey(key)) {
+            // NEW field → allowed
+            safe[key] = value;
+            return;
+          }
+
+          final oldVal = existingStats[key];
+
+          // If type changed → prevent overwrite
+          if (oldVal != null &&
+              value != null &&
+              oldVal.runtimeType != value.runtimeType) {
+            debugPrint(
+              '🔥 XPService prevented type mismatch overwrite on stats.$key '
+              '(${oldVal.runtimeType} → ${value.runtimeType})',
+            );
+            return;
+          }
+
+          // If field is null in new but existed before → prevent deletion
+          if (oldVal != null && value == null) {
+            debugPrint(
+              '🔥 XPService prevented null overwrite on stats.$key (value preserved)',
+            );
+            return;
+          }
+
+          // Allowed update → overwrite
+          safe[key] = value;
+        });
+
+        return safe;
+      }
+      // --- END PROTECTED MERGE ---
+
+      // --- Load XP fields ---
+      int xp = (existingStats['xp'] as num?)?.toInt() ?? 0;
+      int level = (existingStats['level'] as num?)?.toInt() ?? 1;
+      int levelCur = (existingStats['levelCur'] as num?)?.toInt() ?? 0;
       int levelNeed =
-          (stats['levelNeed'] as num?)?.toInt() ?? xpNeededForLevel(level);
+          (existingStats['levelNeed'] as num?)?.toInt() ?? xpNeededForLevel(level);
 
       // Apply XP
       xp += delta;
       levelCur += delta;
 
-      // Level-up loop
+      // Level-up logic
       while (levelCur >= levelNeed) {
         level++;
         levelCur -= levelNeed;
         levelNeed = xpNeededForLevel(level);
       }
 
-      stats['xp'] = xp;
-      stats['level'] = level;
-      stats['levelCur'] = levelCur;
-      stats['levelNeed'] = levelNeed;
+      // Proposed update (before protection)
+      final proposedStats = {
+        ...existingStats, // ensures future new stats remain safe
+        'xp': xp,
+        'level': level,
+        'levelCur': levelCur,
+        'levelNeed': levelNeed,
+      };
 
-      tx.set(ref, {'stats': stats}, SetOptions(merge: true));
+      // Pass through overwrite protector
+      final mergedStats = _protectStats(proposedStats);
+
+      // Final write
+      tx.set(ref, {'stats': mergedStats}, SetOptions(merge: true));
     });
 
     await _writeXpHistory(
@@ -77,8 +123,6 @@ class XpService {
     );
   }
 
-  /// Ensure a streak document exists for the current week.
-  /// Creates it with `count=1` and `lastDayAt=now` if missing.
   static Future<int> ensureStreakForToday(String uid) async {
     final now = DateTime.now().toUtc();
     final today = DateTime.utc(now.year, now.month, now.day);
@@ -131,10 +175,6 @@ class XpService {
     });
   }
 
-  /// Update the streak after an activity completion.
-  /// - If the last hit was yesterday → increment.
-  /// - If gap > 1 day → reset to 1.
-  /// - If already counted today → keep current.
   static Future<int> updateStreakAfterActivity(String uid) async {
     final now = DateTime.now().toUtc();
     final today = DateTime.utc(now.year, now.month, now.day);
@@ -157,13 +197,9 @@ class XpService {
         streak = 1;
       } else {
         final diff = today.difference(lastDay).inDays;
-        if (diff == 0) {
-          return streak; // already counted today
-        } else if (diff == 1) {
-          streak += 1;
-        } else {
-          streak = 1;
-        }
+        if (diff == 0) return streak;
+        if (diff == 1) streak += 1;
+        else streak = 1;
       }
 
       tx.set(
@@ -189,7 +225,6 @@ class XpService {
     });
   }
 
-  /// Ensures stats exist when user signs in for the first time
   static Future<void> ensureStatsInitialized(String uid) async {
     final ref = _users.doc(uid);
     await ref.set({
@@ -202,7 +237,6 @@ class XpService {
     }, SetOptions(merge: true));
   }
 
-  /// Award XP specifically for completing a daily task, with history logging.
   static Future<void> awardXPForTaskCompletion(
     String uid, {
     required int points,
@@ -227,18 +261,13 @@ class XpService {
     Map<String, dynamic>? metadata,
   }) async {
     try {
-      final historyRef = _users
-          .doc(uid)
-          .collection('xp_history')
-          .doc();
+      final historyRef = _users.doc(uid).collection('xp_history').doc();
       await historyRef.set({
         'delta': delta,
         'reason': reason ?? 'manual',
         'metadata': metadata ?? {},
         'createdAt': FieldValue.serverTimestamp(),
       });
-    } catch (_) {
-      // history write is best-effort
-    }
+    } catch (_) {}
   }
 }

@@ -1,11 +1,14 @@
 import 'dart:math';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../common/theme/app_colors.dart';
 import '../../services/subscription_service.dart';
+import '../profile/billing_info_page.dart';
 
 class SubscriptionPage extends StatefulWidget {
   const SubscriptionPage({super.key});
@@ -14,36 +17,52 @@ class SubscriptionPage extends StatefulWidget {
   State<SubscriptionPage> createState() => _SubscriptionPageState();
 }
 
-class _SubscriptionPageState extends State<SubscriptionPage> {
+class _SubscriptionPageState extends State<SubscriptionPage>
+    with WidgetsBindingObserver {
   final SubscriptionService _service = SubscriptionService();
-  Future<_SubscriptionPayload>? _loadFuture;
+  Future<_StaticDataPayload>? _loadFuture;
   String? _processingPriceId;
   bool _launchingPortal = false;
+  bool _pendingCheckoutRefresh = false;
+  bool _refreshingAfterResume = false;
 
   @override
   void initState() {
     super.initState();
-    _loadFuture = _loadData();
+    WidgetsBinding.instance.addObserver(this);
+    _loadFuture = _loadStaticData();
   }
 
-  Future<_SubscriptionPayload> _loadData() async {
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _pendingCheckoutRefresh) {
+      _pendingCheckoutRefresh = false;
+      _refreshAfterCheckout();
+    }
+  }
+
+  Future<_StaticDataPayload> _loadStaticData() async {
     final results = await Future.wait([
       _service.getPlans(),
-      _service.getMySubscription(),
       _service.getFreePlan(),
       _service.getSubscriptionMetadata(),
     ]);
 
-    return _SubscriptionPayload(
+    return _StaticDataPayload(
       plans: results[0] as List<Plan>,
-      subscription: results[1] as UserSubscription?,
-      freePlan: results[2] as Plan,
-      metadata: results[3] as SubscriptionMetadata,
+      freePlan: results[1] as Plan,
+      metadata: results[2] as SubscriptionMetadata,
     );
   }
 
   Future<void> _refresh() async {
-    final future = _loadData();
+    final future = _loadStaticData();
     setState(() => _loadFuture = future);
     await future;
   }
@@ -54,29 +73,32 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
       return;
     }
     setState(() => _processingPriceId = plan.id);
+    _pendingCheckoutRefresh = true;
     try {
       final url = await _service.createCheckoutSession(plan.stripePriceId!);
       await _launchUrl(url);
+      await _service.refreshAllCaches();
     } catch (e) {
       _showSnack('Unable to start checkout: $e');
+      _pendingCheckoutRefresh = false;
     } finally {
       if (mounted) setState(() => _processingPriceId = null);
     }
   }
 
-  Future<void> _openBillingPortal() async {
-    setState(() => _launchingPortal = true);
-    try {
-      final url = await _service.createBillingPortalSession();
-      await _launchUrl(url);
-    } catch (e) {
-      _showSnack('Unable to open billing portal: $e');
-    } finally {
-      if (mounted) setState(() => _launchingPortal = false);
-    }
+  void _navigateToBillingInfo() {
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const BillingInfoPage()),
+    ).then((_) => _refresh());
   }
 
   Future<void> _launchUrl(String url) async {
+    if (url.isEmpty) {
+      _showSnack('Billing URL is empty');
+      return;
+    }
     final uri = Uri.tryParse(url);
     if (uri == null) {
       _showSnack('Invalid URL');
@@ -95,9 +117,25 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     );
   }
 
+  Future<void> _refreshAfterCheckout() async {
+    if (_refreshingAfterResume) return;
+    _refreshingAfterResume = true;
+    try {
+      await _service.refreshAllCaches();
+      await _service.getMySubscription();
+      if (!mounted) return;
+      await _refresh();
+    } catch (e) {
+      _showSnack('Unable to refresh subscription: $e');
+    } finally {
+      _refreshingAfterResume = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final user = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -109,7 +147,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
       ),
       body: RefreshIndicator(
         onRefresh: _refresh,
-        child: FutureBuilder<_SubscriptionPayload>(
+        child: FutureBuilder<_StaticDataPayload>(
           future: _loadFuture,
           builder: (context, snapshot) {
             if (snapshot.hasError) {
@@ -128,42 +166,84 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
               return const _LoadingList();
             }
 
-            final payload = snapshot.data!;
-            final subscription = payload.subscription;
-            final currentPlan =
-                _resolveCurrentPlan(payload.plans, subscription, payload.freePlan);
+            final staticData = snapshot.data!;
 
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-              children: [
-                _SubscriptionOverviewCard(
-                  subscription: subscription,
-                  plan: currentPlan,
-                  freePlan: payload.freePlan,
-                  metadata: payload.metadata,
-                  colorScheme: colorScheme,
-                  onManageBilling: subscription != null ? _openBillingPortal : null,
-                  launchingPortal: _launchingPortal,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Available plans',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(color: AppColors.textPrimary),
-                ),
-                const SizedBox(height: 8),
-                ...payload.plans.map(
-                  (plan) => _PlanCard(
-                    plan: plan,
-                    isCurrent: currentPlan?.id == plan.id,
-                    onSelect: () => _startCheckout(plan),
-                    isProcessing: _processingPriceId == plan.id,
-                    colorScheme: colorScheme,
-                  ),
-                ),
-              ],
+            return StreamBuilder<DocumentSnapshot>(
+              stream: user == null
+                  ? const Stream.empty()
+                  : FirebaseFirestore.instance
+                      .collection('user_subscriptions')
+                      .doc(user.uid)
+                      .snapshots(),
+              builder: (context, subSnapshot) {
+                UserSubscription? subscription;
+
+                // FIX: Safely handle snapshot data and ID injection
+                if (subSnapshot.hasData && subSnapshot.data != null && subSnapshot.data!.exists) {
+                  try {
+                    final rawData = subSnapshot.data!.data();
+                    if (rawData != null && rawData is Map<String, dynamic>) {
+                      // Inject ID so fromJson parses it correctly
+                      final dataWithId = Map<String, dynamic>.from(rawData);
+                      dataWithId['id'] = subSnapshot.data!.id;
+
+                      final planId = dataWithId['plan_id']?.toString() ?? dataWithId['planId']?.toString();
+                      
+                      Plan? resolvedPlan;
+                      if (planId != null) {
+                        try {
+                          resolvedPlan = staticData.plans.firstWhere((p) => p.id == planId);
+                        } catch (_) {
+                          // Plan not found in active list (maybe archived), fallback to null
+                        }
+                      }
+
+                      subscription = UserSubscription.fromJson(dataWithId, plan: resolvedPlan);
+                    }
+                  } catch (e) {
+                    debugPrint('Error parsing subscription stream: $e');
+                  }
+                }
+
+                final currentPlan = _resolveCurrentPlan(
+                  staticData.plans,
+                  subscription,
+                  staticData.freePlan,
+                );
+
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                  children: [
+                    _SubscriptionOverviewCard(
+                      subscription: subscription,
+                      plan: currentPlan,
+                      freePlan: staticData.freePlan,
+                      metadata: staticData.metadata,
+                      colorScheme: colorScheme,
+                      onManageBilling: subscription != null ? _navigateToBillingInfo : null,
+                      launchingPortal: _launchingPortal,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Available plans',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(color: AppColors.textPrimary),
+                    ),
+                    const SizedBox(height: 8),
+                    ...staticData.plans.map(
+                      (plan) => _PlanCard(
+                        plan: plan,
+                        isCurrent: currentPlan?.id == plan.id,
+                        onSelect: () => _startCheckout(plan),
+                        isProcessing: _processingPriceId == plan.id,
+                        colorScheme: colorScheme,
+                      ),
+                    ),
+                  ],
+                );
+              },
             );
           },
         ),
@@ -174,33 +254,26 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
   Plan? _resolveCurrentPlan(List<Plan> plans, UserSubscription? subscription, Plan freePlan) {
     if (subscription == null) return freePlan;
 
-    if (subscription.plan != null) return subscription.plan!;
+    if (subscription.plan != null) return subscription.plan;
 
-    try {
-      return plans.firstWhere((p) => p.id == subscription.planId);
-    } catch (_) {
-      return freePlan;
-    }
+    final match = plans.where((p) => p.id == subscription.planId);
+    if (match.isNotEmpty) return match.first;
+
+    return freePlan;
   }
 }
 
-class _SubscriptionPayload {
-  const _SubscriptionPayload({
+class _StaticDataPayload {
+  const _StaticDataPayload({
     required this.plans,
-    required this.subscription,
     required this.freePlan,
     required this.metadata,
   });
 
   final List<Plan> plans;
-  final UserSubscription? subscription;
   final Plan freePlan;
   final SubscriptionMetadata metadata;
 }
-
-/* -------------------------------------------------------------------------- */
-/*                            FIXED OVERVIEW CARD                             */
-/* -------------------------------------------------------------------------- */
 
 class _SubscriptionOverviewCard extends StatelessWidget {
   const _SubscriptionOverviewCard({
@@ -227,34 +300,31 @@ class _SubscriptionOverviewCard extends StatelessWidget {
     return ['active', 'trialing', 'past_due'].contains(status);
   }
 
-  /// FIXED: Correct unlimited calculation
   bool get _isUnlimited {
     if (plan?.isTranscriptionUnlimited == true) return true;
     if (metadata.isUnlimited == true) return true;
+
+    final pLimit = plan?.transcriptionLimit;
+    if (pLimit != null && pLimit < 0) return true;
+    
+    final mLimit = metadata.transcriptionLimit;
+    if (mLimit != null && mLimit < 0) return true;
 
     return false;
   }
 
   int _usageCount() {
     final counters = subscription?.usageCounters ?? {};
-    const keys = [
-      'transcriptions',
-      'transcription',
-      'transcription_count',
-      'transcriptionCount',
-    ];
-    for (final key in keys) {
-      if (counters.containsKey(key)) return counters[key] ?? 0;
-    }
-    return 0;
+    if (counters.isEmpty) return 0;
+    return counters.values.fold(0, (sum, val) => sum + val);
   }
 
-  /// FIXED: Uses metadata AND plan correctly
   String _remainingText() {
     if (_isUnlimited) return 'Unlimited';
 
     final limit = plan?.transcriptionLimit ?? metadata.transcriptionLimit;
-    if (limit == null) return 'Unlimited';
+    
+    if (limit == null || limit < 0) return 'Unlimited';
 
     final used = _usageCount();
     final remaining = max(0, limit - used);
@@ -327,7 +397,7 @@ class _SubscriptionOverviewCard extends StatelessWidget {
                 ),
               ],
             ),
-            if (_isActive && onManageBilling != null) ...[
+            if (_isActive && plan != null && plan!.id != freePlan.id && onManageBilling != null) ...[
               const SizedBox(height: 16),
               FilledButton.icon(
                 style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(44)),
@@ -339,7 +409,7 @@ class _SubscriptionOverviewCard extends StatelessWidget {
                         child: CircularProgressIndicator(strokeWidth: 2.2),
                       )
                     : const Icon(Icons.receipt_long_outlined),
-                label: Text(launchingPortal ? 'Opening Billing Portal…' : 'Manage Billing'),
+                label: const Text('Manage Billing'),
               ),
             ],
           ],
@@ -372,7 +442,9 @@ class _PlanCard extends StatelessWidget {
   }
 
   String _transcriptionText() {
-    if (plan.isTranscriptionUnlimited || plan.transcriptionLimit == null) {
+    if (plan.isTranscriptionUnlimited || 
+        plan.transcriptionLimit == null || 
+        (plan.transcriptionLimit != null && plan.transcriptionLimit! < 0)) {
       return 'Transcriptions: Unlimited';
     }
     return 'Transcriptions: ${plan.transcriptionLimit} / month';

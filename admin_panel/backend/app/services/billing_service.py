@@ -61,29 +61,77 @@ def get_or_create_stripe_customer(firebase_uid: str, email: str) -> Dict[str, An
 
 
 def create_checkout_session(
-    firebase_uid: str, price_id: str, success_url: str, cancel_url: str, email: Optional[str] = None
+    firebase_uid: str,
+    price_id: str,
+    success_url: str,
+    cancel_url: str,
+    email: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Create a subscription checkout session for the given Stripe price."""
 
-    # Email is optional for caller convenience; reuse Firebase UID metadata when creating customers.
-    customer = get_or_create_stripe_customer(firebase_uid=firebase_uid, email=email or "")
+    # ----------------------------------------
+    # STEP 1: Load Stripe customer
+    # ----------------------------------------
+    customer = get_or_create_stripe_customer(
+        firebase_uid=firebase_uid,
+        email=email or ""
+    )
 
+    # ----------------------------------------
+    # STEP 2: Load trial_period_days from Firestore
+    # ----------------------------------------
+    from app.services.firebase_client import get_firestore_client
+    db = get_firestore_client()
+
+    trial_days = 0
+    plan_query = (
+        db.collection("subscription_plans")
+        .where("stripe_price_id", "==", price_id)
+        .limit(1)
+    )
+    docs = list(plan_query.stream())
+
+    if docs:
+        doc = docs[0].to_dict() or {}
+        trial_days = int(doc.get("trial_period_days", 0))
+
+    # ----------------------------------------
+    # STEP 3: Build subscription_data with trial
+    # ----------------------------------------
+    subscription_data = {
+        "metadata": {
+            "firebase_uid": firebase_uid,
+            "uid": firebase_uid,
+        }
+    }
+
+    if trial_days > 0:
+        subscription_data["trial_period_days"] = trial_days
+
+    # ----------------------------------------
+    # STEP 4: Create checkout session
+    # ----------------------------------------
     session = stripe.checkout.Session.create(
         mode="subscription",
         customer=customer["id"],
-        currency=STRIPE_DEFAULT_CURRENCY,
-        line_items=[{"price": price_id, "quantity": 1}],
         success_url=success_url,
         cancel_url=cancel_url,
-        metadata={"firebase_uid": firebase_uid},
-        subscription_data={"metadata": {"firebase_uid": firebase_uid}},
+        line_items=[{
+            "price": price_id,
+            "quantity": 1,
+        }],
+        client_reference_id=firebase_uid,
+        metadata={
+            "firebase_uid": firebase_uid,
+            "uid": firebase_uid,
+            "price_id": price_id,
+        },
+        subscription_data=subscription_data,
     )
 
     return {
         "id": session["id"],
-        "url": session.get("url"),
+        "url": session["url"],
         "customer_id": customer["id"],
-        "subscription_mode": session.get("mode"),
     }
 
 

@@ -9,7 +9,10 @@ import '../../services/router.dart';
 import '../../services/subscription_service.dart';
 
 class BillingInfoPage extends StatefulWidget {
-  const BillingInfoPage({super.key});
+  // FIX: Add paymentSuccess parameter
+  const BillingInfoPage({super.key, this.paymentSuccess = false});
+
+  final bool paymentSuccess;
 
   @override
   State<BillingInfoPage> createState() => _BillingInfoPageState();
@@ -24,22 +27,39 @@ class _BillingInfoPageState extends State<BillingInfoPage> {
   void initState() {
     super.initState();
     _future = _load();
+
+    // FIX: Show success message if redirected from payment
+    if (widget.paymentSuccess) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showSnack('Payment successful! Your plan has been updated.');
+      });
+    }
   }
 
   Future<_BillingPayload> _load() async {
-    final subscription = await _service.getMySubscription();
-    final plans = await _service.getPlans();
-    final plan = _resolvePlan(plans, subscription);
+    await _service.refreshAllCaches();
+    final results = await Future.wait([
+      _service.getMySubscription(),
+      _service.getPlans(),
+      _service.getFreePlan(),
+    ]);
+
+    final subscription = results[0] as UserSubscription?;
+    final plans = results[1] as List<Plan>;
+    final freePlan = results[2] as Plan;
+
+    final plan = _resolvePlan(plans, subscription, freePlan);
+    
     return _BillingPayload(plan: plan, subscription: subscription);
   }
 
-  Plan? _resolvePlan(List<Plan> plans, UserSubscription? subscription) {
+  Plan? _resolvePlan(List<Plan> plans, UserSubscription? subscription, Plan freePlan) {
     if (subscription?.plan != null) return subscription!.plan;
-    if (subscription == null) return null;
+    if (subscription == null) return freePlan;
     try {
       return plans.firstWhere((p) => p.id == subscription.planId);
     } catch (_) {
-      return null;
+      return freePlan;
     }
   }
 
@@ -53,6 +73,7 @@ class _BillingInfoPageState extends State<BillingInfoPage> {
     setState(() => _openingPortal = true);
     try {
       final url = await _service.createBillingPortalSession();
+      if (!mounted) return;
       await _launchUrl(url);
     } catch (e) {
       _showSnack('Unable to open billing portal: $e');
@@ -62,6 +83,10 @@ class _BillingInfoPageState extends State<BillingInfoPage> {
   }
 
   Future<void> _launchUrl(String url) async {
+    if (url.isEmpty) {
+      _showSnack('Billing URL is empty');
+      return;
+    }
     final uri = Uri.tryParse(url);
     if (uri == null) {
       _showSnack('Invalid URL');
@@ -170,7 +195,9 @@ class _BillingSummaryCard extends StatelessWidget {
   }
 
   String get _nextBilling {
-    final end = subscription?.currentPeriodEnd ?? subscription?.trialEndAt;
+    final end = subscription?.currentPeriodEnd ??
+            subscription?.trialEndAt ??
+            subscription?.billingCycleAnchor;
     if (end == null) return 'Not scheduled';
     return DateFormat('d MMM y').format(end.toLocal());
   }
@@ -259,8 +286,7 @@ class _BillingSummaryCard extends StatelessWidget {
                           width: 16,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color:
-                                Theme.of(context).colorScheme.onPrimary,
+                            color: Theme.of(context).colorScheme.onPrimary,
                           ),
                         )
                       : const Icon(Icons.open_in_new),
@@ -281,7 +307,12 @@ class _QuotaCard extends StatelessWidget {
   final Plan? plan;
   final UserSubscription? subscription;
 
-  bool get _isUnlimited => plan?.isTranscriptionUnlimited ?? false;
+  bool get _isUnlimited {
+    if (plan?.isTranscriptionUnlimited == true) return true;
+    final limit = plan?.transcriptionLimit;
+    if (limit != null && limit < 0) return true;
+    return false;
+  }
 
   int _limit() => plan?.transcriptionLimit ?? 0;
 
@@ -302,12 +333,12 @@ class _QuotaCard extends StatelessWidget {
   }
 
   String get _limitText {
-    if (_isUnlimited || _limit() <= 0) return 'Unlimited';
+    if (_isUnlimited) return 'Unlimited';
     return '${_limit()} transcriptions';
   }
 
   String get _remainingText {
-    if (_isUnlimited || _limit() <= 0) return 'Unlimited';
+    if (_isUnlimited) return 'Unlimited';
     final remaining = max(0, _limit() - _usageCount());
     return '$remaining remaining';
   }

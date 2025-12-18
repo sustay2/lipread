@@ -8,8 +8,7 @@ import '../../models/content_models.dart';
 import '../../services/content_api_service.dart';
 import '../../services/home_metrics_service.dart';
 import '../../services/daily_task_service.dart';
-// IMPORTANT: use the same URL normalizer you use elsewhere
-import '../../common/utils/media_utils.dart'; // normalizeMediaUrl
+import '../../common/utils/media_utils.dart';
 
 //
 // Helpers
@@ -74,6 +73,7 @@ class _DictationActivityScreenState extends State<DictationActivityScreen> {
     });
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
+    final ids = _ActivityIds.fromRef(widget.activityRef);
     final total = detail.dictationItems.length;
     int correct = 0;
     for (final item in detail.dictationItems) {
@@ -84,11 +84,17 @@ class _DictationActivityScreenState extends State<DictationActivityScreen> {
 
     final scorePct = total == 0 ? 0 : ((correct / total) * 100).round();
 
-    if (uid != null) {
-      await HomeMetricsService.onActivityCompleted(uid);
-      await HomeMetricsService.onAttemptSubmitted(
-        uid,
-        actionType: 'complete_dictation',
+    if (uid != null && ids != null) {
+      await HomeMetricsService.recordActivityAttempt(
+        uid: uid,
+        courseId: ids.courseId,
+        moduleId: ids.moduleId,
+        lessonId: ids.lessonId,
+        activityId: ids.activityId,
+        activityType: 'dictation',
+        score: scorePct.toDouble(),
+        passed: scorePct >= 60,
+        baseXp: (detail.scoring['points'] as num?)?.toInt() ?? 10,
       );
     }
 
@@ -301,17 +307,35 @@ class _PracticeActivityScreenState extends State<PracticeActivityScreen> {
     });
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid != null) {
-      await HomeMetricsService.onActivityCompleted(
-        uid,
-        actionType: 'finish_practice',
-      );
-      await HomeMetricsService.onAttemptSubmitted(uid);
-    }
+    final ids = _ActivityIds.fromRef(widget.activityRef);
 
-    if (!mounted) return;
-    setState(() => _submitting = false);
-    Navigator.of(context).pop();
+    try {
+      if (uid != null && ids != null) {
+        await HomeMetricsService.recordActivityAttempt(
+          uid: uid,
+          courseId: ids.courseId,
+          moduleId: ids.moduleId,
+          lessonId: ids.lessonId,
+          activityId: ids.activityId,
+          activityType: 'practice_lip',
+          score: 100,
+          passed: true,
+          baseXp: (detail.scoring['points'] as num?)?.toInt() ?? 10,
+        );
+      }
+
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      setState(() {
+        _error = 'Could not record completion. Please try again.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
+    }
   }
 
   @override

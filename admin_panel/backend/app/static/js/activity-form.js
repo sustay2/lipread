@@ -6,7 +6,10 @@
   function safeArray(val) {
     if (Array.isArray(val)) return val;
     if (typeof val === "string" && val.trim()) {
-      return val.split(",").map((v) => v.trim()).filter(Boolean);
+      return val
+        .split(",")
+        .map((v) => v.trim())
+        .filter(Boolean);
     }
     return [];
   }
@@ -47,8 +50,7 @@
 
   function renderExistingMedia(inputEl, mediaId) {
     if (!inputEl) return;
-    let helper =
-      inputEl.parentElement.querySelector(".existing-media-note");
+    let helper = inputEl.parentElement.querySelector(".existing-media-note");
     if (!helper) {
       helper = document.createElement("div");
       helper.className = "form-text existing-media-note";
@@ -70,7 +72,6 @@
 
     const form = document.getElementById("activityForm");
     const payloadInput = document.getElementById("activityPayload");
-
     if (!form || !payloadInput) return;
 
     const getEl = (name) =>
@@ -108,41 +109,11 @@
     const practiceList = document.getElementById("practiceList");
 
     /* --------------------------------------------------------
-     * REQUIRED FIX — ensure ONLY visible media inputs become required
+     * Section visibility & required fields
      * -------------------------------------------------------- */
 
-    function enforceMediaRequirements() {
-      const type = typeSelect?.value || "quiz";
-
-      // Remove required from ALL media inputs first (fixes browser errors)
-      form.querySelectorAll(".question-media,.dictation-media,.practice-media")
-        .forEach((el) => el.removeAttribute("required"));
-
-      if (type === "quiz") {
-        questionList.querySelectorAll(".mcq-question").forEach((card) => {
-          const input = card.querySelector(".question-media");
-          if (input && !card.dataset.existingMedia) {
-            input.setAttribute("required", "required");
-          }
-        });
-      } else if (type === "dictation") {
-        dictationList.querySelectorAll(".dictation-item").forEach((card) => {
-          const input = card.querySelector(".dictation-media");
-          if (input && !card.dataset.existingMedia) {
-            input.setAttribute("required", "required");
-          }
-        });
-      } else if (type === "practice_lip") {
-        practiceList.querySelectorAll(".practice-item").forEach((card) => {
-          const input = card.querySelector(".practice-media");
-          if (input && !card.dataset.existingMedia) {
-            input.setAttribute("required", "required");
-          }
-        });
-      }
-    }
-
     function setSectionRequired(activeType) {
+      // Clear all requireds
       form
         .querySelectorAll(
           ".question-stem, .option-text, .dictation-correct, .practice-description"
@@ -164,6 +135,49 @@
       }
     }
 
+    function enforceMediaRequirements() {
+      const type = typeSelect?.value || "quiz";
+
+      // Clear required from all media inputs
+      form
+        .querySelectorAll(
+          ".question-media, .dictation-media, .practice-media"
+        )
+        .forEach((el) => el.removeAttribute("required"));
+
+      if (type === "quiz") {
+        questionList
+          .querySelectorAll(".mcq-question")
+          .forEach((card) => {
+            const input = card.querySelector(".question-media");
+            const hasExisting = !!card.dataset.existingMedia;
+            if (input && !hasExisting) {
+              input.setAttribute("required", "required");
+            }
+          });
+      } else if (type === "dictation") {
+        dictationList
+          .querySelectorAll(".dictation-item")
+          .forEach((card) => {
+            const input = card.querySelector(".dictation-media");
+            const hasExisting = !!card.dataset.existingMedia;
+            if (input && !hasExisting) {
+              input.setAttribute("required", "required");
+            }
+          });
+      } else if (type === "practice_lip") {
+        practiceList
+          .querySelectorAll(".practice-item")
+          .forEach((card) => {
+            const input = card.querySelector(".practice-media");
+            const hasExisting = !!card.dataset.existingMedia;
+            if (input && !hasExisting) {
+              input.setAttribute("required", "required");
+            }
+          });
+      }
+    }
+
     function updateVisibility() {
       const type = typeSelect?.value || "quiz";
       Object.entries(sections).forEach(([key, el]) => {
@@ -178,15 +192,19 @@
       questionList
         .querySelectorAll(".question-index")
         .forEach((el, idx) => (el.textContent = idx + 1));
+
       dictationList
         .querySelectorAll(".dictation-index")
         .forEach((el, idx) => (el.textContent = idx + 1));
+
       practiceList
         .querySelectorAll(".practice-index")
         .forEach((el, idx) => (el.textContent = idx + 1));
     }
 
-    /* ---------- options helpers (MCQ) ---------- */
+    /* --------------------------------------------------------
+     * MCQ helpers
+     * -------------------------------------------------------- */
 
     function ensureOptionGroup(card) {
       if (!card.dataset.optionGroup) {
@@ -224,7 +242,6 @@
       radio.name = groupName;
       radio.title = "Mark as correct";
       radio.checked = Boolean(isCorrect);
-
       addon.appendChild(radio);
 
       const input = document.createElement("input");
@@ -242,7 +259,7 @@
 
       removeBtn.addEventListener("click", () => {
         const rows = card.querySelectorAll(".option-row");
-        if (rows.length <= 2) return; // always keep at least 2
+        if (rows.length <= 2) return; // keep at least two
         row.remove();
         updateOptionRemoveState(card);
       });
@@ -258,10 +275,12 @@
     function populateMcqCard(card, data) {
       const stemEl = card.querySelector(".question-stem");
       const explEl = card.querySelector(".question-explanation");
+
       if (data) {
         if (data.id) card.dataset.questionId = data.id;
         if (stemEl) stemEl.value = data.stem || "";
         if (explEl) explEl.value = data.explanation || "";
+
         const mediaInput = card.querySelector(".question-media");
         if (data.mediaId && mediaInput) {
           card.dataset.existingMedia = data.mediaId;
@@ -269,19 +288,21 @@
         }
 
         const opts =
-          (Array.isArray(data.options) && data.options.length
+          Array.isArray(data.options) && data.options.length
             ? data.options
-            : ["Option A", "Option B"]);
+            : ["Option A", "Option B"];
+
         const answerSet = new Set(safeArray(data.answers || []));
         const list = card.querySelector(".option-list");
         if (list) list.innerHTML = "";
+
         opts.forEach((opt, idx) => {
           const isCorrect =
             answerSet.has(opt) || (!answerSet.size && idx === 0);
           addOptionRow(card, opt, isCorrect);
         });
       } else {
-        // New question: exactly 2 blank options
+        // A1: new MCQ starts with 2 blank options
         const list = card.querySelector(".option-list");
         if (list) list.innerHTML = "";
         addOptionRow(card, "", true);
@@ -291,11 +312,14 @@
       updateOptionRemoveState(card);
     }
 
-    /* ---------- add cards (MCQ / Dictation / Practice) ---------- */
+    /* --------------------------------------------------------
+     * Add card functions
+     * -------------------------------------------------------- */
 
     function addMcq(data) {
       const tpl = document.getElementById("mcqTemplate");
       if (!tpl || !questionList) return;
+
       const card = tpl.content.firstElementChild.cloneNode(true);
 
       const removeBtn = card.querySelector(".remove-question");
@@ -325,6 +349,7 @@
     function addDictation(data) {
       const tpl = document.getElementById("dictationTemplate");
       if (!tpl || !dictationList) return;
+
       const card = tpl.content.firstElementChild.cloneNode(true);
 
       const removeBtn = card.querySelector(".remove-dictation");
@@ -342,6 +367,7 @@
         const hintsEl = card.querySelector(".dictation-hints");
         if (correctEl) correctEl.value = data.correctText || "";
         if (hintsEl) hintsEl.value = data.hints || "";
+
         const mediaInput = card.querySelector(".dictation-media");
         if (data.mediaId && mediaInput) {
           card.dataset.existingMedia = data.mediaId;
@@ -358,6 +384,7 @@
     function addPractice(data) {
       const tpl = document.getElementById("practiceTemplate");
       if (!tpl || !practiceList) return;
+
       const card = tpl.content.firstElementChild.cloneNode(true);
 
       const removeBtn = card.querySelector(".remove-practice");
@@ -375,6 +402,7 @@
         const targetEl = card.querySelector(".practice-target");
         if (descEl) descEl.value = data.description || "";
         if (targetEl) targetEl.value = data.targetWord || "";
+
         const mediaInput = card.querySelector(".practice-media");
         if (data.mediaId && mediaInput) {
           card.dataset.existingMedia = data.mediaId;
@@ -388,7 +416,9 @@
       enforceMediaRequirements();
     }
 
-    /* ---------- initial render ---------- */
+    /* --------------------------------------------------------
+     * Initial render
+     * -------------------------------------------------------- */
 
     function renderInitialState() {
       const scoring = initial.scoring || {};
@@ -429,7 +459,6 @@
         if (existingQuestions.length) {
           existingQuestions.forEach((q) => addMcq(q));
         } else {
-          // default: one MCQ with 2 empty options
           addMcq();
         }
       }
@@ -453,13 +482,15 @@
       updateVisibility();
     }
 
-    /* ---------- collectors for payload ---------- */
+    /* --------------------------------------------------------
+     * Collectors for payload
+     * -------------------------------------------------------- */
 
     function collectMcq() {
       const list = [];
       questionList
         .querySelectorAll(".mcq-question")
-        .forEach((card, idx) => {
+        .forEach((card) => {
           const stemEl = card.querySelector(".question-stem");
           const stem = (stemEl?.value || "").trim();
 
@@ -497,9 +528,6 @@
             mediaId: existing || undefined,
             existingMediaId: existing || undefined,
             needsUpload: Boolean(file),
-            mediaField:
-              (mediaInput && mediaInput.getAttribute("name")) ||
-              "questionMedia",
           });
         });
       return list;
@@ -526,9 +554,6 @@
             mediaId: existing || undefined,
             existingMediaId: existing || undefined,
             needsUpload: Boolean(file),
-            mediaField:
-              (mediaInput && mediaInput.getAttribute("name")) ||
-              "dictationMedia",
           });
         });
       return list;
@@ -555,15 +580,14 @@
             mediaId: existing || undefined,
             existingMediaId: existing || undefined,
             needsUpload: Boolean(file),
-            mediaField:
-              (mediaInput && mediaInput.getAttribute("name")) ||
-              "practiceMedia",
           });
         });
       return list;
     }
 
-    /* ---------- validation ---------- */
+    /* --------------------------------------------------------
+     * Validation (A3 strictness)
+     * -------------------------------------------------------- */
 
     function validateForm() {
       let hasError = false;
@@ -579,7 +603,7 @@
       if (type === "quiz") {
         const bankTitle = readStr("bankTitle");
         if (!bankTitle) {
-            setValue("bankTitle", readStr("title") + " Bank");
+          setValue("bankTitle", readStr("title") + " Bank");
         }
 
         const cards = questionList.querySelectorAll(".mcq-question");
@@ -627,6 +651,7 @@
             hasError = true;
           }
 
+          // A3-style strict media check
           const mediaInput = card.querySelector(".question-media");
           const file = mediaInput && mediaInput.files[0];
           const existing = card.dataset.existingMedia || null;
@@ -645,6 +670,7 @@
           alert("Add at least one dictation item.");
           hasError = true;
         }
+
         cards.forEach((card, idx) => {
           const textEl = card.querySelector(".dictation-correct");
           const mediaInput = card.querySelector(".dictation-media");
@@ -661,6 +687,9 @@
             );
             hasError = true;
           }
+
+          // A3 strict: every item must have some media,
+          // either existing or a newly chosen file
           if (!existing && !file) {
             showError(
               mediaInput,
@@ -675,6 +704,7 @@
           alert("Add at least one practice item.");
           hasError = true;
         }
+
         cards.forEach((card, idx) => {
           const descEl = card.querySelector(".practice-description");
           const mediaInput = card.querySelector(".practice-media");
@@ -691,6 +721,8 @@
             );
             hasError = true;
           }
+
+          // A3 strict: every item must have some media
           if (!existing && !file) {
             showError(
               mediaInput,
@@ -704,7 +736,9 @@
       return !hasError;
     }
 
-    /* ---------- submit handler ---------- */
+    /* --------------------------------------------------------
+     * Submit handler
+     * -------------------------------------------------------- */
 
     form.addEventListener("submit", (e) => {
       if (!validateForm()) {
@@ -713,8 +747,7 @@
       }
 
       const type = typeSelect?.value || "quiz";
-      const selectedDifficulty =
-        difficultySelect?.value || "beginner";
+      const selectedDifficulty = difficultySelect?.value || "beginner";
 
       const config = {
         ...(initial.config || {}),
@@ -722,6 +755,7 @@
       };
 
       if (type === "quiz") {
+        // In your system we always embed for editing
         config.embedQuestions = true;
       }
 
@@ -755,7 +789,9 @@
       payloadInput.value = JSON.stringify(payload);
     });
 
-    /* ---------- UI events ---------- */
+    /* --------------------------------------------------------
+     * UI events
+     * -------------------------------------------------------- */
 
     document
       .getElementById("addQuestionBtn")
@@ -771,7 +807,7 @@
 
     typeSelect?.addEventListener("change", () => {
       const type = typeSelect.value || "quiz";
-      // When switching type, ensure at least one card exists for that section
+
       if (type === "quiz" && !questionList.querySelector(".mcq-question")) {
         addMcq();
       }
@@ -787,10 +823,13 @@
       ) {
         addPractice();
       }
+
       updateVisibility();
     });
 
-    /* ---------- kick things off ---------- */
+    /* --------------------------------------------------------
+     * Kick things off
+     * -------------------------------------------------------- */
 
     renderInitialState();
   }
