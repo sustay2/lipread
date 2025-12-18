@@ -1,36 +1,58 @@
 # LipRead – Admin Backend & Mobile App Setup Guide
 
-This repository contains:
-
-* **FastAPI Admin Backend** (content management, users, billing, analytics)
-* **Flutter Mobile App** (lip-reading learning app)
-* **Firebase / Firestore** (primary database)
-* **Stripe** (subscriptions & payments)
-* **Local Media Server** (images & videos served from disk)
-* **Optional Nginx** (recommended for video streaming stability)
+LipRead is a distributed system consisting of a FastAPI-based admin backend and a Flutter mobile application designed to support English lip-reading learning. The system integrates Firebase, Stripe subscriptions, and a local media server for video and image delivery.
 
 ---
 
-## 1. System Requirements
+## Table of Contents
+
+1. Overview
+2. System Requirements
+3. Project Structure
+4. Firebase Setup
+5. Backend Setup (FastAPI)
+6. Media Storage & Serving
+7. Flutter App Setup
+8. Video Playback & Android Security Notes
+9. Stripe Setup
+10. Common Issues & Fixes
+11. Recommended Development Workflow
+12. Final Notes
+
+---
+
+## 1. Overview
+
+This repository contains:
+
+* FastAPI Admin Backend for user, course, media, billing, and analytics management
+* Flutter Mobile App for English lip-reading learning
+* Firebase / Firestore as the primary data store
+* Stripe for subscription billing
+* Local Media Server for video and image delivery
+
+---
+
+## 2. System Requirements
 
 ### Backend (PC)
 
-* Python **3.11+**
-* Windows / macOS / Linux
-* Firebase project (Firestore enabled)
+* Python 3.11 or higher
+* Windows, macOS, or Linux
+* Firebase project with Firestore enabled
 * Stripe account (test mode supported)
 
 ### Mobile App
 
-* Flutter **3.16+**
-* Android device or emulator
-* USB cable (recommended) or same LAN network
+* Flutter 3.16 or higher
+* Android emulator or physical Android device
+* USB cable recommended for development
 
 ---
 
-## 2. Project Structure (Relevant Parts)
+## 3. Project Structure
 
-```
+```text
 lipread/
 ├── admin_panel/
 │   ├── backend/
@@ -39,153 +61,141 @@ lipread/
 │   │   │   ├── routers/
 │   │   │   ├── services/
 │   │   │   └── templates/
-│   │   ├── main.py          # Backend entrypoint
+│   │   ├── main.py
 │   │   └── requirements.txt
-│   └── nginx/               # Optional
 ├── flutter_app/
+│   ├── android/
+│   │   └── app/
+│   │       └── src/
+│   │           └── main/
+│   │               ├── AndroidManifest.xml
+│   │               └── res/xml/network_security_config.xml
 │   ├── lib/
 │   │   ├── services/
 │   │   ├── common/utils/
 │   │   └── env.dart
 │   └── pubspec.yaml
-└── C:/lipread_media/         # Local media storage (default)
+└── C:/lipread_media/
 ```
 
 ---
 
-## 3. Firebase Setup
+## 4. Firebase Setup
 
-### 3.1 Create Firebase Project
+### 4.1 Create Firebase Project
 
-1. Go to [https://console.firebase.google.com](https://console.firebase.google.com)
-2. Create a project
-3. Enable **Firestore (Native mode)**
+Create a new Firebase project and enable Firestore in Native mode.
 
-### 3.2 Service Account
+### 4.2 Service Account
 
-1. Project Settings → Service Accounts
-2. Generate a **Private Key**
-3. Copy values into the backend `.env` file
+Generate a service account private key and store the credentials in the backend `.env` file.
 
-### 3.3 Required Firestore Collections
+### 4.3 Required Firestore Collections
 
-```
-users
-courses
-media
-subscription_plans
-user_subscriptions
-payments
-```
+* users
+* courses
+* media
+* subscription_plans
+* user_subscriptions
+* payments
 
 ---
 
-## 4. Backend Setup (FastAPI)
+## 5. Backend Setup (FastAPI)
 
-### 4.1 Create Virtual Environment
+### 5.1 Virtual Environment
 
 ```bash
 cd admin_panel/backend
 python -m venv .venv
-.venv\Scripts\activate   # Windows
+.venv\Scripts\activate
 ```
 
-### 4.2 Install Dependencies
+### 5.2 Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
----
+### 5.3 Environment Variables
 
-### 4.3 Environment Variables
+Create `.env` inside `admin_panel/backend`:
 
-Create a `.env` file inside `admin_panel/backend`:
-
-```env
-# Firebase
+```ini
 FIREBASE_PROJECT_ID=your_project_id
 FIREBASE_CLIENT_EMAIL=xxxx@xxxx.iam.gserviceaccount.com
 FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 
-# Backend
 ADMIN_SESSION_SECRET=change-me
 UVICORN_LOG_LEVEL=info
 
-# Media
 MEDIA_ROOT=C:/lipread_media
 MEDIA_BASE_URL=http://127.0.0.1:8000/media
 
-# Stripe
 STRIPE_SECRET_KEY=sk_test_xxx
 STRIPE_WEBHOOK_SECRET=whsec_xxx
 ```
 
----
-
-### 4.4 Start Backend (Development)
+### 5.4 Run Backend
 
 ```bash
 python backend/main.py
 ```
 
-Backend will run at:
-
-```
-http://localhost:8000
-```
-
-Admin panel:
-
-```
-http://localhost:8000/users
-```
-
 ---
 
-## 5. Media Storage & Serving
+## 6. Media Storage & Serving
 
-### 5.1 Media Folder Structure
-
-Default media directory:
-
-```
+```text
 C:/lipread_media/
 ├── images/
 ├── videos/
 └── badge_icons/
 ```
 
-Each uploaded media file is indexed in Firestore under the `media` collection.
-
-### 5.2 Media URL Format
+Media is served at:
 
 ```
 http://<backend-host>:8000/media/<type>/<filename>
 ```
 
-Example:
-
-```
-http://localhost:8000/media/videos/example.mp4
-```
-
 ---
 
-## 6. Flutter App Setup
+## 7. Flutter App Setup
 
-### 6.1 Install Dependencies
+### 7.1 Install Dependencies
 
 ```bash
 cd flutter_app
 flutter pub get
 ```
 
----
+### 7.2 Android Network Security
 
-### 6.2 API Configuration
+Create `android/app/src/main/res/xml/network_security_config.xml`:
 
-Edit `lib/env.dart`:
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">10.157.106.118</domain>
+        <domain includeSubdomains="true">192.168.0.115</domain>
+        <domain includeSubdomains="true">10.0.2.2</domain>
+    </domain-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
+```
+
+Update `AndroidManifest.xml`:
+
+```xml
+<application
+    android:usesCleartextTraffic="true"
+    android:networkSecurityConfig="@xml/network_security_config">
+</application>
+```
+
+### 7.3 API Configuration
 
 ```dart
 const String kApiBase = String.fromEnvironment(
@@ -201,142 +211,49 @@ const String kTranscribeBase = String.fromEnvironment(
 
 ---
 
-### 6.3 Run on Emulator
+## 8. Video Playback Notes
 
-```bash
-flutter run \
-  --dart-define=API_BASE=http://10.0.2.2:8000 \
-  --dart-define=TRANSCRIBE_BASE=http://10.0.2.2:8001
-```
-
----
-
-### 6.4 Run on Physical Android Device (USB – Recommended)
-
-```bash
-flutter run \
-  --dart-define=API_BASE=http://10.0.2.2:8000 \
-  --dart-define=TRANSCRIBE_BASE=http://10.0.2.2:8001
-```
-
-This avoids mobile hotspot and LAN routing issues.
-
----
-
-## 7. Video Playback Notes
-
-* Flutter video players **require HTTP Range support**
-* FastAPI `StaticFiles` is unreliable for mobile streaming
-* Mobile hotspot networks often break partial content streaming
-
----
-
-## 8. Recommended: Nginx for Media Streaming
-
-### 8.1 Why Nginx
-
-* Proper **byte-range** handling
-* Stable video playback on mobile
-* Works reliably with hotspot and USB
-
-### 8.2 Minimal Nginx Configuration (Windows)
-
-```nginx
-worker_processes  1;
-
-events {
-    worker_connections  1024;
-}
-
-http {
-    include       mime.types;
-    default_type  application/octet-stream;
-
-    sendfile on;
-    tcp_nopush on;
-    tcp_nodelay on;
-
-    server {
-        listen 8000;
-
-        location /media/ {
-            root C:/lipread_media;
-            add_header Accept-Ranges bytes;
-            add_header Access-Control-Allow-Origin *;
-        }
-
-        location / {
-            proxy_pass http://127.0.0.1:8002;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-        }
-    }
-}
-```
-
-### 8.3 Start Nginx
-
-```bash
-cd C:\nginx
-nginx
-```
-
-Backend should run on port `8002`, while clients access via port `8000`.
+Android blocks cleartext HTTP traffic on some networks by default. The network security configuration ensures local video streaming works over hotspot, USB, and LAN.
 
 ---
 
 ## 9. Stripe Setup
 
-### 9.1 Products
+Enable the following webhook events:
 
-* Monthly subscription
-* Currency: **MYR**
-* Billing interval: **month**
-
-### 9.2 Webhooks
-
-Enable the following events:
-
-```
-invoice.paid
-customer.subscription.created
-customer.subscription.updated
-customer.subscription.deleted
-```
+* invoice.paid
+* customer.subscription.created
+* customer.subscription.updated
+* customer.subscription.deleted
 
 ---
 
-## 10. Common Issues & Fixes
+## 10. Common Issues
 
-### Videos load in browser but not in Flutter
+**Videos load in browser but not in app**
+Ensure your local IP is listed in `network_security_config.xml`.
 
-* Use **adb reverse** or **Nginx**
-* Avoid mobile hotspot without a proxy
+**Port already in use**
 
-### Port already in use
-
-```bash
+```cmd
 netstat -ano | findstr 8000
 taskkill /PID <pid> /F
 ```
 
 ---
 
-## 11. Recommended Development Workflow
+## 11. Recommended Workflow
 
-| Task            | Tool               |
-| --------------- | ------------------ |
-| Backend API     | FastAPI            |
-| Media streaming | Nginx              |
-| Mobile testing  | USB + adb reverse  |
-| Payments        | Stripe (test mode) |
-| Database        | Firestore          |
+| Task            | Tool                     |
+| --------------- | ------------------------ |
+| Backend API     | FastAPI                  |
+| Media Streaming | FastAPI + Android Config |
+| Mobile Testing  | USB / adb reverse        |
+| Payments        | Stripe Test Mode         |
+| Database        | Firestore                |
 
 ---
 
 ## 12. Final Notes
 
-* Prefer **USB tethering or adb reverse** for development
-* Use **Nginx** for production-grade video streaming
-* Firestore is the source of truth
-* Stripe is used only for billing state synchronization
+Firestore is the source of truth. Stripe is used only for billing state synchronization. Always ensure your Android security config is updated when switching networks.
