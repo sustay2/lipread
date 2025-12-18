@@ -191,12 +191,12 @@ def get_course_metrics(date_range: DateRange | None = None) -> Dict[str, Any]:
 
 
 def get_subscription_metrics(date_range: DateRange | None = None) -> Dict[str, Any]:
-    analytics = subscription_analytics(months=12)
-    total_subscribers = sum(analytics.get("subscription_counts", {}).values())
-    status_breakdown = analytics.get("subscription_counts", {})
+    window = date_range or DateRange.from_bounds(None, None)
 
-    # Count active subs by plan id from Firestore (fallback-safe)
-    # ---- Fetch subscription plans ----
+    start_dt = datetime.combine(window.start, datetime.min.time(), tzinfo=timezone.utc)
+    end_dt   = datetime.combine(window.end,   datetime.max.time(), tzinfo=timezone.utc)
+
+    # ---- Load readable plan names ----
     plan_name_lookup = {}
     try:
         for snap in db.collection("subscription_plans").stream():
@@ -205,104 +205,99 @@ def get_subscription_metrics(date_range: DateRange | None = None) -> Dict[str, A
     except Exception:
         pass
 
-    # ---- Count active subscriptions by plan ----
+    # ---- Load subscriptions from Firestore ----
     active_by_plan: Counter[str] = Counter()
-    try:
-        for snap in db.collection("user_subscriptions").where("status", "==", "active").stream():
-            data = snap.to_dict() or {}
-            plan_id = str(data.get("plan_id") or "Unknown")
-            active_by_plan[plan_id] += 1
-    except Exception:
-        pass
+    status_breakdown: Counter[str] = Counter()
+    monthly_new: Counter[str] = Counter()
 
-    # ---- Convert counts to list including plan names ----
+    try:
+        for snap in db.collection("user_subscriptions").stream():
+            sub = snap.to_dict() or {}
+
+            status = sub.get("status", "unknown")
+            plan_id = sub.get("plan_id") or "Unknown"
+            created_at = _to_datetime(sub.get("createdAt") or sub.get("billing_cycle_anchor"))
+
+            status_breakdown[status] += 1
+
+            # If subscription is active, count per plan
+            if status == "active":
+                active_by_plan[plan_id] += 1
+
+            # Monthly new subscriptions
+            if created_at and (window.start <= created_at.date() <= window.end):
+                monthly_new[_month_label(created_at.date())] += 1
+
+    except Exception as e:
+        print("Subscription metric error:", e)
+
     active_by_plan_list = [
         {
             "plan_id": pid,
-            "plan": plan_name_lookup.get(pid, pid),  # readable name from Firestore
+            "plan": plan_name_lookup.get(pid, pid),
             "count": count,
         }
         for pid, count in active_by_plan.items()
     ]
 
-    free_to_paid_rate = 0.0
-    trial_conversion = analytics.get("trial_conversion", {})
-    total_trials = trial_conversion.get("total_trials", 0)
-    converted = trial_conversion.get("converted", 0)
-    if total_trials:
-        free_to_paid_rate = round((converted / total_trials) * 100, 2)
-
-    monthly_new = [
-        {"label": lbl, "count": val}
-        for lbl, val in zip(
-            analytics.get("labels", []), analytics.get("new_subscriptions", [])
-        )
+    # Convert monthly data to sorted list
+    monthly_new_list = [
+        {"label": lbl, "count": monthly_new[lbl]}
+        for lbl in sorted(monthly_new.keys())
     ]
 
     return {
-        "total_subscribers": total_subscribers,
+        "total_subscribers": sum(active_by_plan.values()),
         "active_by_plan": active_by_plan_list,
-        "free_to_paid_conversion": free_to_paid_rate,
-        "trial_conversion": trial_conversion.get("percentage", 0.0),
-        "monthly_new_subscriptions": monthly_new,
-        "status_breakdown": status_breakdown,
-    }
+        "free_to_paid_conversion": 0.0,  # No Stripe data available
+        "trial_conversion": 0.0,
+        "monthly_new_subscriptions": monthly_new_list,
+        "status_breakdown": dict(status_breakdown),
+    }   
 
 
 def get_revenue_metrics(
     date_range: DateRange | None = None, total_users: int | None = None
 ) -> Dict[str, Any]:
+
     window = date_range or DateRange.from_bounds(None, None)
-    start_ts = int(datetime.combine(window.start, datetime.min.time(), tzinfo=timezone.utc).timestamp())
-    end_ts = int(datetime.combine(window.end, datetime.max.time(), tzinfo=timezone.utc).timestamp())
 
     revenue_total = 0.0
     monthly_buckets: Counter[str] = Counter()
 
     try:
-        invoices = stripe.Invoice.list(
-            status="paid",
-            created={"gte": start_ts, "lte": end_ts},
-            limit=100,
-        )
-        for inv in invoices.auto_paging_iter():
-            currency = str(inv.get("currency") or "").lower()
-            if currency and currency != STRIPE_DEFAULT_CURRENCY.lower():
-                continue
-            created = inv.get("created")
-            created_at = (
-                datetime.fromtimestamp(int(created), tz=timezone.utc)
-                if created
-                else None
-            )
+        for snap in db.collection("payments").stream():
+            payment = snap.to_dict() or {}
+
+            created_at = _to_datetime(payment.get("createdAt"))
             if not created_at:
                 continue
-            amount_paid = inv.get("amount_paid")
-            if amount_paid is None:
-                amount_paid = inv.get("total")
-            try:
-                amount_val = float(amount_paid or 0) / 100.0
-            except (TypeError, ValueError):
+
+            if not (window.start <= created_at.date() <= window.end):
                 continue
-            revenue_total += amount_val
-            monthly_buckets[_month_label(created_at.date())] += amount_val
-    except Exception:
-        pass
+
+            amount = float(payment.get("amount") or 0)
+            revenue_total += amount
+            monthly_buckets[_month_label(created_at.date())] += amount
+
+    except Exception as e:
+        print("Revenue metrics error:", e)
 
     labels = sorted(monthly_buckets.keys())
-    monthly_revenue = [{"label": lbl, "amount": round(monthly_buckets[lbl], 2)} for lbl in labels]
+    monthly_revenue = [
+        {"label": lbl, "amount": round(monthly_buckets[lbl], 2)}
+        for lbl in labels
+    ]
+
     mrr = monthly_revenue[-1]["amount"] if monthly_revenue else 0.0
+
     if total_users is None:
         total_users = len(list_users(limit=5000))
+
     arpu = round(revenue_total / total_users, 2) if total_users else 0.0
 
+    # Churn is impossible to compute without consistent Stripe lifecycle data
     churn_rate = 0.0
-    subscription_meta = subscription_analytics(months=3)
-    breakdown = subscription_meta.get("subscription_counts", {})
-    canceled = breakdown.get("canceled", 0)
-    active = breakdown.get("active", 0)
-    if active + canceled:
-        churn_rate = round((canceled / (active + canceled)) * 100, 2)
 
     return {
         "total_revenue": round(revenue_total, 2),

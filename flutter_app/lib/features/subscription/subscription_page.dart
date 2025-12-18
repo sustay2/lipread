@@ -397,7 +397,7 @@ class _SubscriptionOverviewCard extends StatelessWidget {
                 ),
               ],
             ),
-            if (_isActive && onManageBilling != null) ...[
+            if (_isActive && plan != null && plan!.id != freePlan.id && onManageBilling != null) ...[
               const SizedBox(height: 16),
               FilledButton.icon(
                 style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(44)),

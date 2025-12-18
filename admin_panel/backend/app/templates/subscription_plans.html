@@ -44,8 +44,7 @@
                 </div>
             </div>
             <div class="col-md-4">
-                <label class="form-label">Free trial days</label>
-                <input type="number" class="form-control" name="free_trial_days" min="0" value="{{ subscription_metadata.freeTrialDays or 0 }}">
+                <input hidden type="number" class="form-control" name="free_trial_days" min="0" value="{{ subscription_metadata.freeTrialDays or 0 }}">
             </div>
             <div class="col-12">
                 <button type="submit" class="btn btn-primary">Save metadata</button>

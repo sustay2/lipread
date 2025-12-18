@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
     <domain-config cleartextTrafficPermitted="true">
-        <!-- Emulator bridge -->
-        <domain includeSubdomains="true">10.0.2.2</domain>
-        <!-- Your PC LAN IP (replace with yours) -->
+        <domain includeSubdomains="true">10.157.106.118</domain>
         <domain includeSubdomains="true">192.168.0.115</domain>
+        <domain includeSubdomains="true">172.29.67.10</domain>
+        <domain includeSubdomains="true">10.0.2.2</domain>
     </domain-config>
+
+    <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

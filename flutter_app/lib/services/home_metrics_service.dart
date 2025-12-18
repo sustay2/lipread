@@ -417,7 +417,9 @@ class HomeMetricsService {
     // Update related metrics/tasks.
     final actionKey = switch (activityType.toLowerCase()) {
       'quiz' => 'complete_quiz',
+      'mcq' => 'complete_quiz',
       'dictation' => 'complete_dictation',
+      'practice_lip' => 'finish_practice',
       'practice' => 'finish_practice',
       _ => null,
     };

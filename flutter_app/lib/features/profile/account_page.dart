@@ -616,14 +616,6 @@ class _AccountPageState extends State<AccountPage> {
                       onUnsupported: () =>
                           _showUnsupportedBiometric('fingerprint'),
                     ),
-                    _BiometricTile(
-                      title: "Enable Face Recognition Login",
-                      subtitle: "Use face unlock to log in instantly.",
-                      supported: _biometricsAvailable && _hasFace,
-                      value: _faceEnabled,
-                      onChanged: (v) => _toggleFace(v),
-                      onUnsupported: () => _showUnsupportedBiometric('face'),
-                    ),
                   ],
                 ),
               ),
